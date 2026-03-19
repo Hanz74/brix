@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.4] — 2026-03-19
+
+### Added
+- PDF-only filter for download-attachments
+- Parallel attachment fetching (5x speedup)
+
 ## [0.6.2] — 2026-03-19
 
 ### Added

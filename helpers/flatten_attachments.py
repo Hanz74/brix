@@ -57,6 +57,11 @@ def main():
                 if att.get("isInline"):
                     continue  # Skip inline images
 
+                # Only include PDF attachments
+                name = att.get("name", "")
+                if not name.lower().endswith(".pdf"):
+                    continue
+
                 item = {
                     "mail_subject": subject,
                     "mail_date": date,

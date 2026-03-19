@@ -38,6 +38,8 @@ steps:
     server: m365
     tool: list-mail-attachments
     foreach: "{{ fetch_mails.output.value }}"
+    parallel: true
+    concurrency: 5
     params:
       messageId: "{{ item.id }}"
     on_error: continue
