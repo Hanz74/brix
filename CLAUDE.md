@@ -4,62 +4,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist Brix?
 
-**Brix** — Generischer Prozess-Orchestrator für Claude Code Skills. Kombiniert modulare Bausteine (Python, REST API, CLI, MCP Tools, DB, Docker) zu Pipelines mit einheitlichem JSON-Interface.
+**Brix** ist eine Skill-Runtime und Prozess-Orchestrator für Claude Code. Ein CLI-Tool das Multi-Step-Workflows als Pipelines ausführt — MCP-Calls, HTTP-Requests, Shell-Commands und Python-Scripts in einem einzigen `brix run` Aufruf.
 
-## Vision
+**Warum:** Jeder Tool-Call in Claude Code kostet Kontext-Tokens. 10 Tool-Calls = 10x Kontext. `brix run` macht daraus 1 Call. Token-Einsparung: ~99%.
 
-Ein leichtgewichtiges Framework wo:
-- **Bausteine** (Brix) verschiedenster Art ein einheitliches Interface haben: JSON in → JSON out
-- **Pipelines** Bausteine verketten: Output von A → Input von B
-- **Skills** (Claude Code Slash-Commands) die Pipelines orchestrieren
-- **Parallelisierung** wo möglich, sequentiell wo nötig
-- **Error-Handling** + Retry + Reporting eingebaut
+## Brix ist verfügbar!
 
-## Baustein-Typen (geplant)
+```bash
+# CLI ist im PATH (Wrapper für docker exec brix brix)
+brix --version          # 0.6.4
+brix run <pipeline.yaml> -p key=value
+brix validate <pipeline.yaml>
+brix run --dry-run <pipeline.yaml>
+brix server list        # registrierte MCP-Server
+brix history            # letzte Runs
+brix stats              # Erfolgsrate, Avg Duration
+```
 
-| Typ | Beschreibung | Beispiel |
-|-----|-------------|---------|
-| `python` | Python-Funktion oder Script | `brix.py:extract_data()` |
-| `rest` | HTTP API Call | `POST https://api.example.com/v1/convert` |
-| `cli` | Shell/Bash Command | `ffmpeg -i input.mp4 output.wav` |
-| `mcp` | MCP Tool Call | `mcp__m365__list-mail-messages` |
-| `db` | Datenbank-Query | `SELECT * FROM documents WHERE ...` |
-| `docker` | Container ausführen | `docker exec markitdown-mcp ...` |
+**NUTZE BRIX** für Multi-Step-Aufgaben statt einzelne Tool-Calls! Besonders für:
+- MCP-Tool-Ketten (M365, Docker, n8n)
+- Batch-Downloads mit paralleler Verarbeitung
+- foreach-Operationen über Listen
+- Alles was >3 sequentielle Tool-Calls wäre
 
-## Einheitliches Interface
+## Pfad-Konvention
 
-Jeder Baustein:
-- **Input**: JSON (oder stdin)
-- **Output**: JSON (oder stdout)
-- **Error**: Strukturiert `{"success": false, "error": "...", "step": "..."}`
-- **Config**: ENV oder Parameter
+Brix läuft im Docker Container. Host-Dateisystem unter `/host/root/`:
+- Host `/root/dev/...` → Brix `/host/root/dev/...`
+- Pipeline output_dir: `/host/root/pfad/zum/ziel`
 
-## Erster Use Case
+## Verfügbare Pipelines
 
-`/download-attachments` Skill — der den Anstoß für Brix gab:
-1. `m365_fetch` Brix → Mails suchen, Attachments identifizieren
-2. `http_download` Brix → Dateien parallel runterladen (Graph API)
-3. `file_save` Brix → Mit strukturierten Dateinamen speichern
-4. `markitdown_convert` Brix → Optional durch MarkItDown jagen
-5. `report` Brix → Ergebnis-Report generieren
+```bash
+brix list pipelines     # zeigt alle in /app/pipelines/
+```
 
-## Recherche-Ergebnis
+- **download-attachments** — M365 Mail-Attachments herunterladen (PDF-Filter, parallel)
 
-Kein existierendes Tool füllt diese Lücke (Stand März 2026):
-- **pypyr** (1.7k Stars) — am nächsten, aber kein JSON-Vertrag, kein REST/MCP
-- **Conductor** (11k Stars) — zu heavyweight (Server-basiert)
-- **Airflow/Prefect/Dagster** — Enterprise Data Pipelines, Overkill
-- Lücke: Multiple Step-Typen + striktes JSON in/out + leichtgewichtig + Claude Code integrierbar
+## Skills (Slash-Commands)
+
+- `/download-attachments` — M365 Attachments via Brix Pipeline
+- `/brix-run` — Beliebige Brix Pipeline ausführen
+
+## Architektur
+
+- **5 Runner:** python (subprocess), http (httpx), cli (subprocess), mcp (stdio SDK), pipeline (Sub-Pipelines)
+- **Pipeline-Format:** YAML + Jinja2 (SandboxedEnvironment)
+- **Docker Container** mit Host-Integration (Docker Socket, Binary, Dateisystem)
+- **MCP-Server** via `docker exec -i` (stdio transparent)
+
+## Entwicklung
+
+```bash
+# Tests
+PYTHONPATH=src python3 -m pytest tests/ -v
+
+# Rebuild nach Code-Änderungen
+docker compose build --quiet && docker compose up -d
+
+# Alle 274 Tests müssen grün sein
+```
 
 ## Cody-Projekt
 
-- Slug: `forge` (historisch, Name ist Brix)
-- Phase: `ideation`
+- Slug: `forge`
+- Epic: E-BRIX-CORE (26 Tasks + Bugfixes)
+- Version: 0.6.4
 
-## Tech Stack (geplant)
+## Docs
 
-- Python 3.11+
-- asyncio + httpx (parallel HTTP)
-- Click oder Typer (CLI)
-- Pydantic (JSON-Schemas)
-- Docker Container (optional)
+- `docs/decisions.md` — 21 Architektur-Entscheidungen
+- `docs/integration-learnings.md` — 8 Learnings aus E2E-Testing
+- `docs/review-*.md` — Experten-Reviews
+- `docs/research-*.md` — MCP SDK + Skills Recherche
