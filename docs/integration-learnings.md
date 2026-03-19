@@ -156,6 +156,39 @@ elif not sys.stdin.isatty():
 
 ---
 
+## 9. Global Discovery: Claude muss Brix in JEDER Session kennen
+
+**Problem:** Brix funktioniert — aber nur Claude-Sessions die im Brix-Repo arbeiten wissen davon. In einer Mailpilot-Session oder einem anderen Projekt hat Claude keine Ahnung dass `brix` existiert. Der User muss es manuell erwähnen.
+
+**Intent:** Brix ist ein System-Tool, kein Projekt-Tool. Es soll von überall nutzbar sein — wie `git` oder `docker`. Jede Claude-Instanz auf diesem Server soll wissen: "Für Multi-Step-Aufgaben gibt es `brix run`."
+
+**Root cause:** Drei Ebenen der Discovery, und nur eine war aktiv:
+
+| Ebene | Scope | Status vorher |
+|-------|-------|---------------|
+| `CLAUDE.md` im Brix-Repo | Nur im Repo | Hatte Brix dokumentiert |
+| `~/.claude/commands/*.md` | Alle Projekte | Skills waren da, aber Claude nutzt sie nur wenn User `/` tippt |
+| Globale `CLAUDE.md` (`/root/CLAUDE.md`) | JEDE Session | **Kein Wort über Brix!** |
+
+Die globale CLAUDE.md ist die einzige Datei die Claude in JEDER Session liest — egal welches Repo. Ohne Brix-Abschnitt dort weiß Claude nichts.
+
+**Fix:** Abschnitt in `/root/CLAUDE.md` ergänzt:
+- `brix` CLI ist verfügbar
+- Wann Brix nutzen (>3 Tool-Calls)
+- Verfügbare Pipelines und Commands
+- Pfad-Konvention `/host/root/`
+- Strategie-Wahl (targeted vs broad)
+- Skills und Repo-Pfade
+
+**For users:** Brix muss an DREI Stellen registriert werden:
+1. **Globale CLAUDE.md** (`~/CLAUDE.md` oder `/root/CLAUDE.md`) — damit Claude es in jeder Session kennt
+2. **Skills global** (`~/.claude/commands/`) — damit User `/download-attachments` tippen können
+3. **Wrapper-Script** (`/usr/local/bin/brix`) — damit der CLI-Aufruf funktioniert
+
+Nur Skills allein reichen nicht — Claude nutzt Skills nur wenn der User explizit `/` tippt. Die globale CLAUDE.md ist der einzige Weg Claude proaktiv auf Brix aufmerksam zu machen.
+
+---
+
 ## General Principle
 
 Brix integrates with the existing system rather than creating its own isolated environment. This means:

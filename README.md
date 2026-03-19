@@ -490,11 +490,25 @@ Skills live in `.claude/commands/` (project-scoped) and `~/.claude/commands/` (g
 - **`/download-attachments`** — Download email attachments from M365 Outlook via Brix pipeline
 - **`/brix-run`** — Run any Brix pipeline by name or path
 
-To make Brix available globally (all projects):
+To make Brix available globally (all projects), **three steps are required**:
 
 ```bash
+# 1. Skills globally available (slash commands)
 cp .claude/commands/*.md ~/.claude/commands/
+
+# 2. Global CLAUDE.md — tells Claude about brix in EVERY session
+# Add a "Brix" section to your root CLAUDE.md (~/CLAUDE.md or /root/CLAUDE.md)
+# documenting: available commands, pipelines, path convention, when to use
+
+# 3. Wrapper script (CLI access)
+cat > /usr/local/bin/brix << 'EOF'
+#!/bin/bash
+exec docker exec brix brix "$@"
+EOF
+chmod +x /usr/local/bin/brix
 ```
+
+**Important:** Skills alone are not enough. Claude only uses skills when the user types `/`. The global CLAUDE.md is the only way to make Claude **proactively** suggest Brix for multi-step tasks. Without it, Claude in other projects won't know Brix exists.
 
 ### 3. Path Convention
 
