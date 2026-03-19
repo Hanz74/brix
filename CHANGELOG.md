@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3] — 2026-03-19
+
+### Added
+- Retry logic with linear/exponential backoff (`on_error: retry`, `RetryConfig`)
+- Default 60s timeout for steps without explicit timeout (via `parse_timeout`)
+
 ## [0.2.2] — 2026-03-19
 
 ### Added

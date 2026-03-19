@@ -4,11 +4,11 @@ import sys
 import time
 from typing import Any
 
-from brix.models import Pipeline, Step, StepStatus, RunResult
+from brix.models import Pipeline, Step, StepStatus, RunResult, RetryConfig
 from brix.loader import PipelineLoader
 from brix.context import PipelineContext
 from brix.runners.base import BaseRunner
-from brix.runners.cli import CliRunner
+from brix.runners.cli import CliRunner, parse_timeout
 from brix.runners.python import PythonRunner
 from brix.runners.http import HttpRunner
 
@@ -124,11 +124,7 @@ class PipelineEngine:
             rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
 
             step_start = time.monotonic()
-            try:
-                result = await runner.execute(rendered_step, context)
-            except Exception as e:
-                result = {"success": False, "error": str(e), "duration": time.monotonic() - step_start}
-
+            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
             step_duration = time.monotonic() - step_start
 
             if result.get("success"):
@@ -175,6 +171,50 @@ class PipelineEngine:
         )
 
     # ------------------------------------------------------------------
+    # retry helper
+    # ------------------------------------------------------------------
+
+    async def _execute_with_retry(
+        self, runner: BaseRunner, rendered_step: Any, context: Any, step: Step, pipeline: Pipeline
+    ) -> dict:
+        """Execute a step with retry logic if on_error=retry, otherwise single execution."""
+        effective_on_error = step.on_error or pipeline.error_handling.on_error
+
+        if effective_on_error != "retry":
+            # No retry — single execution
+            try:
+                return await runner.execute(rendered_step, context)
+            except Exception as e:
+                return {"success": False, "error": str(e), "duration": 0.0}
+
+        # Retry logic
+        retry_config = pipeline.error_handling.retry or RetryConfig()
+        max_attempts = retry_config.max
+        backoff = retry_config.backoff
+
+        last_result: dict = {"success": False, "error": "no attempts made", "duration": 0.0}
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result = await runner.execute(rendered_step, context)
+                if result.get("success"):
+                    return result
+                last_result = result
+            except Exception as e:
+                last_result = {"success": False, "error": str(e), "duration": 0.0}
+
+            if attempt < max_attempts:
+                # Calculate backoff delay
+                if backoff == "exponential":
+                    delay = float(2 ** (attempt - 1))  # 1, 2, 4, 8...
+                else:  # linear
+                    delay = float(attempt)  # 1, 2, 3, 4...
+                await asyncio.sleep(delay)
+
+        # All attempts failed
+        last_result["retry_count"] = max_attempts
+        return last_result
+
+    # ------------------------------------------------------------------
     # foreach helpers
     # ------------------------------------------------------------------
 
@@ -189,10 +229,7 @@ class PipelineEngine:
             jinja_ctx = context.to_jinja_context(item=item)
             rendered_params = self.loader.render_step_params(step, jinja_ctx)
             rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
-            try:
-                result = await runner.execute(rendered_step, context)
-            except Exception as e:
-                result = {"success": False, "error": str(e), "duration": 0.0}
+            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
             results.append((item, result))
 
         return self._build_foreach_result(results, step, pipeline)
@@ -209,10 +246,7 @@ class PipelineEngine:
                 jinja_ctx = context.to_jinja_context(item=item)
                 rendered_params = self.loader.render_step_params(step, jinja_ctx)
                 rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
-                try:
-                    result = await runner.execute(rendered_step, context)
-                except Exception as e:
-                    result = {"success": False, "error": str(e), "duration": 0.0}
+                result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
                 return item, result
 
         tasks = [run_item(item) for item in items]

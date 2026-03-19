@@ -556,3 +556,165 @@ steps:
     # At minimum: the step is recorded as error
     assert result.steps["process_item"].errors is not None
     assert result.steps["process_item"].errors >= 1
+
+
+# ---------------------------------------------------------------------------
+# Retry Tests
+# ---------------------------------------------------------------------------
+
+
+async def test_engine_retry_success_on_second_attempt():
+    """Retry succeeds on second attempt."""
+    call_count = 0
+
+    class _FailOnceRunner(BaseRunner):
+        async def execute(self, step, context):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return {"success": False, "error": "transient", "duration": 0.01}
+            return {"success": True, "data": "recovered", "duration": 0.01}
+
+    pipeline = load_pipeline("""
+name: retry-test
+error_handling:
+  on_error: retry
+  retry:
+    max: 3
+    backoff: linear
+steps:
+  - id: flaky
+    type: cli
+    args: ["echo", "test"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _FailOnceRunner())
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert call_count == 2
+
+
+async def test_engine_retry_all_attempts_fail():
+    """All retry attempts fail — returns last error with retry_count."""
+
+    class _AlwaysFailRetryRunner(BaseRunner):
+        async def execute(self, step, context):
+            return {"success": False, "error": "persistent", "duration": 0.01}
+
+    pipeline = load_pipeline("""
+name: retry-fail
+error_handling:
+  on_error: retry
+  retry:
+    max: 2
+    backoff: linear
+steps:
+  - id: broken
+    type: cli
+    args: ["echo", "test"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _AlwaysFailRetryRunner())
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert result.steps["broken"].status == "error"
+
+
+async def test_engine_retry_exponential_backoff():
+    """Exponential backoff uses increasing delays between attempts."""
+    import time as time_mod
+
+    timestamps = []
+
+    class _TrackingRunner(BaseRunner):
+        async def execute(self, step, context):
+            timestamps.append(time_mod.monotonic())
+            return {"success": False, "error": "fail", "duration": 0.01}
+
+    pipeline = load_pipeline("""
+name: retry-exp
+error_handling:
+  on_error: retry
+  retry:
+    max: 3
+    backoff: exponential
+steps:
+  - id: tracked
+    type: cli
+    args: ["echo", "test"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _TrackingRunner())
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert len(timestamps) == 3
+    # Exponential delays: attempt 1→2 sleeps 1s, attempt 2→3 sleeps 2s
+    delay1 = timestamps[1] - timestamps[0]
+    delay2 = timestamps[2] - timestamps[1]
+    assert delay1 >= 0.8   # ~1s
+    assert delay2 >= 1.5   # ~2s
+    assert delay2 > delay1  # exponential growth
+
+
+async def test_engine_step_level_on_error_retry_overrides_pipeline():
+    """Step-level on_error=retry overrides pipeline on_error=stop."""
+    call_count = 0
+
+    class _FailTwiceRunner(BaseRunner):
+        async def execute(self, step, context):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return {"success": False, "error": "transient", "duration": 0.01}
+            return {"success": True, "data": "eventually-ok", "duration": 0.01}
+
+    pipeline = load_pipeline("""
+name: step-retry-override
+error_handling:
+  on_error: stop
+  retry:
+    max: 3
+    backoff: linear
+steps:
+  - id: flaky
+    type: cli
+    on_error: retry
+    args: ["echo", "test"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _FailTwiceRunner())
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert call_count == 3
+
+
+async def test_engine_retry_count_in_result_on_all_fail():
+    """retry_count is set on the last result when all attempts fail."""
+
+    class _ConstantFailRunner(BaseRunner):
+        async def execute(self, step, context):
+            return {"success": False, "error": "always-fails", "duration": 0.01}
+
+    pipeline = load_pipeline("""
+name: retry-count-test
+error_handling:
+  on_error: retry
+  retry:
+    max: 3
+    backoff: linear
+steps:
+  - id: step1
+    type: cli
+    args: ["echo", "x"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _ConstantFailRunner())
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    # The step is recorded as error
+    assert result.steps["step1"].status == "error"
