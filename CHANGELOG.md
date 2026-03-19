@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0] — 2026-03-19
+
+### Added
+- SQLite run history (D-09)
+- brix history and brix stats commands
+- Run tracking integrated into pipeline engine
+
 ## [0.4.2] — 2026-03-19
 
 ### Added

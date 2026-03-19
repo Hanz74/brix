@@ -411,8 +411,29 @@ def _save_servers_yaml(path: Path, data: dict):
         yaml.dump(data, f, default_flow_style=False)
 
 
-# Future command groups will be added here:
-# @main.command()
-# def history(): ...
-# @main.command()
-# def test(): ...
+@main.command()
+@click.option("--limit", "-n", default=10, help="Number of runs to show")
+def history(limit):
+    """Show recent pipeline runs."""
+    from brix.history import RunHistory
+    h = RunHistory()
+    runs = h.get_recent(limit)
+    if not runs:
+        click.echo("No runs recorded.", err=True)
+        return
+    for run in runs:
+        status = "✓" if run.get("success") else "✗"
+        dur = f"{run.get('duration', 0):.1f}s" if run.get("duration") else "?"
+        click.echo(f"  {status} {run['run_id']:<20} {run['pipeline']:<25} {dur}", err=True)
+
+
+@main.command()
+@click.argument("pipeline_name", required=False)
+def stats(pipeline_name):
+    """Show pipeline statistics."""
+    from brix.history import RunHistory
+    h = RunHistory()
+    s = h.get_stats(pipeline_name)
+    click.echo(f"  Total runs: {s['total_runs']}", err=True)
+    click.echo(f"  Success rate: {s['success_rate']}%", err=True)
+    click.echo(f"  Avg duration: {s['avg_duration']}s", err=True)

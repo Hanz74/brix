@@ -36,10 +36,15 @@ class PipelineEngine:
 
     async def run(self, pipeline: Pipeline, user_input: dict = None, keep_workdir: bool = False) -> RunResult:
         """Execute a pipeline and return results."""
+        from brix.history import RunHistory
+        history = RunHistory()
+
         start_time = time.monotonic()
         context = PipelineContext.from_pipeline(pipeline, user_input)
         step_statuses: dict[str, StepStatus] = {}
         last_output: Any = None
+
+        history.record_start(context.run_id, pipeline.name, pipeline.version, user_input)
 
         # Save run metadata
         context.save_run_metadata(pipeline.name, "running")
@@ -180,6 +185,12 @@ class PipelineEngine:
         context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
         if all_ok:
             context.cleanup(keep=keep_workdir)
+
+        history.record_finish(
+            context.run_id, all_ok, total_duration,
+            {k: v.model_dump() for k, v in step_statuses.items()},
+            {"result_type": type(final_result).__name__},
+        )
 
         return RunResult(
             success=all_ok,
