@@ -16,5 +16,5 @@ COPY src/ ./src/
 RUN uv pip install --system -e ".[dev]"
 
 # Docker socket is mounted via volume at runtime
-# ENTRYPOINT uses brix CLI
-ENTRYPOINT ["brix"]
+# Container stays alive; brix is invoked via docker exec
+CMD ["sleep", "infinity"]
