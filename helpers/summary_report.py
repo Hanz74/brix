@@ -5,7 +5,13 @@ import sys
 
 
 def main():
-    params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    if len(sys.argv) > 1:
+        params = json.loads(sys.argv[1])
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read().strip()
+        params = json.loads(raw) if raw else {}
+    else:
+        params = {}
     files = params.get("files", {})
     converted = params.get("converted", {})
     query = params.get("input_query", "")

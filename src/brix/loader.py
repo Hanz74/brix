@@ -19,6 +19,8 @@ class PipelineLoader:
         # (e.g. {{ skipped_step.output | default([]) }}) without raising
         # UndefinedError — callers use | default() for explicit fallbacks (D-16).
         self.env = SandboxedEnvironment(undefined=ChainableUndefined)
+        # Add tojson filter so dicts/lists render as proper JSON, not Python repr
+        self.env.filters["tojson"] = json.dumps
 
     # ------------------------------------------------------------------
     # Loading
@@ -62,7 +64,13 @@ class PipelineLoader:
             try:
                 return json.loads(rendered)
             except (json.JSONDecodeError, ValueError):
-                return rendered
+                pass
+            # Fallback: Python repr (Jinja2 renders dicts as {'key': 'val'})
+            try:
+                return ast.literal_eval(rendered)
+            except (ValueError, SyntaxError):
+                pass
+            return rendered
         elif isinstance(value, dict):
             return {k: self.render_value(v, context) for k, v in value.items()}
         elif isinstance(value, list):

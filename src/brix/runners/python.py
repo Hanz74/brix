@@ -25,8 +25,15 @@ class PythonRunner(BaseRunner):
         clean_params = {k: v for k, v in params.items() if not k.startswith('_')}
 
         cmd = ["python3", script]
+        input_data = None
+
         if clean_params:
-            cmd.append(json.dumps(clean_params))
+            params_json = json.dumps(clean_params)
+            # Use stdin for large payloads (args have OS limits ~128KB)
+            if len(params_json) > 100_000:
+                input_data = params_json.encode()
+            else:
+                cmd.append(params_json)
 
         # Timeout
         timeout_str = getattr(step, 'timeout', None)
@@ -35,13 +42,14 @@ class PythonRunner(BaseRunner):
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE if input_data else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
 
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout_seconds
+                    proc.communicate(input=input_data), timeout=timeout_seconds
                 )
             except asyncio.TimeoutError:
                 proc.kill()

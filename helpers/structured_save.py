@@ -6,7 +6,13 @@ from pathlib import Path
 
 
 def main():
-    params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    if len(sys.argv) > 1:
+        params = json.loads(sys.argv[1])
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read().strip()
+        params = json.loads(raw) if raw else {}
+    else:
+        params = {}
     content = params.get("content", "")
     metadata = params.get("metadata", {})
     output_dir = params.get("output_dir", "./attachments")
