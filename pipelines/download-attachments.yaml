@@ -1,12 +1,12 @@
 name: download-attachments
-version: "1.0.0"
+version: "2.0.0"
 description: Download email attachments from M365 Outlook
 
 input:
   query:
     type: str
-    default: "hasAttachments:true"
-    description: "Mail search filter"
+    default: "hasAttachments eq true"
+    description: "OData filter for mail search (e.g. hasAttachments eq true and contains(subject, 'Rechnung'))"
   folder:
     type: str
     default: "Inbox"
@@ -15,20 +15,13 @@ input:
     type: str
     default: "./attachments"
     description: "Target directory for downloaded files"
-  convert:
-    type: bool
-    default: false
-    description: "Convert attachments via MarkItDown"
-
-credentials:
-  m365_token:
-    env: "BRIX_CRED_M365_TOKEN"
+  top:
+    type: int
+    default: 10
+    description: "Max number of mails to fetch"
 
 error_handling:
   on_error: stop
-  retry:
-    max: 3
-    backoff: exponential
 
 steps:
   - id: fetch_mails
@@ -36,44 +29,34 @@ steps:
     server: m365
     tool: list-mail-messages
     params:
-      folder: "{{ input.folder }}"
       filter: "{{ input.query }}"
+      top: "{{ input.top }}"
+    timeout: 30s
 
-  - id: extract_attachments
-    type: python
-    script: helpers/extract_attachment_urls.py
+  - id: get_attachments
+    type: mcp
+    server: m365
+    tool: list-mail-attachments
+    foreach: "{{ fetch_mails.output.value }}"
     params:
-      messages: "{{ fetch_mails.output }}"
-
-  - id: download
-    type: http
-    foreach: "{{ extract_attachments.output }}"
-    parallel: true
-    concurrency: 5
-    url: "{{ item.download_url }}"
-    headers:
-      Authorization: "Bearer {{ credentials.m365_token }}"
+      messageId: "{{ item.id }}"
     on_error: continue
+    timeout: 30s
+
+  - id: flatten
+    type: python
+    script: helpers/flatten_attachments.py
+    params:
+      mails: "{{ fetch_mails.output.value }}"
+      attachment_results: "{{ get_attachments.output }}"
 
   - id: save_files
     type: python
-    foreach: "{{ download.output.items }}"
-    parallel: true
-    script: helpers/structured_save.py
+    foreach: "{{ flatten.output }}"
+    script: helpers/save_attachment.py
     params:
-      content: "{{ item.data }}"
-      metadata: "{{ item }}"
+      attachment: "{{ item }}"
       output_dir: "{{ input.output_dir }}"
-    when: "{{ item.success }}"
-
-  - id: convert
-    when: "{{ input.convert }}"
-    type: cli
-    foreach: "{{ save_files.output.items }}"
-    parallel: true
-    concurrency: 3
-    args: ["docker", "exec", "markitdown-mcp", "markitdown", "{{ item.data.path }}"]
-    timeout: 30s
     on_error: continue
 
   - id: report
@@ -81,10 +64,8 @@ steps:
     script: helpers/summary_report.py
     params:
       files: "{{ save_files.output | default({}) }}"
-      converted: "{{ convert.output | default({}) }}"
+      converted: "{}"
       input_query: "{{ input.query }}"
 
 output:
-  files: "{{ save_files.output | default({}) }}"
-  converted: "{{ convert.output | default({}) }}"
   report: "{{ report.output }}"
