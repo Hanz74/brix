@@ -382,3 +382,177 @@ steps:
     assert result.success is True
     assert result.steps["custom_step"].status == "ok"
     assert result.result == "custom-result"
+
+
+# ---------------------------------------------------------------------------
+# foreach Tests
+# ---------------------------------------------------------------------------
+
+import os as _os
+
+_HELPERS = _os.path.join(_os.path.dirname(__file__), "helpers")
+
+
+async def test_engine_foreach_sequential():
+    """foreach without parallel processes items sequentially and returns all results."""
+    pipeline = load_pipeline(f"""
+name: foreach-seq
+steps:
+  - id: list_items
+    type: python
+    script: "{_HELPERS}/list_items.py"
+  - id: echo_item
+    type: cli
+    foreach: "{{{{ list_items.output }}}}"
+    args: ["echo", "{{{{ item }}}}"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert result.steps["echo_item"].status == "ok"
+
+    foreach_result = result.result
+    assert "items" in foreach_result
+    assert "summary" in foreach_result
+    assert foreach_result["summary"]["total"] == 3
+    assert foreach_result["summary"]["succeeded"] == 3
+    assert foreach_result["summary"]["failed"] == 0
+
+    # All items succeeded
+    for item_result in foreach_result["items"]:
+        assert item_result["success"] is True
+
+
+async def test_engine_foreach_parallel():
+    """foreach with parallel=true processes all items and returns aggregated result."""
+    pipeline = load_pipeline(f"""
+name: foreach-parallel
+steps:
+  - id: list_items
+    type: python
+    script: "{_HELPERS}/list_items.py"
+  - id: echo_item
+    type: cli
+    foreach: "{{{{ list_items.output }}}}"
+    parallel: true
+    concurrency: 3
+    args: ["echo", "{{{{ item }}}}"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert result.steps["echo_item"].status == "ok"
+
+    foreach_result = result.result
+    assert foreach_result["summary"]["total"] == 3
+    assert foreach_result["summary"]["succeeded"] == 3
+    assert foreach_result["summary"]["failed"] == 0
+
+
+async def test_engine_foreach_concurrency_limit():
+    """concurrency=1 forces serial execution; all items still succeed."""
+    pipeline = load_pipeline(f"""
+name: foreach-concurrency
+steps:
+  - id: list_items
+    type: python
+    script: "{_HELPERS}/list_items.py"
+  - id: echo_item
+    type: cli
+    foreach: "{{{{ list_items.output }}}}"
+    parallel: true
+    concurrency: 1
+    args: ["echo", "{{{{ item }}}}"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    foreach_result = result.result
+    assert foreach_result["summary"]["total"] == 3
+    assert foreach_result["summary"]["succeeded"] == 3
+
+
+async def test_engine_foreach_partial_success():
+    """on_error:continue with foreach returns partial results (D-15)."""
+
+    class _FailOnItem2Runner(BaseRunner):
+        """Succeeds for item1 and item3, fails for item2."""
+
+        async def execute(self, step, context) -> dict:
+            # The rendered args contain the item value; inspect via step.args
+            item_val = step.args[-1] if step.args else ""
+            if item_val == "item2":
+                return {"success": False, "error": "intentional-fail", "duration": 0.01}
+            return {"success": True, "data": f"done-{item_val}", "duration": 0.01}
+
+    pipeline = load_pipeline(f"""
+name: foreach-partial
+error_handling:
+  on_error: continue
+steps:
+  - id: list_items
+    type: python
+    script: "{_HELPERS}/list_items.py"
+  - id: process_item
+    type: cli
+    foreach: "{{{{ list_items.output }}}}"
+    on_error: continue
+    args: ["echo", "{{{{ item }}}}"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _FailOnItem2Runner())
+    result = await engine.run(pipeline)
+
+    # Pipeline continues despite partial failure
+    assert result.steps["process_item"].status == "ok"
+
+    foreach_result = result.result
+    assert foreach_result["summary"]["total"] == 3
+    assert foreach_result["summary"]["succeeded"] == 2
+    assert foreach_result["summary"]["failed"] == 1
+
+    # Failed item carries error and input
+    failed_items = [i for i in foreach_result["items"] if not i["success"]]
+    assert len(failed_items) == 1
+    assert failed_items[0]["error"] == "intentional-fail"
+    assert failed_items[0]["input"] == "item2"
+
+
+async def test_engine_foreach_stop_on_error():
+    """on_error:stop with foreach stops at first failing item."""
+
+    class _FailOnItem2Runner(BaseRunner):
+        async def execute(self, step, context) -> dict:
+            item_val = step.args[-1] if step.args else ""
+            if item_val == "item2":
+                return {"success": False, "error": "stop-fail", "duration": 0.01}
+            return {"success": True, "data": f"done-{item_val}", "duration": 0.01}
+
+    pipeline = load_pipeline(f"""
+name: foreach-stop
+steps:
+  - id: list_items
+    type: python
+    script: "{_HELPERS}/list_items.py"
+  - id: process_item
+    type: cli
+    foreach: "{{{{ list_items.output }}}}"
+    on_error: stop
+    args: ["echo", "{{{{ item }}}}"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _FailOnItem2Runner())
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert result.steps["process_item"].status == "error"
+
+    # Pipeline stopped — no steps after process_item
+    # The foreach result itself reflects the early stop
+    # (result may be None since the step failed and pipeline stopped)
+    # At minimum: the step is recorded as error
+    assert result.steps["process_item"].errors is not None
+    assert result.steps["process_item"].errors >= 1

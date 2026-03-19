@@ -1,5 +1,6 @@
 """YAML pipeline loader with Jinja2 template support."""
 
+import ast
 import json
 
 import yaml
@@ -124,11 +125,20 @@ class PipelineLoader:
             return result
 
         if isinstance(result, str):
+            # Try JSON first (canonical representation)
             try:
                 parsed = json.loads(result)
                 if isinstance(parsed, list):
                     return parsed
             except (json.JSONDecodeError, ValueError):
+                pass
+
+            # Fallback: Python literal repr (e.g. "['a', 'b']" from Jinja2 str coercion)
+            try:
+                parsed = ast.literal_eval(result)
+                if isinstance(parsed, list):
+                    return parsed
+            except (ValueError, SyntaxError):
                 pass
 
         raise ValueError(

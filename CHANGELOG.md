@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.2] — 2026-03-19
+
+### Added
+- foreach + parallel execution with concurrency limits (D-15 partial-success)
+
 ## [0.2.0] — 2026-03-19
 
 ### Added
