@@ -201,18 +201,17 @@ name: no-runner
 error_handling:
   on_error: continue
 steps:
-  - id: http_step
-    type: http
-    url: "http://example.com"
+  - id: sub_step
+    type: pipeline
+    pipeline: "nonexistent.yaml"
   - id: cli_step
     type: cli
     args: ["echo", "after"]
 """)
     engine = PipelineEngine()
-    # Do not register an http runner — only cli is built in
     result = await engine.run(pipeline)
 
-    assert result.steps["http_step"].status == "error"
+    assert result.steps["sub_step"].status == "error"
     assert result.steps["cli_step"].status == "ok"
 
 
@@ -221,9 +220,9 @@ async def test_engine_no_runner_stop():
     pipeline = load_pipeline("""
 name: no-runner-stop
 steps:
-  - id: http_step
-    type: http
-    url: "http://example.com"
+  - id: sub_step
+    type: pipeline
+    pipeline: "nonexistent.yaml"
   - id: cli_step
     type: cli
     args: ["echo", "never"]
@@ -232,7 +231,7 @@ steps:
     result = await engine.run(pipeline)
 
     assert result.success is False
-    assert result.steps["http_step"].status == "error"
+    assert result.steps["sub_step"].status == "error"
     assert "cli_step" not in result.steps
 
 

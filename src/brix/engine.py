@@ -9,6 +9,7 @@ from brix.context import PipelineContext
 from brix.runners.base import BaseRunner
 from brix.runners.cli import CliRunner
 from brix.runners.python import PythonRunner
+from brix.runners.http import HttpRunner
 
 
 class PipelineEngine:
@@ -19,7 +20,8 @@ class PipelineEngine:
         self._runners: dict[str, BaseRunner] = {
             "cli": CliRunner(),
             "python": PythonRunner(),
-            # http, mcp, pipeline runners will be added later
+            "http": HttpRunner(),
+            # mcp, pipeline runners will be added later
         }
 
     def register_runner(self, step_type: str, runner: BaseRunner) -> None:
