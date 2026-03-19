@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2] — 2026-03-19
+
+### Added
+- Skill-prompt migration: /download-attachments
+- Generic /brix-run skill
+
+This completes the Brix v0.6.x implementation — all 26 tasks done.
+
 ## [0.6.0] — 2026-03-19
 
 ### Added
