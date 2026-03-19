@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.0] — 2026-03-19
+
+### Added
+- Sub-pipeline runner: pipeline composition (D-17)
+- Same-process execution with shared connection pool
+
 ## [0.3.1] — 2026-03-19
 
 ### Added

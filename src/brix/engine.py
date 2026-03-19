@@ -12,6 +12,7 @@ from brix.runners.cli import CliRunner, parse_timeout
 from brix.runners.python import PythonRunner
 from brix.runners.http import HttpRunner
 from brix.runners.mcp import McpRunner
+from brix.runners.pipeline import PipelineRunner
 
 
 class PipelineEngine:
@@ -19,26 +20,38 @@ class PipelineEngine:
 
     def __init__(self):
         self.loader = PipelineLoader()
+        pipeline_runner = PipelineRunner()
+        pipeline_runner.set_engine(self)
         self._runners: dict[str, BaseRunner] = {
             "cli": CliRunner(),
             "python": PythonRunner(),
             "http": HttpRunner(),
             "mcp": McpRunner(),
-            # pipeline runner will be added later
+            "pipeline": pipeline_runner,
         }
 
     def register_runner(self, step_type: str, runner: BaseRunner) -> None:
         """Register a runner for a step type."""
         self._runners[step_type] = runner
 
-    async def run(self, pipeline: Pipeline, user_input: dict = None) -> RunResult:
+    async def run(self, pipeline: Pipeline, user_input: dict = None, keep_workdir: bool = False) -> RunResult:
         """Execute a pipeline and return results."""
         start_time = time.monotonic()
         context = PipelineContext.from_pipeline(pipeline, user_input)
         step_statuses: dict[str, StepStatus] = {}
         last_output: Any = None
 
+        # Save run metadata
+        context.save_run_metadata(pipeline.name, "running")
+
         for step in pipeline.steps:
+            # Resume: skip completed steps
+            if context.is_step_completed(step.id):
+                step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
+                last_output = context.get_output(step.id)
+                print(f"↩ {step.id}: resumed (cached)", file=sys.stderr)
+                continue
+
             # Evaluate when condition
             jinja_ctx = context.to_jinja_context()
             if step.when:
@@ -163,6 +176,10 @@ class PipelineEngine:
 
         total_duration = time.monotonic() - start_time
         all_ok = all(s.status in ("ok", "skipped") for s in step_statuses.values())
+
+        context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
+        if all_ok:
+            context.cleanup(keep=keep_workdir)
 
         return RunResult(
             success=all_ok,
