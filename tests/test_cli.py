@@ -367,3 +367,45 @@ steps:
         assert "Sent" in result.output
     finally:
         os.unlink(path)
+
+
+# --- Clean Command Tests ---
+
+def test_cli_clean_no_args():
+    runner = ClickRunner()
+    result = runner.invoke(main, ["clean"])
+    assert result.exit_code != 0
+
+
+def test_cli_clean_dry_run_all(tmp_path, monkeypatch):
+    import brix.context
+    monkeypatch.setattr(brix.context, "WORKDIR_BASE", tmp_path)
+    # Create some fake workdirs
+    (tmp_path / "run-001").mkdir()
+    (tmp_path / "run-002").mkdir()
+
+    runner = ClickRunner()
+    result = runner.invoke(main, ["clean", "--all", "--dry-run"])
+    assert result.exit_code == 0
+    assert "2 workdirs" in result.output
+
+
+def test_cli_clean_run_id(tmp_path, monkeypatch):
+    import brix.context
+    monkeypatch.setattr(brix.context, "WORKDIR_BASE", tmp_path)
+    (tmp_path / "run-test").mkdir()
+
+    runner = ClickRunner()
+    result = runner.invoke(main, ["clean", "--run-id", "run-test"])
+    assert result.exit_code == 0
+    assert "deleted" in result.output
+    assert not (tmp_path / "run-test").exists()
+
+
+def test_parse_duration_days():
+    from brix.cli import _parse_duration_days
+    assert _parse_duration_days("24h") == 1.0
+    assert _parse_duration_days("7d") == 7.0
+    assert _parse_duration_days("2w") == 14.0
+    assert _parse_duration_days("30d") == 30.0
+    assert _parse_duration_days("invalid") is None

@@ -487,3 +487,97 @@ def stats(pipeline_name):
     click.echo(f"  Total runs: {s['total_runs']}", err=True)
     click.echo(f"  Success rate: {s['success_rate']}%", err=True)
     click.echo(f"  Avg duration: {s['avg_duration']}s", err=True)
+
+
+@main.command()
+@click.option("--older-than", type=str, help="Delete runs older than duration (e.g. '24h', '7d', '30d')")
+@click.option("--run-id", type=str, help="Delete a specific run")
+@click.option("--all", "clean_all", is_flag=True, help="Delete all runs")
+@click.option("--dry-run", "clean_dry_run", is_flag=True, help="Show what would be deleted")
+def clean(older_than, run_id, clean_all, clean_dry_run):
+    """Clean up old workdirs and history entries."""
+    import shutil
+    from brix.context import WORKDIR_BASE
+    from brix.history import RunHistory
+
+    if not any([older_than, run_id, clean_all]):
+        click.echo("Specify --older-than, --run-id, or --all", err=True)
+        sys.exit(1)
+
+    history = RunHistory()
+
+    if run_id:
+        # Delete specific run
+        workdir = WORKDIR_BASE / run_id
+        if clean_dry_run:
+            click.echo(f"Would delete: {workdir} (exists: {workdir.exists()})", err=True)
+            return
+        if workdir.exists():
+            shutil.rmtree(workdir)
+            click.echo(f"✓ Workdir {run_id} deleted", err=True)
+        else:
+            click.echo(f"Workdir {run_id} not found", err=True)
+        return
+
+    if clean_all:
+        if clean_dry_run:
+            # Count workdirs
+            count = 0
+            if WORKDIR_BASE.exists():
+                count = sum(1 for d in WORKDIR_BASE.iterdir() if d.is_dir())
+            click.echo(f"Would delete: {count} workdirs + all history entries", err=True)
+            return
+        # Delete all workdirs
+        deleted = 0
+        if WORKDIR_BASE.exists():
+            for d in WORKDIR_BASE.iterdir():
+                if d.is_dir():
+                    shutil.rmtree(d)
+                    deleted += 1
+        # Clean history
+        history_deleted = history.cleanup(older_than_days=0)
+        click.echo(f"✓ {deleted} workdirs deleted, {history_deleted} history entries removed", err=True)
+        return
+
+    if older_than:
+        # Parse duration
+        days = _parse_duration_days(older_than)
+        if days is None:
+            click.echo(f"Invalid duration: {older_than}. Use '24h', '7d', '30d'.", err=True)
+            sys.exit(1)
+
+        if clean_dry_run:
+            click.echo(f"Would delete runs older than {days} days", err=True)
+            return
+
+        # Clean workdirs by age
+        import time
+        deleted_workdirs = 0
+        if WORKDIR_BASE.exists():
+            now = time.time()
+            for d in WORKDIR_BASE.iterdir():
+                if d.is_dir():
+                    age_days = (now - d.stat().st_mtime) / 86400
+                    if age_days > days:
+                        shutil.rmtree(d)
+                        deleted_workdirs += 1
+
+        # Clean history
+        history_deleted = history.cleanup(older_than_days=days)
+        click.echo(f"✓ {deleted_workdirs} workdirs deleted, {history_deleted} history entries removed", err=True)
+
+
+def _parse_duration_days(duration: str) -> float | None:
+    """Parse duration string to days. '24h' → 1.0, '7d' → 7.0, '30d' → 30.0"""
+    duration = duration.strip().lower()
+    try:
+        if duration.endswith('h'):
+            return float(duration[:-1]) / 24
+        elif duration.endswith('d'):
+            return float(duration[:-1])
+        elif duration.endswith('w'):
+            return float(duration[:-1]) * 7
+        else:
+            return float(duration)  # assume days
+    except ValueError:
+        return None
