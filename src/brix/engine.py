@@ -11,6 +11,7 @@ from brix.runners.base import BaseRunner
 from brix.runners.cli import CliRunner, parse_timeout
 from brix.runners.python import PythonRunner
 from brix.runners.http import HttpRunner
+from brix.runners.mcp import McpRunner
 
 
 class PipelineEngine:
@@ -22,7 +23,8 @@ class PipelineEngine:
             "cli": CliRunner(),
             "python": PythonRunner(),
             "http": HttpRunner(),
-            # mcp, pipeline runners will be added later
+            "mcp": McpRunner(),
+            # pipeline runner will be added later
         }
 
     def register_runner(self, step_type: str, runner: BaseRunner) -> None:

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0] — 2026-03-19
+
+### Added
+- MCP runner: tool calls via stdio protocol (MCP Python SDK)
+- Server configuration loading from ~/.brix/servers.yaml
+- docker exec -i support for container-based MCP servers
+
 ## [0.2.3] — 2026-03-19
 
 ### Added
