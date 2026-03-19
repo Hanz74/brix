@@ -1,6 +1,8 @@
 # Brix
 
-**Generic process orchestrator for Claude Code.** Combines modular building blocks (Python, HTTP, CLI, MCP) into pipelines with a unified JSON interface.
+**A skill runtime for Claude Code.** Turn multi-step workflows into reusable slash commands backed by real pipelines — not prompt chains.
+
+Brix combines modular building blocks (Python, HTTP, CLI, MCP) into pipelines with a unified JSON interface. Each pipeline can be exposed as a Claude Code [custom slash command](https://docs.anthropic.com/en/docs/claude-code/tutorials/custom-slash-commands) — giving Claude powerful, token-efficient skills that run as native processes.
 
 ## The Problem
 
@@ -48,6 +50,73 @@ Claude Code: brix run pipeline.yaml --query "..."
 ```
 
 **The direction is always Claude → Brix, never the other way around.** Brix is a tool, not an agent. Claude decides what to run. Brix executes and reports back.
+
+## Skills — From Pipeline to Slash Command
+
+Every Brix pipeline can become a Claude Code [custom slash command](https://docs.anthropic.com/en/docs/claude-code/tutorials/custom-slash-commands). Users type `/download-attachments`, Claude reads a skill prompt, calls `brix run`, and presents the result. The pipeline handles the heavy lifting; Claude handles the conversation.
+
+### Skill Structure
+
+```
+~/.claude/commands/download-attachments.md    # Skill prompt
+~/.brix/pipelines/download-attachments.yaml   # Pipeline definition
+~/.brix/helpers/extract_urls.py               # Helper scripts
+```
+
+### Skill Prompt (`download-attachments.md`)
+
+```markdown
+Download email attachments from Outlook.
+
+Ask the user for search criteria if not provided as arguments.
+Then run:
+
+\`\`\`bash
+brix run download-attachments.yaml --query "$ARGUMENTS" --output-dir "./attachments"
+\`\`\`
+
+Show the user: number of files downloaded, file names, total size.
+If any downloads failed, list which ones and why.
+```
+
+### The Full Picture
+
+```
+User types:  /download-attachments invoices from last week
+                │
+                ▼
+Claude reads:   download-attachments.md (skill prompt)
+                │
+                ▼
+Claude runs:    brix run download-attachments.yaml \
+                  --query "invoices from last week"
+                │
+                ▼
+Brix executes:  5 steps internally (fetch → extract → download → save → report)
+                Parallel downloads, error handling, retries — all invisible to Claude
+                │
+                ▼
+Claude gets:    {"success": true, "result": {"total_files": 7, ...}}
+                │
+                ▼
+User sees:      "Downloaded 7 attachments (12.4 MB) to ./attachments/"
+```
+
+This is where Brix shines: the skill prompt is simple and readable, the pipeline handles all complexity, and Claude's context stays clean. **One tool call instead of ten.**
+
+### Building a Skill Library
+
+Over time, you build up a library of skills backed by tested, versioned pipelines:
+
+```bash
+/download-attachments    # M365 email attachments → local files
+/convert-documents       # Batch convert via MarkItDown
+/sync-workflows          # n8n workflow backup
+/deploy-stack            # Docker compose deployment pipeline
+/ingest-data             # ETL: fetch → transform → load
+```
+
+Each skill is a thin prompt layer over a Brix pipeline. The pipelines are reusable, testable, and version-controlled. The skills are discoverable via Claude Code's `/` menu.
 
 ## Pipeline Format
 
