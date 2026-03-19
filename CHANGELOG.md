@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.2] — 2026-03-19
+
+### Added
+- Dry-run: credential env-var checks (✓/NOT SET), server registration checks (D-18)
+- Dry-run: rendered parameters where possible, [depends on X.output] for cross-step refs
+- Dry-run: when-condition evaluation with current input context
+- Conditional steps: complex Jinja2 expressions fully supported ({{ input.count > 5 }}, {{ items | length > 0 }}) (D-16)
+- Explicit pipeline output field mapping with Jinja2 rendering (D-21)
+
 ## [0.4.0] — 2026-03-19
 
 ### Added

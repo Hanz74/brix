@@ -718,3 +718,177 @@ steps:
     assert result.success is False
     # The step is recorded as error
     assert result.steps["step1"].status == "error"
+
+
+# ---------------------------------------------------------------------------
+# Conditional Steps — complex Jinja2 expressions (T-BRIX-18)
+# ---------------------------------------------------------------------------
+
+
+async def test_engine_when_complex_expression_true():
+    """{{ input.count > 5 }} with count=10 → step executes."""
+    pipeline = load_pipeline("""
+name: when-complex-true
+input:
+  count:
+    type: integer
+    default: 0
+steps:
+  - id: conditional
+    type: cli
+    when: "{{ input.count > 5 }}"
+    args: ["echo", "ran"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline, user_input={"count": 10})
+
+    assert result.success is True
+    assert result.steps["conditional"].status == "ok"
+
+
+async def test_engine_when_complex_expression_false():
+    """{{ input.count > 5 }} with count=3 → step is skipped."""
+    pipeline = load_pipeline("""
+name: when-complex-false
+input:
+  count:
+    type: integer
+    default: 0
+steps:
+  - id: conditional
+    type: cli
+    when: "{{ input.count > 5 }}"
+    args: ["echo", "ran"]
+  - id: always
+    type: cli
+    args: ["echo", "always"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline, user_input={"count": 3})
+
+    assert result.success is True
+    assert result.steps["conditional"].status == "skipped"
+    assert result.steps["conditional"].reason == "condition not met"
+    assert result.steps["always"].status == "ok"
+
+
+async def test_engine_when_list_length():
+    """{{ tags | length > 0 }} evaluates list length correctly."""
+    pipeline = load_pipeline("""
+name: when-list-length
+input:
+  tags:
+    type: string
+    default: "[]"
+steps:
+  - id: process
+    type: cli
+    when: "{{ input.tags | length > 0 }}"
+    args: ["echo", "has items"]
+  - id: empty
+    type: cli
+    when: "{{ input.tags | length == 0 }}"
+    args: ["echo", "empty"]
+""")
+    engine = PipelineEngine()
+    # Pass tags as a list
+    result = await engine.run(pipeline, user_input={"tags": ["a", "b"]})
+
+    assert result.success is True
+    assert result.steps["process"].status == "ok"
+    assert result.steps["empty"].status == "skipped"
+
+
+async def test_engine_when_skipped_step_no_crash():
+    """Referencing a skipped step's output with | default() does not crash."""
+    pipeline = load_pipeline("""
+name: when-skipped-ref
+steps:
+  - id: optional
+    type: cli
+    when: "false"
+    args: ["echo", "skipped"]
+  - id: always
+    type: cli
+    args: ["echo", "{{ optional.output | default('fallback') }}"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert result.steps["optional"].status == "skipped"
+    assert result.steps["always"].status == "ok"
+    # The output of 'always' should be the fallback string
+    assert result.result == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# Pipeline output field — explicit mapping (T-BRIX-19)
+# ---------------------------------------------------------------------------
+
+
+async def test_engine_output_field_explicit():
+    """Pipeline with explicit output field renders only mapped fields."""
+    pipeline = load_pipeline("""
+name: output-explicit
+steps:
+  - id: get_name
+    type: cli
+    args: ["echo", "alice"]
+  - id: get_count
+    type: cli
+    args: ["echo", "42"]
+output:
+  name: "{{ get_name.output }}"
+  total: "{{ get_count.output }}"
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert isinstance(result.result, dict)
+    assert result.result["name"] == "alice"
+    assert result.result["total"] == 42
+
+
+async def test_engine_output_field_missing_defaults_to_last():
+    """Without output field, result equals the last step's output."""
+    pipeline = load_pipeline("""
+name: output-default
+steps:
+  - id: step_a
+    type: cli
+    args: ["echo", "first"]
+  - id: step_b
+    type: cli
+    args: ["echo", "last"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert result.result == "last"
+
+
+async def test_engine_output_field_with_default():
+    """output referencing a skipped step with | default() uses fallback."""
+    pipeline = load_pipeline("""
+name: output-with-default
+steps:
+  - id: optional
+    type: cli
+    when: "false"
+    args: ["echo", "skipped"]
+  - id: main
+    type: cli
+    args: ["echo", "done"]
+output:
+  primary: "{{ main.output }}"
+  extra: "{{ optional.output | default('none') }}"
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert result.result["primary"] == "done"
+    assert result.result["extra"] == "none"

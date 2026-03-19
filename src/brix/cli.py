@@ -118,12 +118,23 @@ def validate(pipeline_file):
 
 
 def _dry_run(pipeline, user_input: dict):
-    """Show what a pipeline run would do without executing."""
+    """Show what a pipeline run would do without executing (D-18)."""
+    import os
+
     click.echo(f"Pipeline: {pipeline.name} v{pipeline.version}", err=True)
     click.echo(f"Input: {json.dumps(user_input) if user_input else '(none)'}", err=True)
     click.echo("", err=True)
 
     loader = PipelineLoader()
+
+    # Build a partial Jinja2 context from available input (no step outputs yet)
+    # so we can render templates that only reference input.*
+    from brix.context import PipelineContext
+    ctx = PipelineContext.from_pipeline(pipeline, user_input)
+    jinja_ctx = ctx.to_jinja_context()
+
+    # Collect step IDs seen so far (to detect cross-step dependencies)
+    executed_step_ids: set[str] = set()
 
     for i, step in enumerate(pipeline.steps, 1):
         prefix = f"  Step {i}/{len(pipeline.steps)}: {step.id}"
@@ -146,28 +157,114 @@ def _dry_run(pipeline, user_input: dict):
 
         click.echo(f"{prefix} {type_info}", err=True)
 
+        # --- Render params: show rendered value or [depends on X.output] ---
+        params_to_show: list[tuple[str, str]] = []
+        raw_params = {}
+        if step.params:
+            raw_params.update(step.params)
+        # Add type-specific fields
+        if step.url:
+            raw_params["url"] = step.url
+        if step.command:
+            raw_params["command"] = step.command
+        if step.args:
+            raw_params["args"] = step.args
+        if step.foreach:
+            raw_params["foreach"] = step.foreach
+
+        for param_key, param_val in raw_params.items():
+            val_str = str(param_val)
+            if "{{" in val_str:
+                # Check if it references a step that hasn't run yet
+                depends_on = _find_step_dependencies(val_str, executed_step_ids, pipeline)
+                if depends_on:
+                    params_to_show.append((param_key, f"[depends on {depends_on}.output]"))
+                else:
+                    # Try to render with current context (input.* available)
+                    try:
+                        rendered = loader.render_value(param_val, jinja_ctx)
+                        params_to_show.append((param_key, repr(rendered)))
+                    except Exception:
+                        params_to_show.append((param_key, val_str))
+            else:
+                params_to_show.append((param_key, repr(param_val)))
+
+        for pk, pv in params_to_show:
+            click.echo(f"    {pk}: {pv}", err=True)
+
+        # --- when condition ---
+        if step.when:
+            # Try to evaluate with current context
+            depends_on_when = _find_step_dependencies(step.when, executed_step_ids, pipeline)
+            if depends_on_when:
+                click.echo(f"    when: {step.when} [depends on {depends_on_when}.output]", err=True)
+            else:
+                try:
+                    will_run = loader.evaluate_condition(step.when, jinja_ctx)
+                    status = "will run" if will_run else "will be SKIPPED"
+                    click.echo(f"    when: {step.when} → {status}", err=True)
+                except Exception:
+                    click.echo(f"    when: {step.when}", err=True)
+
         if step.foreach:
             par = "parallel" if step.parallel else "sequential"
-            click.echo(f"    foreach: {step.foreach} ({par}, concurrency: {step.concurrency})", err=True)
-        if step.when:
-            click.echo(f"    when: {step.when}", err=True)
+            click.echo(f"    foreach: ({par}, concurrency: {step.concurrency})", err=True)
         if step.on_error:
             click.echo(f"    on_error: {step.on_error}", err=True)
         if step.timeout:
             click.echo(f"    timeout: {step.timeout}", err=True)
 
-    # Summary
-    mcp_servers = {s.server for s in pipeline.steps if s.type == "mcp" and s.server}
+        executed_step_ids.add(step.id)
+
+    # --- Credential check ---
     cred_keys = list(pipeline.credentials.keys())
+    cred_status: list[tuple[str, str, bool]] = []
+    for key, cred_def in pipeline.credentials.items():
+        env_var = cred_def.env
+        is_set = bool(os.environ.get(env_var))
+        cred_status.append((key, env_var, is_set))
+
+    # --- Server check ---
+    mcp_servers = {s.server for s in pipeline.steps if s.type == "mcp" and s.server}
+    server_status: list[tuple[str, bool]] = []
+    if mcp_servers:
+        servers_path = _get_servers_path()
+        registered = _load_servers_yaml(servers_path).get("servers", {})
+        for srv in sorted(mcp_servers):
+            server_status.append((srv, srv in registered))
+
+    # --- Summary ---
     parallel_steps = sum(1 for s in pipeline.steps if s.parallel)
 
     click.echo("", err=True)
-    click.echo(f"Summary:", err=True)
+    click.echo("Summary:", err=True)
     click.echo(f"  {len(pipeline.steps)} steps, {parallel_steps} parallel", err=True)
-    if mcp_servers:
-        click.echo(f"  MCP servers: {', '.join(mcp_servers)}", err=True)
-    if cred_keys:
-        click.echo(f"  Credentials: {', '.join(cred_keys)}", err=True)
+
+    if server_status:
+        click.echo("  MCP servers:", err=True)
+        for srv, is_registered in server_status:
+            mark = "✓" if is_registered else "✗ NOT REGISTERED"
+            click.echo(f"    {mark} {srv}", err=True)
+
+    if cred_status:
+        click.echo("  Credentials:", err=True)
+        for key, env_var, is_set in cred_status:
+            mark = "✓" if is_set else "✗ NOT SET"
+            click.echo(f"    {mark} {key} (env: {env_var})", err=True)
+
+
+def _find_step_dependencies(template_str: str, executed_ids: set[str], pipeline) -> str | None:
+    """Return the first step ID whose output is referenced in a template, or None.
+
+    In dry-run we have no actual step outputs, so any reference to
+    '<step_id>.output' (or just '<step_id>' in a template) is flagged
+    as a runtime dependency.
+    """
+    all_step_ids = {s.id for s in pipeline.steps}
+    for step_id in all_step_ids:
+        if step_id in template_str:
+            return step_id
+    return None
 
 
 # --- Server Management ---

@@ -213,3 +213,157 @@ def test_cli_server_test_valid(tmp_path, monkeypatch):
     result = runner.invoke(main, ["server", "test", "m365"])
     assert result.exit_code == 0
     assert "valid" in result.output.lower() or "loaded" in result.output.lower()
+
+
+# --- Dry-Run Extended Tests (T-BRIX-17) ---
+
+
+def test_cli_dry_run_shows_credentials(monkeypatch, tmp_path):
+    """Dry-run shows credential env-var status (set vs NOT SET)."""
+    yaml_content = """
+name: cred-test
+credentials:
+  m365_token:
+    env: BRIX_M365_TOKEN
+steps:
+  - id: fetch
+    type: mcp
+    server: m365
+    tool: list-mail
+"""
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    # Ensure env var is NOT set
+    monkeypatch.delenv("BRIX_M365_TOKEN", raising=False)
+
+    runner = ClickRunner()
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        path = f.name
+    try:
+        result = runner.invoke(main, ["run", path, "--dry-run"])
+        assert result.exit_code == 0
+        # Should show credential name and env var
+        assert "BRIX_M365_TOKEN" in result.output
+        assert "m365_token" in result.output
+        # Should show NOT SET since env var is missing
+        assert "NOT SET" in result.output
+    finally:
+        os.unlink(path)
+
+
+def test_cli_dry_run_shows_credentials_set(monkeypatch, tmp_path):
+    """Dry-run shows checkmark when credential env-var IS set."""
+    yaml_content = """
+name: cred-set-test
+credentials:
+  m365_token:
+    env: BRIX_M365_TOKEN
+steps:
+  - id: fetch
+    type: mcp
+    server: m365
+    tool: list-mail
+"""
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    monkeypatch.setenv("BRIX_M365_TOKEN", "secret-value")
+
+    runner = ClickRunner()
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        path = f.name
+    try:
+        result = runner.invoke(main, ["run", path, "--dry-run"])
+        assert result.exit_code == 0
+        assert "BRIX_M365_TOKEN" in result.output
+        # Should show ✓ (check mark) since env var is set
+        assert "✓" in result.output
+    finally:
+        os.unlink(path)
+
+
+def test_cli_dry_run_shows_servers(monkeypatch, tmp_path):
+    """Dry-run shows MCP server registration status."""
+    import yaml as _yaml
+    yaml_content = """
+name: server-test
+steps:
+  - id: fetch
+    type: mcp
+    server: m365
+    tool: list-mail
+  - id: store
+    type: mcp
+    server: onedrive
+    tool: upload-file
+"""
+    # Register m365 but NOT onedrive
+    servers_config = {"servers": {"m365": {"command": "node", "args": ["/app"]}}}
+    servers_path = tmp_path / "servers.yaml"
+    servers_path.write_text(_yaml.dump(servers_config))
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: servers_path)
+
+    runner = ClickRunner()
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        path = f.name
+    try:
+        result = runner.invoke(main, ["run", path, "--dry-run"])
+        assert result.exit_code == 0
+        assert "m365" in result.output
+        assert "onedrive" in result.output
+        # m365 is registered (✓), onedrive is not (NOT REGISTERED)
+        assert "NOT REGISTERED" in result.output
+    finally:
+        os.unlink(path)
+
+
+def test_cli_dry_run_shows_depends_on(tmp_path, monkeypatch):
+    """Dry-run shows [depends on X.output] for cross-step template references."""
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    yaml_content = """
+name: depends-test
+steps:
+  - id: fetch
+    type: cli
+    args: ["echo", "data"]
+  - id: process
+    type: cli
+    args: ["echo", "{{ fetch.output }}"]
+"""
+    runner = ClickRunner()
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        path = f.name
+    try:
+        result = runner.invoke(main, ["run", path, "--dry-run"])
+        assert result.exit_code == 0
+        assert "depends on fetch.output" in result.output
+    finally:
+        os.unlink(path)
+
+
+def test_cli_dry_run_renders_input_params(tmp_path, monkeypatch):
+    """Dry-run renders params that only depend on input.* (no step references)."""
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    yaml_content = """
+name: input-render-test
+input:
+  folder:
+    type: string
+    default: Inbox
+steps:
+  - id: fetch
+    type: cli
+    args: ["echo", "{{ input.folder }}"]
+"""
+    runner = ClickRunner()
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        path = f.name
+    try:
+        result = runner.invoke(main, ["run", path, "--dry-run", "-p", "folder=Sent"])
+        assert result.exit_code == 0
+        # Rendered value should appear in output
+        assert "Sent" in result.output
+    finally:
+        os.unlink(path)

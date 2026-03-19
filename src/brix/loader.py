@@ -4,7 +4,7 @@ import ast
 import json
 
 import yaml
-from jinja2 import Undefined
+from jinja2 import ChainableUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
 from brix.models import Pipeline, Step
@@ -15,9 +15,10 @@ class PipelineLoader:
 
     def __init__(self) -> None:
         # SandboxedEnvironment prevents arbitrary code execution (D-13).
-        # Undefined variables silently become empty strings instead of raising
-        # an error — callers use | default() when they need an explicit fallback.
-        self.env = SandboxedEnvironment(undefined=Undefined)
+        # ChainableUndefined allows attribute chaining on undefined variables
+        # (e.g. {{ skipped_step.output | default([]) }}) without raising
+        # UndefinedError — callers use | default() for explicit fallbacks (D-16).
+        self.env = SandboxedEnvironment(undefined=ChainableUndefined)
 
     # ------------------------------------------------------------------
     # Loading
