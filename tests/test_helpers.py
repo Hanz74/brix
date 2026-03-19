@@ -95,3 +95,31 @@ def test_summary_report_empty():
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert output["total_files"] == 0
+
+
+def test_filter_mails_by_keywords():
+    mails = [
+        {"subject": "Rechnung März 2026", "bodyPreview": "Anbei Ihre Rechnung", "id": "1", "hasAttachments": True},
+        {"subject": "Meeting Einladung", "bodyPreview": "Bitte kommen Sie", "id": "2", "hasAttachments": True},
+        {"subject": "Invoice #123", "bodyPreview": "Please find attached", "id": "3", "hasAttachments": True},
+    ]
+    result = _run_helper("filter_mails_by_keywords.py", {"mails": mails, "keywords": "Rechnung,Invoice"})
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert len(output) == 2  # Rechnung + Invoice, not Meeting
+
+
+def test_filter_mails_no_keywords():
+    mails = [{"subject": "A", "id": "1"}, {"subject": "B", "id": "2"}]
+    result = _run_helper("filter_mails_by_keywords.py", {"mails": mails, "keywords": ""})
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert len(output) == 2  # All pass through
+
+
+def test_filter_mails_case_insensitive():
+    mails = [{"subject": "RECHNUNG", "bodyPreview": "", "id": "1"}]
+    result = _run_helper("filter_mails_by_keywords.py", {"mails": mails, "keywords": "rechnung"})
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert len(output) == 1

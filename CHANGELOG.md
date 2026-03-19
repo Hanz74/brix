@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5] — 2026-03-19
+
+### Added
+- Broad fetch strategy pipeline (download-attachments-broad)
+- Keyword filter helper for local mail filtering
+- Skill-prompt with strategy selection (targeted vs broad)
+
 ## [0.6.4] — 2026-03-19
 
 ### Added

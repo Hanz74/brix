@@ -1,0 +1,76 @@
+name: download-attachments-broad
+version: "1.0.0"
+description: "Broad fetch strategy: get many mails, filter locally by keywords. Faster for common search terms."
+
+input:
+  keywords:
+    type: str
+    default: ""
+    description: "Comma-separated keywords to filter by (e.g. 'Rechnung,Invoice')"
+  top:
+    type: int
+    default: 200
+    description: "Number of mails to fetch per batch"
+  output_dir:
+    type: str
+    default: "./attachments"
+    description: "Target directory for downloaded files"
+
+error_handling:
+  on_error: stop
+
+steps:
+  - id: fetch_mails
+    type: mcp
+    server: m365
+    tool: list-mail-messages
+    params:
+      filter: "hasAttachments eq true"
+      top: "{{ input.top }}"
+    timeout: 30s
+
+  - id: filter_mails
+    type: python
+    script: helpers/filter_mails_by_keywords.py
+    params:
+      mails: "{{ fetch_mails.output.value }}"
+      keywords: "{{ input.keywords }}"
+
+  - id: get_attachments
+    type: mcp
+    server: m365
+    tool: list-mail-attachments
+    foreach: "{{ filter_mails.output }}"
+    parallel: true
+    concurrency: 5
+    params:
+      messageId: "{{ item.id }}"
+    on_error: continue
+    timeout: 30s
+
+  - id: flatten
+    type: python
+    script: helpers/flatten_attachments.py
+    params:
+      mails: "{{ filter_mails.output }}"
+      attachment_results: "{{ get_attachments.output }}"
+
+  - id: save_files
+    type: python
+    foreach: "{{ flatten.output }}"
+    script: helpers/save_attachment.py
+    params:
+      attachment: "{{ item }}"
+      output_dir: "{{ input.output_dir }}"
+    on_error: continue
+
+  - id: report
+    type: python
+    script: helpers/summary_report.py
+    params:
+      files: "{{ save_files.output | default({}) }}"
+      converted: "{}"
+      input_query: "{{ input.keywords }}"
+
+output:
+  report: "{{ report.output }}"
