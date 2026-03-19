@@ -223,6 +223,20 @@ error_handling:
 
 Three strategies: `stop` (abort on first error), `continue` (log and move on), `retry` (with configurable backoff).
 
+When `on_error: continue` is used with `foreach`, the output includes all items with a `success` flag:
+
+```json
+{
+  "items": [
+    { "success": true, "data": { "path": "/tmp/file1.pdf" } },
+    { "success": false, "error": "404 Not Found", "input": { "url": "..." } }
+  ],
+  "summary": { "total": 3, "succeeded": 2, "failed": 1 }
+}
+```
+
+Downstream steps receive all items and can filter as needed.
+
 ### Sub-Pipelines
 
 Pipelines can call other pipelines for composition and reuse:
@@ -249,6 +263,23 @@ Brix has four runner types. Each implements the same interface: **JSON in → JS
 ### Why these four?
 
 We evaluated additional types (`transform` for JSON mapping, `db` for SQL queries, `docker` for container lifecycle) and decided against them. `python` covers transformation, `cli` covers `docker exec`, and `db` can be a Python script. Fewer types = simpler. Specialization comes when the pain arrives, not before.
+
+### Security: CLI Runner
+
+The CLI runner supports two modes — safe by default:
+
+```yaml
+# Default: args list (shell=False) — no injection possible
+- type: cli
+  args: ["markitdown", "{{ item.path }}"]
+
+# Opt-in: shell string — when piping/globbing is needed
+- type: cli
+  command: "cat {{ item.path }} | grep 'pattern'"
+  shell: true
+```
+
+User input is never processed as a Jinja2 template — only pipeline-internal references go through the template engine. This eliminates template injection by design.
 
 ## MCP Integration
 
@@ -399,15 +430,50 @@ We evaluated existing tools (as of March 2026):
 
 The gap: **multiple step types + strict JSON in/out + lightweight + Claude Code integration + MCP native support.** Nothing covers all of these.
 
+## Deployment
+
+Brix runs as a Docker container, consistent with a containerized infrastructure:
+
+```yaml
+# docker-compose.yml
+services:
+  brix:
+    build: .
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # access other containers
+      - ~/.brix:/root/.brix                         # persistent config
+    env_file: .env
+```
+
+A wrapper script at `/usr/local/bin/brix` provides transparent CLI access:
+
+```bash
+#!/bin/bash
+exec docker exec brix brix "$@"
+```
+
 ## Tech Stack
 
-- **Python 3.11+** — runtime, CLI, all runners
+- **Python 3.12** — runtime, CLI, all runners
 - **asyncio + httpx** — parallel HTTP, async subprocess
 - **Pydantic** — pipeline schemas, input/output validation
-- **Jinja2** — template references in pipeline YAML
+- **Jinja2** (`SandboxedEnvironment`) — template references in pipeline YAML
 - **PyYAML** — pipeline definition parsing
 - **Click** — CLI framework
-- **[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)** — stdio communication with MCP servers
+- **SQLite** — run history and statistics (stdlib)
+- **[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)** — stdio communication with MCP servers, built-in `ClientSessionGroup` for connection pooling
+- **Hatchling** — build system
+- **Docker** — deployment
+
+## Design Decisions
+
+21 architecture decisions are documented in [`docs/decisions.md`](docs/decisions.md), covering security (Jinja2 sandboxing, shell injection prevention), data flow contracts (partial-success schemas, skipped step handling), execution model (sub-pipeline scope, dry-run semantics), and infrastructure choices.
+
+Four expert reviews informed these decisions — all available in [`docs/`](docs/):
+- [`review-spec-alex.md`](docs/review-spec-alex.md) — Requirements review (3 critical, 7 high findings)
+- [`review-packaging-bruckner.md`](docs/review-packaging-bruckner.md) — DevOps & packaging review
+- [`research-mcp-sdk.md`](docs/research-mcp-sdk.md) — MCP Python SDK deep dive
+- [`research-claude-code-skills.md`](docs/research-claude-code-skills.md) — Claude Code slash commands research
 
 ## Status
 
