@@ -6,6 +6,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker:ro
       - ${HOME}/.brix:/root/.brix
+      - /root:/host/root                              # host filesystem access
       - ./pipelines:/app/pipelines
       - ./helpers:/app/helpers
     env_file: .env
