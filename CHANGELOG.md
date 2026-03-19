@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1] — 2026-03-19
+
+### Added
+- MCP schema caching with TTL-based invalidation
+- brix server add/list/remove/test/tools/refresh commands
+
 ## [0.3.0] — 2026-03-19
 
 ### Added

@@ -1,4 +1,4 @@
-brix==0.3.0
+brix==0.3.1
 mcp>=1.20
 httpx>=0.28
 pydantic>=2.12
