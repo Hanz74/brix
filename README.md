@@ -475,9 +475,75 @@ Four expert reviews informed these decisions — all available in [`docs/`](docs
 - [`research-mcp-sdk.md`](docs/research-mcp-sdk.md) — MCP Python SDK deep dive
 - [`research-claude-code-skills.md`](docs/research-claude-code-skills.md) — Claude Code slash commands research
 
+## Claude Code Integration
+
+Brix is designed to be discovered and used by Claude Code automatically. Two mechanisms ensure every Claude session knows about Brix:
+
+### 1. CLAUDE.md (automatic)
+
+The project's `CLAUDE.md` tells Claude that `brix` is available as a CLI tool. When working in the Brix repo (or any repo with Brix in the context), Claude will prefer `brix run` over multiple individual tool calls.
+
+### 2. Skills (slash commands)
+
+Skills live in `.claude/commands/` (project-scoped) and `~/.claude/commands/` (global). Brix ships two skills:
+
+- **`/download-attachments`** — Download email attachments from M365 Outlook via Brix pipeline
+- **`/brix-run`** — Run any Brix pipeline by name or path
+
+To make Brix available globally (all projects):
+
+```bash
+cp .claude/commands/*.md ~/.claude/commands/
+```
+
+### 3. Path Convention
+
+Brix runs in a Docker container. Host filesystem is mounted at `/host/root/`:
+
+```bash
+# Host path /root/documents → Brix path /host/root/documents
+brix run pipeline.yaml -p output_dir=/host/root/documents
+```
+
+### 4. MCP Server Registration
+
+Register MCP servers once. Claude and Brix share the same servers:
+
+```bash
+brix server add m365 \
+  --command docker \
+  --args exec --args -i --args m365 --args ms-365-mcp-server
+```
+
+## E2E Results
+
+Tested with real M365 Outlook data:
+
+```
+$ brix run download-attachments.yaml \
+    -p "query=hasAttachments eq true and contains(subject, 'Rechnung')" \
+    -p top=50 -p output_dir=/host/root/dev/attachments
+
+✓ fetch_mails:      2.9s   50 mails found
+✓ get_attachments: 73.3s   attachments fetched (parallel in v0.6.4)
+✓ flatten:          0.3s   PDF filter applied
+✓ save_files:       2.0s   files saved to host
+✓ report:           0.0s   summary generated
+
+Total: 78.8s | 6.9 MB | 56 files | 1 tool call
+Without Brix: ~164 tool calls | ~656,000 tokens
+With Brix:    1 tool call     | ~5,000 tokens
+```
+
 ## Status
 
-🚧 **Work in progress** — Architecture and spec are fully defined, implementation is next.
+**v0.6.4** — Implementation complete, E2E validated.
+
+- 274 tests passing
+- 27 tasks completed (26 epic + 1 bugfix)
+- 6 waves, 21 architecture decisions, 4 expert reviews
+- 8 integration learnings documented
+- [Detailed documentation in Outline Wiki](https://wiki.kuhlen.dev/doc/brix-D9aLp2qhE5)
 
 ## License
 
