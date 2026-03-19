@@ -9,7 +9,7 @@ RUN pip install uv
 WORKDIR /app
 
 # Copy project metadata and source
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 # Install project with dev dependencies via uv
