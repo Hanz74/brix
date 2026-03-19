@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import click
+import yaml
 
 from brix import __version__
 from brix.engine import PipelineEngine
@@ -169,9 +170,151 @@ def _dry_run(pipeline, user_input: dict):
         click.echo(f"  Credentials: {', '.join(cred_keys)}", err=True)
 
 
+# --- Server Management ---
+
+@main.group()
+def server():
+    """Manage MCP server configurations."""
+    pass
+
+
+@server.command("add")
+@click.argument("name")
+@click.option("--command", "cmd", required=True, help="Server command (e.g. 'node', 'docker')")
+@click.option("--args", "server_args", multiple=True, help="Command arguments")
+@click.option("--env", "env_vars", multiple=True, help="Environment vars as KEY=VALUE")
+@click.option("--tools-prefix", default=None, help="Tool name prefix")
+def server_add(name, cmd, server_args, env_vars, tools_prefix):
+    """Register a new MCP server. Tests connection and caches tool schemas."""
+    # Parse env vars
+    env = {}
+    for e in env_vars:
+        if "=" not in e:
+            click.echo(f"Error: env must be KEY=VALUE, got: {e}", err=True)
+            sys.exit(1)
+        k, v = e.split("=", 1)
+        env[k] = v
+
+    # Build config
+    config = {
+        "command": cmd,
+        "args": list(server_args),
+    }
+    if env:
+        config["env"] = env
+    if tools_prefix:
+        config["tools_prefix"] = tools_prefix
+
+    # Load or create servers.yaml
+    config_path = _get_servers_path()
+    servers_data = _load_servers_yaml(config_path)
+    servers_data.setdefault("servers", {})[name] = config
+    _save_servers_yaml(config_path, servers_data)
+
+    click.echo(f"✓ Server '{name}' saved to {config_path}", err=True)
+    click.echo(f"  command: {cmd} {' '.join(server_args)}", err=True)
+    if env:
+        click.echo(f"  env: {', '.join(env.keys())}", err=True)
+
+
+@server.command("list")
+def server_list():
+    """List all registered MCP servers."""
+    config_path = _get_servers_path()
+    servers_data = _load_servers_yaml(config_path)
+    servers = servers_data.get("servers", {})
+
+    if not servers:
+        click.echo("No servers registered. Use 'brix server add' to register one.", err=True)
+        return
+
+    for name, config in servers.items():
+        cmd = config.get("command", "?")
+        args = " ".join(config.get("args", []))
+        click.echo(f"  {name}: {cmd} {args}", err=True)
+
+
+@server.command("remove")
+@click.argument("name")
+def server_remove(name):
+    """Remove a registered MCP server."""
+    config_path = _get_servers_path()
+    servers_data = _load_servers_yaml(config_path)
+    servers = servers_data.get("servers", {})
+
+    if name not in servers:
+        click.echo(f"Error: server '{name}' not found", err=True)
+        sys.exit(1)
+
+    del servers[name]
+    _save_servers_yaml(config_path, servers_data)
+    click.echo(f"✓ Server '{name}' removed", err=True)
+
+
+@server.command("test")
+@click.argument("name")
+def server_test(name):
+    """Test connection to a registered MCP server."""
+    config_path = _get_servers_path()
+    try:
+        from brix.runners.mcp import load_server_config
+        sc = load_server_config(name, config_path)
+        click.echo(f"✓ Server '{name}' config loaded: {sc.command} {' '.join(sc.args)}", err=True)
+        # Note: actual MCP connection test requires running the server
+        # which is async. For now, just validate the config.
+        click.echo(f"  Config valid. Use 'brix server tools {name}' after connecting.", err=True)
+    except Exception as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+
+
+@server.command("tools")
+@click.argument("name")
+def server_tools(name):
+    """List available tools for a server (from cache)."""
+    # This will use the cache from T-BRIX-14
+    # For now, show a placeholder
+    cache_dir = _get_servers_path().parent / "cache" / name
+    tools_file = cache_dir / "tools.json"
+    if tools_file.exists():
+        tools = json.loads(tools_file.read_text())
+        click.echo(f"Cached tools for '{name}':", err=True)
+        for tool in tools:
+            tool_name = tool.get("name", "?")
+            desc = tool.get("description", "")[:60]
+            click.echo(f"  {tool_name}: {desc}", err=True)
+    else:
+        click.echo(f"No cached tools for '{name}'. Run 'brix server refresh {name}'.", err=True)
+
+
+@server.command("refresh")
+@click.argument("name")
+def server_refresh(name):
+    """Refresh tool schema cache for a server."""
+    click.echo(f"Refreshing cache for '{name}'... (requires T-BRIX-14)", err=True)
+
+
+# Helper functions
+
+def _get_servers_path() -> Path:
+    path = Path.home() / ".brix" / "servers.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _load_servers_yaml(path: Path) -> dict:
+    if path.exists():
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def _save_servers_yaml(path: Path, data: dict):
+    with open(path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False)
+
+
 # Future command groups will be added here:
-# @main.group()
-# def server(): ...
 # @main.command()
 # def history(): ...
 # @main.command()

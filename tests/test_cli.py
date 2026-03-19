@@ -137,3 +137,79 @@ steps:
         assert "process" in result.output
     finally:
         os.unlink(path)
+
+
+# --- Server Management Tests ---
+
+def test_cli_server_add(tmp_path, monkeypatch):
+    """brix server add registers a server."""
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    runner = ClickRunner()
+    result = runner.invoke(main, [
+        "server", "add", "m365",
+        "--command", "node",
+        "--args", "/app/index.js",
+        "--env", "TOKEN=abc123",
+    ])
+    assert result.exit_code == 0
+    assert "m365" in result.output
+
+    # Verify file was created
+    import yaml
+    data = yaml.safe_load((tmp_path / "servers.yaml").read_text())
+    assert "m365" in data["servers"]
+    assert data["servers"]["m365"]["command"] == "node"
+
+
+def test_cli_server_list(tmp_path, monkeypatch):
+    """brix server list shows registered servers."""
+    # Pre-create config
+    import yaml
+    config = {"servers": {"m365": {"command": "node", "args": ["/app"]}}}
+    (tmp_path / "servers.yaml").write_text(yaml.dump(config))
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+
+    runner = ClickRunner()
+    result = runner.invoke(main, ["server", "list"])
+    assert result.exit_code == 0
+    assert "m365" in result.output
+
+
+def test_cli_server_list_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    runner = ClickRunner()
+    result = runner.invoke(main, ["server", "list"])
+    assert "No servers" in result.output
+
+
+def test_cli_server_remove(tmp_path, monkeypatch):
+    import yaml
+    config = {"servers": {"m365": {"command": "node"}}}
+    (tmp_path / "servers.yaml").write_text(yaml.dump(config))
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+
+    runner = ClickRunner()
+    result = runner.invoke(main, ["server", "remove", "m365"])
+    assert result.exit_code == 0
+    assert "removed" in result.output
+
+
+def test_cli_server_remove_nonexistent(tmp_path, monkeypatch):
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    runner = ClickRunner()
+    result = runner.invoke(main, ["server", "remove", "ghost"])
+    assert result.exit_code != 0
+
+
+def test_cli_server_test_valid(tmp_path, monkeypatch):
+    import yaml
+    config = {"servers": {"m365": {"command": "node", "args": ["/app"]}}}
+    (tmp_path / "servers.yaml").write_text(yaml.dump(config))
+    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
+    # Also patch load_server_config to use our path
+    monkeypatch.setattr("brix.runners.mcp.SERVERS_CONFIG_PATH", tmp_path / "servers.yaml")
+
+    runner = ClickRunner()
+    result = runner.invoke(main, ["server", "test", "m365"])
+    assert result.exit_code == 0
+    assert "valid" in result.output.lower() or "loaded" in result.output.lower()
