@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brix"
+version = "0.1.0"
+description = "Generic process orchestrator for Claude Code"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.20",
+    "httpx>=0.28",
+    "pydantic>=2.12",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+    "click>=8.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+brix = "brix.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brix"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
