@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2] — 2026-03-19
+
+### Added
+- Click CLI with `brix run`, `brix validate`, `--dry-run`
+- Parameter passing via `-p key=value`
+- Pipeline execution with JSON output on stdout
+- Dry-run mode showing step details
+
 ## [0.1.1] — 2026-03-19
 
 ### Changed
