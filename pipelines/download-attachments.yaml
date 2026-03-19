@@ -1,0 +1,90 @@
+name: download-attachments
+version: "1.0.0"
+description: Download email attachments from M365 Outlook
+
+input:
+  query:
+    type: str
+    default: "hasAttachments:true"
+    description: "Mail search filter"
+  folder:
+    type: str
+    default: "Inbox"
+    description: "Mail folder to search"
+  output_dir:
+    type: str
+    default: "./attachments"
+    description: "Target directory for downloaded files"
+  convert:
+    type: bool
+    default: false
+    description: "Convert attachments via MarkItDown"
+
+credentials:
+  m365_token:
+    env: "BRIX_CRED_M365_TOKEN"
+
+error_handling:
+  on_error: stop
+  retry:
+    max: 3
+    backoff: exponential
+
+steps:
+  - id: fetch_mails
+    type: mcp
+    server: m365
+    tool: list-mail-messages
+    params:
+      folder: "{{ input.folder }}"
+      filter: "{{ input.query }}"
+
+  - id: extract_attachments
+    type: python
+    script: helpers/extract_attachment_urls.py
+    params:
+      messages: "{{ fetch_mails.output }}"
+
+  - id: download
+    type: http
+    foreach: "{{ extract_attachments.output }}"
+    parallel: true
+    concurrency: 5
+    url: "{{ item.download_url }}"
+    headers:
+      Authorization: "Bearer {{ credentials.m365_token }}"
+    on_error: continue
+
+  - id: save_files
+    type: python
+    foreach: "{{ download.output.items }}"
+    parallel: true
+    script: helpers/structured_save.py
+    params:
+      content: "{{ item.data }}"
+      metadata: "{{ item }}"
+      output_dir: "{{ input.output_dir }}"
+    when: "{{ item.success }}"
+
+  - id: convert
+    when: "{{ input.convert }}"
+    type: cli
+    foreach: "{{ save_files.output.items }}"
+    parallel: true
+    concurrency: 3
+    args: ["docker", "exec", "markitdown-mcp", "markitdown", "{{ item.data.path }}"]
+    timeout: 30s
+    on_error: continue
+
+  - id: report
+    type: python
+    script: helpers/summary_report.py
+    params:
+      files: "{{ save_files.output | default({}) }}"
+      converted: "{{ convert.output | default({}) }}"
+      input_query: "{{ input.query }}"
+
+output:
+  files: "{{ save_files.output | default({}) }}"
+  converted: "{{ convert.output | default({}) }}"
+  report: "{{ report.output }}"

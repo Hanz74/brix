@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0] — 2026-03-19
+
+### Added
+- First complete pipeline: /download-attachments
+- Helper scripts: extract URLs, structured save, summary report
+- Test fixture with mock M365 data
+
 ## [0.5.2] — 2026-03-19
 
 ### Added
