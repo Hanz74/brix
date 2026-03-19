@@ -6,25 +6,73 @@ Brix combines modular building blocks (Python, HTTP, CLI, MCP) into pipelines wi
 
 ## The Problem
 
-AI coding assistants like Claude Code are powerful — but they're inefficient at multi-step workflows. Downloading 10 email attachments means 10 sequential tool calls. Each tool call sends the **entire conversation context** back and forth. That's:
+AI coding assistants like Claude Code are powerful — but they're wasteful at multi-step workflows. Consider a real task: **"Download the last 50 invoice PDFs from my Outlook."**
 
-- 10 requests, each carrying the full context
-- 10 responses, each added to the growing context
-- Massive token consumption for what is essentially a batch job
+Without Brix, Claude does this:
 
-The same applies to any multi-step process: fetch data from an API, transform it, save files, convert formats, generate reports. Each step is a separate tool call, and the token cost scales linearly.
+```
+1.  MCP: list-mail-messages (filter=Rechnung)          →  wait, context grows
+2.  MCP: list-mail-attachments (mail #1)                →  wait, context grows
+3.  MCP: list-mail-attachments (mail #2)                →  wait, context grows
+    ... 48 more times ...
+50. MCP: list-mail-attachments (mail #50)               →  wait, context grows
+51. MCP: get-mail-attachment (attachment #1)             →  wait, context grows
+    ... for every attachment ...
+    Python: save file, generate report
+```
+
+That's **~164 tool calls**. Each one sends the entire conversation context back and forth. At ~4,000 tokens per round-trip, that's **~656,000 tokens** consumed — for what is essentially a batch job.
 
 ## The Solution
 
-Brix wraps multi-step workflows into a single call:
+With Brix, Claude does this:
 
 ```bash
-# Instead of 10 sequential tool calls:
-brix run download-attachments.yaml --query "invoice"
-# → 1 bash call. Everything handled internally. JSON result on stdout.
+brix run download-attachments-broad.yaml \
+  -p keywords="Rechnung,Invoice" -p top=200 \
+  -p output_dir=/host/root/dev/invoices
 ```
 
-Brix is a **Python runtime** that Claude invokes via a single Bash command. It reads a pipeline definition (YAML), executes all steps internally — parallel where possible — and returns a compact JSON result. Claude sees one tool call and one result. The token savings are proportional to the number of steps avoided.
+**One call. 6.7 seconds. 79 PDFs. 17 MB on disk.**
+
+### Real-world performance (measured)
+
+We tested two strategies against a real Microsoft 365 mailbox:
+
+| Strategy | What it does | API calls | Time | Result |
+|----------|-------------|-----------|------|--------|
+| **Without Brix** | Claude makes each call individually | ~164 | ~10 min+ | Fragile, context overflow risk |
+| **Targeted** | OData filter on server, sequential attachment fetch | 1 + 50 | 78s | Works, but slow |
+| **Targeted + parallel** | Same, but parallel attachment fetching | 1 + 10 batches | ~15s | Better |
+| **Broad (recommended)** | Fetch 200 mails, filter locally, parallel attachments | 1 + 5 | **6.7s** | 11x faster than targeted |
+
+Token comparison:
+
+| | Tool calls | Tokens consumed |
+|---|-----------|----------------|
+| Without Brix | ~164 | ~656,000 |
+| With Brix | **1** | **~5,000** |
+| **Savings** | **99.4%** | **99.2%** |
+
+The broad strategy is fastest because it avoids the N+1 query problem: instead of asking the server to filter (which still requires one attachment-listing call per mail), it fetches many mails at once, filters locally in milliseconds, and only makes attachment calls for actual matches.
+
+### Before and after
+
+**Before (Claude alone):**
+- 10+ minutes of sequential tool calls
+- Context window fills up, risk of overflow
+- No parallelization possible
+- No retry/error handling
+- Results lost if session disconnects
+
+**After (Claude + Brix):**
+- 6.7 seconds, one command
+- Parallel downloads (concurrency: 5)
+- Automatic retry with exponential backoff
+- PDF-only filtering, structured filenames
+- Files on host disk, JSON report for Claude
+
+Brix is a **Python runtime** that Claude invokes via a single Bash command. It reads a pipeline definition (YAML), executes all steps internally — parallel where possible — and returns a compact JSON result. Claude sees one tool call and one result.
 
 ## How It Works
 
