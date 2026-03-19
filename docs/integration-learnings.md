@@ -84,6 +84,78 @@ Claude → brix run → MCP Runner → docker exec -i m365 → ms-365-mcp-server
 
 ---
 
+## 6. Host Filesystem Access: /host/root prefix
+
+**Problem:** Pipeline saves attachments to `/tmp/brix-attachments/` — but that's inside the container. The user wants files at `/root/dev/markdown-tests/brix/` on the host.
+
+**Intent:** Brix is a system tool. Its output should land where the user needs it — on the host filesystem, not hidden inside a container. The user should be able to specify any host path as output_dir.
+
+**Solution:**
+```yaml
+# docker-compose.yml
+volumes:
+  - /root:/host/root  # host /root → container /host/root
+```
+
+Pipeline parameter uses the container path:
+```bash
+brix run pipeline.yaml -p output_dir=/host/root/dev/markdown-tests/brix
+```
+
+Files appear at `/root/dev/markdown-tests/brix/` on the host.
+
+**Convention:** `/host/root/...` in Brix = `/root/...` on host. This prefix is the cost of containerization — but it's predictable and consistent.
+
+**For users:** Mount the host directories you need into the Brix container. Use `/host/<path>` as the prefix in pipeline parameters. Files written there appear on the host immediately.
+
+---
+
+## 7. Jinja2 Dict Rendering Bug (v0.6.3 fix)
+
+**Problem:** Step A outputs `{"value": [...]}`. Step B references `{{ A.output }}`. Jinja2 renders this as Python repr: `{'value': [...]}` (single quotes) — not valid JSON (`{"value": [...]}`). Every subsequent step that tries to parse this as JSON fails silently or gets garbage data.
+
+**Intent:** Data flow between steps must be lossless. If step A produces a dict, step B must receive an identical dict — not a mangled string representation.
+
+**Root cause:** Jinja2's default string coercion calls Python's `str()` / `repr()` on objects, which uses single quotes for dicts. The loader's `render_value` tried `json.loads` on the result — which fails for Python repr.
+
+**Fix (v0.6.3):** Added `ast.literal_eval` as fallback in `render_value`. Python repr strings like `{'key': 'val'}` are safely parsed back to dicts. Also added `tojson` filter for explicit JSON rendering: `{{ step.output | tojson }}`.
+
+**Impact:** This bug affected EVERY pipeline where a step output (dict or list) was referenced by a subsequent step. It was invisible in tests because test data was simple strings — only surfaced with real M365 API responses.
+
+**For users:** If you see steps receiving empty or garbled data, this was likely the cause. Upgrade to v0.6.3+. Use `| tojson` filter when you need guaranteed JSON strings.
+
+---
+
+## 8. Large Payload: stdin vs argv (v0.6.3 fix)
+
+**Problem:** Python runner passes params via `sys.argv[1]`. OS has a limit (~128KB on Linux). Real M365 mail responses easily exceed this — `Argument list too long` error.
+
+**Intent:** Brix should handle any payload size between steps, not just small test data.
+
+**Fix:** Python runner detects params >100KB and switches to stdin:
+```python
+if len(params_json) > 100_000:
+    # Pass via stdin instead of argv
+    proc = await asyncio.create_subprocess_exec(
+        "python3", script,
+        stdin=asyncio.subprocess.PIPE, ...
+    )
+    await proc.communicate(input=params_json.encode())
+```
+
+Helper scripts read from `sys.argv[1]` first, fall back to `sys.stdin.read()`.
+
+**For users:** Your helper scripts should support both input methods:
+```python
+if len(sys.argv) > 1:
+    params = json.loads(sys.argv[1])
+elif not sys.stdin.isatty():
+    raw = sys.stdin.read().strip()
+    params = json.loads(raw) if raw else {}
+```
+
+---
+
 ## General Principle
 
 Brix integrates with the existing system rather than creating its own isolated environment. This means:
