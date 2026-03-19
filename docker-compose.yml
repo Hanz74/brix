@@ -1,0 +1,17 @@
+services:
+  brix:
+    build: .
+    container_name: brix
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.brix:/root/.brix
+      - ./pipelines:/app/pipelines
+      - ./helpers:/app/helpers
+    env_file: .env
+    networks:
+      - shared-network
+    restart: unless-stopped
+
+networks:
+  shared-network:
+    external: true
