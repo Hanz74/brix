@@ -110,3 +110,55 @@ async def test_cli_runner_no_args_no_command():
     assert result["success"] is False
     assert "args" in result["error"] or "command" in result["error"]
     assert result["duration"] == 0.0
+
+
+from brix.runners.python import PythonRunner
+
+# --- PythonRunner Tests ---
+
+
+async def test_python_runner_echo_params():
+    runner = PythonRunner()
+    step = _Step(script="tests/helpers/echo_params.py", params={"key": "value"})
+    result = await runner.execute(step, context=None)
+    assert result["success"] is True
+    assert result["data"]["received"] == {"key": "value"}
+
+
+async def test_python_runner_no_params():
+    runner = PythonRunner()
+    step = _Step(script="tests/helpers/echo_params.py", params={})
+    result = await runner.execute(step, context=None)
+    assert result["success"] is True
+
+
+async def test_python_runner_fail_script():
+    runner = PythonRunner()
+    step = _Step(script="tests/helpers/fail_script.py")
+    result = await runner.execute(step, context=None)
+    assert result["success"] is False
+    assert "wrong" in result["error"]
+
+
+async def test_python_runner_script_not_found():
+    runner = PythonRunner()
+    step = _Step(script="nonexistent_script.py")
+    result = await runner.execute(step, context=None)
+    assert result["success"] is False
+    assert "not found" in result["error"].lower() or "No such file" in result["error"]
+
+
+async def test_python_runner_timeout():
+    runner = PythonRunner()
+    step = _Step(script="tests/helpers/slow_script.py", timeout="1s")
+    result = await runner.execute(step, context=None)
+    assert result["success"] is False
+    assert "Timeout" in result["error"]
+
+
+async def test_python_runner_no_script():
+    runner = PythonRunner()
+    step = _Step()  # no script
+    result = await runner.execute(step, context=None)
+    assert result["success"] is False
+    assert "script" in result["error"].lower()

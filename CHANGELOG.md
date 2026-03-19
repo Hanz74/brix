@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.0] — 2026-03-19
+
+### Added
+- Python runner: script execution via subprocess (D-19)
+
 ## [0.1.2] — 2026-03-19
 
 ### Added
