@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.2] — 2026-03-19
+
+### Added
+- Testing framework: mock fixtures, assertions, brix test command
+
 ## [0.5.0] — 2026-03-19
 
 ### Added

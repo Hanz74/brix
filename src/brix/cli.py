@@ -427,6 +427,56 @@ def history(limit):
         click.echo(f"  {status} {run['run_id']:<20} {run['pipeline']:<25} {dur}", err=True)
 
 
+@main.command("test")
+@click.argument("pipeline_file", type=click.Path(exists=True))
+@click.option("--fixture", "-f", type=click.Path(exists=True), help="Test fixture YAML file")
+def test_pipeline(pipeline_file, fixture):
+    """Run pipeline tests with mock data."""
+    import asyncio
+    from brix.testing import PipelineTestRunner, TestFixture
+
+    if fixture:
+        fx = TestFixture.load(fixture)
+    else:
+        # Auto-discover: tests/<pipeline-name>.test.yaml
+        pipeline_name = Path(pipeline_file).stem
+        auto_fixture = Path("tests") / f"{pipeline_name}.test.yaml"
+        if auto_fixture.exists():
+            fx = TestFixture.load(str(auto_fixture))
+        else:
+            click.echo(f"No fixture found. Create {auto_fixture} or use --fixture.", err=True)
+            sys.exit(1)
+
+    # Override pipeline path if relative
+    if not Path(fx.pipeline_path).is_absolute():
+        fx.pipeline_path = pipeline_file
+
+    runner = PipelineTestRunner()
+    result = asyncio.run(runner.run_test(fx))
+
+    # Display results
+    summary = result["summary"]
+    click.echo(f"\nTest: {fx.description or pipeline_file}", err=True)
+    for step_id, status in result["run_result"].steps.items():
+        icon = "✓" if status.status == "ok" else ("○" if status.status == "skipped" else "✗")
+        click.echo(f"  {icon} {step_id}: {status.status}", err=True)
+
+    if result["assertions"]:
+        click.echo("", err=True)
+        for ar in result["assertions"]:
+            icon = "✓" if ar.passed else "✗"
+            click.echo(f"  {icon} assertion: {ar.assertion} ({ar.message})", err=True)
+
+    click.echo(
+        f"\n{summary['steps_passed']}/{summary['steps_total']} steps, "
+        f"{summary['assertions_passed']}/{summary['assertions_total']} assertions",
+        err=True,
+    )
+
+    if not result["success"]:
+        sys.exit(1)
+
+
 @main.command()
 @click.argument("pipeline_name", required=False)
 def stats(pipeline_name):
