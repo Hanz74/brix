@@ -751,12 +751,15 @@ With Brix:    1 tool call     | ~5,000 tokens
 
 ## Status
 
-**v0.6.4** — Implementation complete, E2E validated.
+**v2.6.2** — MCP Server, REST API, Webhooks, Cron — all implemented and tested.
 
-- 274 tests passing
-- 27 tasks completed (26 epic + 1 bugfix)
-- 6 waves, 21 architecture decisions, 4 expert reviews
-- 12 integration learnings documented
+- 589 tests passing
+- 45 tasks completed (27 v1 + 18 v2)
+- 14 MCP tools + dynamic `pipeline__*` tools
+- 10 built-in bricks + MCP auto-discovery
+- 5 trigger types (MCP stdio, MCP HTTP, REST API, Webhook, Cron)
+- 5 pipeline templates
+- 7 expert reviews, 12 integration learnings
 - All architecture decisions and reviews in [`docs/`](docs/)
 
 ## License
