@@ -15,6 +15,7 @@ from brix.runners.mcp import McpRunner
 from brix.runners.pipeline import PipelineRunner
 from brix.runners.filter import FilterRunner
 from brix.runners.transform import TransformRunner
+from brix.progress import ProgressReporter
 
 
 class PipelineEngine:
@@ -22,6 +23,7 @@ class PipelineEngine:
 
     def __init__(self):
         self.loader = PipelineLoader()
+        self.progress = ProgressReporter()
         pipeline_runner = PipelineRunner()
         pipeline_runner.set_engine(self)
         self._runners: dict[str, BaseRunner] = {
@@ -53,12 +55,14 @@ class PipelineEngine:
         # Save run metadata
         context.save_run_metadata(pipeline.name, "running")
 
+        self.progress.pipeline_start(pipeline.name, len(pipeline.steps))
+
         for step in pipeline.steps:
             # Resume: skip completed steps
             if context.is_step_completed(step.id):
                 step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
                 last_output = context.get_output(step.id)
-                print(f"↩ {step.id}: resumed (cached)", file=sys.stderr)
+                self.progress.step_resumed(step.id)
                 continue
 
             # Evaluate when condition
@@ -69,6 +73,7 @@ class PipelineEngine:
                     step_statuses[step.id] = StepStatus(
                         status="skipped", duration=0.0, reason="condition not met"
                     )
+                    self.progress.step_skipped(step.id)
                     continue
 
             # Get runner
@@ -77,7 +82,8 @@ class PipelineEngine:
                 step_statuses[step.id] = StepStatus(
                     status="error", duration=0.0, errors=1
                 )
-                print(f"✗ {step.id}: no runner registered for type '{step.type}'", file=sys.stderr)
+                self.progress.step_start(step.id, step.type)
+                self.progress.step_error(step.id, f"no runner registered for type '{step.type}'")
                 effective_on_error = step.on_error or pipeline.error_handling.on_error
                 if effective_on_error == "stop":
                     return RunResult(
@@ -111,10 +117,12 @@ class PipelineEngine:
                         items=summary.get("total"),
                         errors=summary.get("failed") or None,
                     )
-                    print(
-                        f"✓ {step.id}: ok ({step_duration:.1f}s) "
-                        f"[{summary.get('succeeded', 0)}/{summary.get('total', 0)} items]",
-                        file=sys.stderr,
+                    self.progress.foreach_done(
+                        step.id,
+                        summary.get("total", 0),
+                        summary.get("succeeded", 0),
+                        summary.get("failed", 0),
+                        step_duration,
                     )
                 else:
                     summary = foreach_result.get("summary", {})
@@ -123,10 +131,11 @@ class PipelineEngine:
                         duration=step_duration,
                         errors=summary.get("failed", 1),
                     )
-                    print(
-                        f"✗ {step.id}: foreach failed "
-                        f"({summary.get('failed', '?')} of {summary.get('total', '?')} items failed)",
-                        file=sys.stderr,
+                    self.progress.step_start(step.id, step.type)
+                    self.progress.step_error(
+                        step.id,
+                        f"foreach failed ({summary.get('failed', '?')} of {summary.get('total', '?')} items failed)",
+                        step_duration,
                     )
                     effective_on_error = step.on_error or pipeline.error_handling.on_error
                     if effective_on_error == "stop":
@@ -147,6 +156,7 @@ class PipelineEngine:
             # Create a rendered step-like object for the runner
             rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
 
+            self.progress.step_start(step.id, step.type)
             step_start = time.monotonic()
             result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
             step_duration = time.monotonic() - step_start
@@ -159,12 +169,12 @@ class PipelineEngine:
                     duration=step_duration,
                     items=result.get("items_count"),
                 )
-                print(f"✓ {step.id}: ok ({step_duration:.1f}s)", file=sys.stderr)
+                self.progress.step_ok(step.id, step_duration, result.get("items_count"))
             else:
                 step_statuses[step.id] = StepStatus(
                     status="error", duration=step_duration, errors=1
                 )
-                print(f"✗ {step.id}: {result.get('error', 'unknown error')}", file=sys.stderr)
+                self.progress.step_error(step.id, result.get("error", "unknown error"), step_duration)
 
                 effective_on_error = step.on_error or pipeline.error_handling.on_error
                 if effective_on_error == "stop":
@@ -189,6 +199,8 @@ class PipelineEngine:
         context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
         if all_ok:
             context.cleanup(keep=keep_workdir)
+
+        self.progress.pipeline_done(pipeline.name, all_ok, total_duration, len(pipeline.steps))
 
         history.record_finish(
             context.run_id, all_ok, total_duration,

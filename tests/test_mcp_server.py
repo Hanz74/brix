@@ -29,7 +29,7 @@ from brix.mcp_server import (
 )
 
 
-EXPECTED_TOOL_COUNT = 13
+EXPECTED_TOOL_COUNT = 14
 
 EXPECTED_TOOL_NAMES = {
     "brix__get_tips",
@@ -45,6 +45,7 @@ EXPECTED_TOOL_NAMES = {
     "brix__get_run_status",
     "brix__get_run_history",
     "brix__list_pipelines",
+    "brix__get_template",
 }
 
 
