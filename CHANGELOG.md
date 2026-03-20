@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0] — 2026-03-20
+
+### Added
+- Brix v2: Brick Schema System (Pydantic → JSON Schema)
+- 10 built-in brick type definitions with agent-optimized descriptions
+- BrickSchema with when_to_use field for AI agent discovery
+
 ## [0.6.5] — 2026-03-19
 
 ### Added
