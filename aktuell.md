@@ -1,40 +1,90 @@
 # Brix — Aktueller Stand
 
-**Datum:** 2026-03-19
-**Version:** 0.6.4
-**Status:** Implementation komplett, E2E validiert
+**Datum:** 2026-03-20
+**Version:** v1 = 0.6.5 (produktiv), v2 = geplant (2.0.0)
 
 ---
 
-## Was wurde gemacht (diese Session)
+## v1 — FERTIG und produktiv
 
-### Implementation: 6 Waves, 27 Tasks, 274 Tests
-- Wave 1 (v0.1.x): Docker, Struktur, Models, Loader, Engine, CLI Runner, Click CLI
-- Wave 2 (v0.2.x): Python Runner, HTTP Runner, foreach+parallel, Retry
-- Wave 3 (v0.3.x): MCP Runner, Server Management, Schema Caching
-- Wave 4 (v0.4.x): Sub-Pipelines, Workdir+Resume, Dry-Run, Conditions, Output-Feld
-- Wave 5 (v0.5.x): SQLite History, Testing Framework, Validation, Discovery
-- Wave 6 (v0.6.x): download-attachments Pipeline, Skill Migration, Cleanup
+### Metriken
+- **Version:** 0.6.5
+- **Tests:** 277 (alle grün)
+- **Tasks:** 27 erledigt (E-BRIX-CORE)
+- **Pipelines:** 3 (download-attachments, download-attachments-broad, convert-folder)
+- **Helpers:** 8 Python-Scripts
+- **Integration Learnings:** 12 dokumentiert
+- **Experten-Reviews:** 5 (Alex, Bruckner, MCP SDK, Skills, Strategy)
 
-### E2E Validierung
-- 50 Rechnungs-PDFs aus M365 Outlook heruntergeladen
-- 6.9 MB, 78 Sekunden, 1 Tool-Call (statt ~164)
+### E2E validiert
+- 79 Rechnungs-PDFs aus M365 Outlook (17 MB, 45s, 3 Calls)
+- 80 PDFs → Markdown konvertiert (63s, 1 Call)
 - Token-Einsparung: ~99%
 
-### Bugs gefunden und gefixt (v0.6.3-0.6.4)
-- Jinja2 Dict-Rendering: repr statt JSON (betraf ALLE Pipelines)
-- Große Payloads: stdin statt argv bei >100KB
-- PDF-Filter: nur .pdf Attachments durchlassen
-- Parallel Attachments: concurrency 5 für Speedup
+### Container läuft
+```bash
+brix --version          # 0.6.5
+brix list pipelines     # 3 Pipelines
+brix server list        # m365 registriert
+```
 
-### 5 Experten-Reviews
-1. Alex (Spec-Wächter): 3 CRITICAL, 7 HIGH → alle adressiert
-2. Prof. Bruckner (DevOps): Docker, Hatchling, Click, SQLite
-3. MCP SDK Recherche: ClientSessionGroup, Error-Ebenen
-4. Skills Recherche: Frontmatter, $ARGUMENTS, allowed-tools
-5. Alex (Strategy): Kein Loop/Until in Engine, Claude entscheidet Strategie
+---
 
-### 21 Architektur-Entscheidungen + 8 Integration Learnings
+## v2 — GEPLANT (Epic E-BRIX-V2)
+
+### Vision
+Brix wird vom CLI-Tool zum **MCP Server**. Jeder MCP-Client kann Brix nutzen (Claude Code, Claude Desktop, Cursor, n8n, Custom). Plus REST API für Cron/Webhooks.
+
+### 18 Tasks, 7 Waves
+
+```
+Wave 1 (v2.0.x): Schema-System + Brick Registry + Filter/Transform
+  T-BRIX-V2-01  Brick Schema System (Pydantic → JSON Schema)
+  T-BRIX-V2-02  Brick Registry (Built-in + MCP Auto-Discovery)
+  T-BRIX-V2-03  Filter + Transform Bricks
+
+Wave 2 (v2.1.x): MCP Server + Core Tools
+  T-BRIX-V2-04  MCP Server Grundgerüst (stdio)
+  T-BRIX-V2-05  Discovery Tools (get_tips, list/search_bricks, get_schema)
+  T-BRIX-V2-06  Builder Tools (create/get/add/remove/validate pipeline)
+  T-BRIX-V2-07  Execution Tools (run, status, history + Dual-Layer Errors)
+
+Wave 3 (v2.2.x): Pipeline Store + Auto-Exposure
+  T-BRIX-V2-08  Pipeline Store (save/load/list/version)
+  T-BRIX-V2-09  Pipeline Auto-Exposure als pipeline__<name> Tools
+
+Wave 4 (v2.3.x): REST API + Triggers
+  T-BRIX-V2-10  REST API (Run-Only HTTP Endpoint)
+  T-BRIX-V2-11  Webhook + Cron Trigger
+
+Wave 5 (v2.4.x): HTTP Transport + Connection
+  T-BRIX-V2-12  MCP HTTP/SSE Transport
+  T-BRIX-V2-13  Connection Pooling + Reconnect
+
+Wave 6 (v2.5.x): Templates + Progress
+  T-BRIX-V2-14  Pipeline Templates (get_template)
+  T-BRIX-V2-15  Progress Streaming + Structured Logging
+
+Wave 7 (v2.6.x): Security + E2E
+  T-BRIX-V2-16  Security Hardening (Allowlists, shell=False)
+  T-BRIX-V2-17  v1 Backward Compatibility
+  T-BRIX-V2-18  E2E Test (MCP + REST + Cron)
+```
+
+### v2 Experten-Reviews (7 total)
+1. Alex + Flowstein: Schema-System, n8n-Abgrenzung, Scope
+2. Lisa (DX): Pipeline in 2 Calls, get_template, search_bricks, Dual-Layer Errors
+3. Bruckner (DevOps): stdio first, Lazy Connection Pooling, Memory 512M
+4. SecOps: shell=False, no inline eval, Allowlists, API-Key
+5. Markt-Recherche: MCPStack, mcp-agent, n8n — keiner füllt die Lücke
+
+### Killer-Features v2
+- **pipeline__<name>**: Gespeicherte Pipelines werden automatisch MCP-Tools
+- **MCP Auto-Discovery**: MCP-Server-Tools werden automatisch Bricks
+- **REST API**: Pipelines via curl/cron/n8n/webhook auslösbar
+- **get_tips**: Claude weiß nach Session-Start sofort alles über Brix
+
+### Inbox: leer (alle 7 Items resolved/dismissed)
 
 ---
 
@@ -42,56 +92,16 @@
 
 ```
 brix/
-├── CLAUDE.md                      # Claude-Instruktionen (aktuell!)
-├── README.md                      # Öffentliche Doku (englisch)
-├── Dockerfile                     # Python 3.12-slim + uv
-├── docker-compose.yml             # Docker Socket + Host-Mount
-├── .env.example
-├── pyproject.toml                 # v0.6.4, Hatchling
-├── CHANGELOG.md
-├── .claude/commands/              # Skills (projektspezifisch)
-│   ├── download-attachments.md
-│   └── brix-run.md
-├── src/brix/
-│   ├── cli.py                     # Click CLI (run, validate, server, history, stats, test, clean)
-│   ├── engine.py                  # Pipeline Engine (foreach, parallel, retry, resume)
-│   ├── loader.py                  # YAML + Jinja2 SandboxedEnvironment
-│   ├── context.py                 # PipelineContext + Workdir
-│   ├── models.py                  # 15 Pydantic Models
-│   ├── history.py                 # SQLite Run History
-│   ├── cache.py                   # MCP Schema Cache
-│   ├── registry.py                # Pipeline/Brick Discovery
-│   ├── validator.py               # Pipeline Validation
-│   ├── testing.py                 # Mock-Fixture Testing
-│   └── runners/
-│       ├── base.py, cli.py, python.py, http.py, mcp.py, pipeline.py
-├── pipelines/
-│   └── download-attachments.yaml  # Erste vollständige Pipeline
-├── helpers/
-│   ├── extract_attachment_urls.py
-│   ├── flatten_attachments.py
-│   ├── save_attachment.py
-│   └── summary_report.py
-├── tests/                         # 274 Tests
-│   ├── test_models.py (56), test_loader.py (27), test_engine.py (25+)
-│   ├── test_runners.py (15), test_http_runner.py (16), test_mcp_runner.py (10)
-│   ├── test_cli.py (22), test_context.py (11), test_workdir.py (8)
-│   ├── test_cache.py (17), test_validator.py (15), test_registry.py (16)
-│   ├── test_testing.py (9), test_helpers.py (6), test_pipeline_runner.py (4)
-│   └── test_history.py (8)
-└── docs/
-    ├── decisions.md               # 21 Architektur-Entscheidungen
-    ├── integration-learnings.md   # 8 Learnings aus E2E
-    ├── review-spec-alex.md        # Spec-Review
-    ├── review-packaging-bruckner.md
-    ├── review-strategy-alex.md    # Strategy-Review (NEU)
-    ├── research-mcp-sdk.md
-    └── research-claude-code-skills.md
+├── CLAUDE.md, README.md, Dockerfile, docker-compose.yml
+├── pyproject.toml (v0.6.5), CHANGELOG.md
+├── .claude/commands/ (download-attachments.md, brix-run.md)
+├── src/brix/ (14 Module, 5 Runner)
+├── pipelines/ (3 Pipelines)
+├── helpers/ (8 Scripts)
+├── tests/ (277 Tests)
+└── docs/ (8 Reviews + Decisions + Learnings)
 ```
 
-## Nächste Schritte
+## Nächster Schritt
 
-1. **Skill-Prompt erweitern:** Zwei Pipeline-Varianten (targeted vs broad), Claude wählt
-2. **Pipeline-Strategien:** Claude orchestriert Pagination, nicht Brix-Engine
-3. **Weitere Pipelines:** Neue Use Cases identifizieren und als Pipelines umsetzen
-4. **Filter-Typ:** Revisit in v2 wenn visuelles Pipeline-UI kommt
+Wave 1 von E-BRIX-V2 starten: Schema-System + Brick Registry.
