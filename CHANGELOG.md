@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.2] — 2026-03-20
+
+### Added
+- E2E tests validating full v2 workflow
+- MCP → REST API → Pipeline Auto-Exposure chain tested
+
+Brix v2 complete — 18/18 tasks done.
+
 ## [2.6.0] — 2026-03-20
 
 ### Added (Wave 7 — T-BRIX-V2-16)
