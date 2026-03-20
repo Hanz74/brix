@@ -189,6 +189,27 @@ Nur Skills allein reichen nicht — Claude nutzt Skills nur wenn der User expliz
 
 ---
 
+## 10. Claude braucht Konventions-Dokumentation, nicht nur Tool-Dokumentation
+
+**Problem:** Eine andere Claude-Session versuchte eine neue Brix-Pipeline zu erstellen. Drei Fehler:
+1. Helper-Script nutzte nur `sys.stdin.read()` statt das argv+stdin Pattern → Crash
+2. Pipeline setzte `concurrency: "{{ input.x }}"` (Jinja2-Template) → Pydantic-Validierungsfehler (muss int sein)
+3. Claude baute den Container neu nach Hinzufügen von Helpers → unnötig, Volumes sind gemountet
+
+**Intent:** Claude muss nicht nur wissen WAS Brix kann, sondern WIE man es richtig nutzt. Konventionen, Patterns, Pitfalls — das gehört in die CLAUDE.md.
+
+**Root cause:** Die globale CLAUDE.md dokumentierte nur Commands und Pipelines, nicht die Konventionen für Helper-Scripts, Pipeline-YAML-Regeln und den Workflow. Claude musste durch Trial-and-Error lernen was die existierenden Helpers schon wussten.
+
+**Fix:** Globale CLAUDE.md erweitert um:
+- Helper-Boilerplate (argv+stdin Pattern, komplett copy-paste-fähig)
+- Pipeline-YAML-Regeln (concurrency=int, Host-Pfade, default-Filter)
+- Expliziter Hinweis: "KEIN Container-Rebuild nötig für pipelines/ und helpers/"
+- Workflow: validate → dry-run → run
+
+**For users:** Dokumentiere nicht nur was dein Tool kann, sondern wie man damit arbeitet. Claude ist ein guter Entwickler, aber er braucht die Konventionen explizit — er kann sie nicht aus dem Code ableiten wenn er den Code nicht liest. Die CLAUDE.md ist die "Onboarding-Doku für jeden neuen Claude-Entwickler".
+
+---
+
 ## General Principle
 
 Brix integrates with the existing system rather than creating its own isolated environment. This means:

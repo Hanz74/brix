@@ -528,6 +528,77 @@ We evaluated existing tools (as of March 2026):
 
 The gap: **multiple step types + strict JSON in/out + lightweight + Claude Code integration + MCP native support.** Nothing covers all of these.
 
+## Creating New Pipelines
+
+No container rebuild needed — `pipelines/` and `helpers/` are volume-mounted.
+
+### Helper Script Convention
+
+Every helper script **must** use this input pattern:
+
+```python
+#!/usr/bin/env python3
+"""What this helper does."""
+import json
+import sys
+
+def main():
+    if len(sys.argv) > 1:
+        params = json.loads(sys.argv[1])
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read().strip()
+        params = json.loads(raw) if raw else {}
+    else:
+        params = {}
+
+    # Your logic here
+    result = {"key": "value"}
+    print(json.dumps(result))
+
+if __name__ == "__main__":
+    main()
+```
+
+Why both argv and stdin? The Python runner passes small payloads (<100KB) via `sys.argv[1]` and large payloads via stdin. Your script must handle both.
+
+### Pipeline YAML Rules
+
+```yaml
+# concurrency MUST be an integer — no Jinja2 templates!
+concurrency: 5          # ✓ correct
+concurrency: "{{ x }}"  # ✗ Pydantic validation error
+
+# Host paths use /host/root/ prefix
+output_dir: "/host/root/dev/output"   # ✓ writes to host /root/dev/output
+
+# Reference conditional steps with | default()
+data: "{{ optional_step.output | default([]) }}"
+
+# Validate before running
+# brix validate → brix run --dry-run → brix run
+```
+
+### Workflow
+
+```bash
+# 1. Write pipeline YAML
+vim pipelines/my-pipeline.yaml
+
+# 2. Write helper scripts
+vim helpers/my_helper.py
+
+# 3. Validate (catches schema errors, missing refs)
+brix validate /app/pipelines/my-pipeline.yaml
+
+# 4. Preview (shows rendered params without executing)
+brix run --dry-run /app/pipelines/my-pipeline.yaml -p key=value
+
+# 5. Run
+brix run /app/pipelines/my-pipeline.yaml -p key=value
+
+# No docker compose build needed!
+```
+
 ## Deployment
 
 Brix runs as a Docker container, consistent with a containerized infrastructure:

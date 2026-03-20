@@ -53,16 +53,47 @@ brix list pipelines     # zeigt alle in /app/pipelines/
 - **Docker Container** mit Host-Integration (Docker Socket, Binary, Dateisystem)
 - **MCP-Server** via `docker exec -i` (stdio transparent)
 
-## Entwicklung
+## Neue Pipelines/Helpers erstellen
+
+**KEIN Container-Rebuild nötig!** `pipelines/` und `helpers/` sind Volume-gemountet.
+
+**Helper-Boilerplate (IMMER dieses Pattern!):**
+```python
+#!/usr/bin/env python3
+"""Beschreibung."""
+import json, sys
+
+def main():
+    if len(sys.argv) > 1:
+        params = json.loads(sys.argv[1])
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read().strip()
+        params = json.loads(raw) if raw else {}
+    else:
+        params = {}
+    # ... Logik ...
+    print(json.dumps(result))
+
+if __name__ == "__main__":
+    main()
+```
+
+**Pipeline-Regeln:**
+- `concurrency` = int (KEIN Jinja2-Template!)
+- Host-Pfade: `/host/root/...`
+- `| default([])` bei conditional Steps
+- Erst `brix validate`, dann `brix run --dry-run`, dann `brix run`
+
+## Entwicklung (nur bei src/ Änderungen)
 
 ```bash
 # Tests
 PYTHONPATH=src python3 -m pytest tests/ -v
 
-# Rebuild nach Code-Änderungen
+# Rebuild NUR bei src/brix/ oder Dockerfile Änderungen
 docker compose build --quiet && docker compose up -d
 
-# Alle 274 Tests müssen grün sein
+# KEIN Rebuild bei pipelines/ oder helpers/ Änderungen!
 ```
 
 ## Cody-Projekt
