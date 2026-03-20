@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.5.0] — 2026-03-20
+
+### Added
+- V2-14 Pipeline Templates: `src/brix/templates/` package with `catalog.py`
+- 5 predefined pipeline templates covering ~80% of common use cases:
+  - `http-download` — Fetch list from API, download each item in parallel
+  - `mcp-fetch-process` — Fetch from MCP server, process with Python, save
+  - `batch-convert` — Read files from folder, convert in parallel, save results
+  - `filter-export` — Fetch data, filter by condition, export results
+  - `multi-source-merge` — Fetch from multiple sources, merge, generate report
+- `get_template(goal)` — Keyword-based template lookup by goal description
+- `list_templates()` — Returns all templates with name, description, step count
+- `brix__get_template` MCP tool — Accepts optional `goal` param; returns matching template or lists all
+- 14 new tests in `tests/test_templates.py`
+
 ## [2.4.0] — 2026-03-20
 
 ### Added

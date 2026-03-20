@@ -409,6 +409,25 @@ BRIX_TOOLS: list[types.Tool] = [
             "required": [],
         },
     ),
+    types.Tool(
+        name="brix__get_template",
+        description=(
+            "Get a pre-built pipeline template matching a goal description. "
+            "Use before brix__create_pipeline when you want a quickstart for common patterns. "
+            "Omit goal to list all available templates. "
+            "Returns the template pipeline definition and customization_points."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "description": "Description of what you want to do (e.g. 'download files from api', 'process email attachments'). Omit to list all templates.",
+                },
+            },
+            "required": [],
+        },
+    ),
 ]
 
 
@@ -912,6 +931,27 @@ async def _handle_get_run_history(arguments: dict) -> dict:
     }
 
 
+async def _handle_get_template(arguments: dict) -> dict:
+    """Return a pipeline template matching the goal, or list all templates."""
+    from brix.templates.catalog import get_template, list_templates
+
+    goal = arguments.get("goal", "")
+    if not goal:
+        # Return all templates
+        return {"templates": list_templates()}
+
+    template = get_template(goal)
+    if template:
+        return {
+            "name": template["name"],
+            "description": template["description"],
+            "customization_points": template["customization_points"],
+            "pipeline": template["pipeline"],
+        }
+
+    return {"error": f"No template found for: {goal}", "available": list_templates()}
+
+
 async def _handle_list_pipelines(arguments: dict) -> dict:
     """List all pipeline YAML files."""
     directory = arguments.get("directory")
@@ -965,6 +1005,7 @@ _HANDLERS = {
     "brix__get_run_status": _handle_get_run_status,
     "brix__get_run_history": _handle_get_run_history,
     "brix__list_pipelines": _handle_list_pipelines,
+    "brix__get_template": _handle_get_template,
 }
 
 
