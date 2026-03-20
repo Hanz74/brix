@@ -124,6 +124,37 @@ Total: 50 invoice PDFs (7.3 MB) saved to ~/dev/invoices/
 
 The user typed one sentence. Claude chose the strategy, ran two pipeline batches, filtered for PDFs, and presented a clean summary. Total time: ~30 seconds. Without Brix, this would have been 10+ minutes of sequential tool calls.
 
+### Example 2: Batch convert PDFs to Markdown
+
+**User:**
+```
+Convert all those PDFs to Markdown using MarkItDown
+```
+
+**Claude (with Brix):**
+```
+$ brix run convert-folder.yaml \
+    -p source_dir=/host/root/dev/invoices \
+    -p output_dir=/host/root/dev/invoices/md
+
+✓ list_files:    0.1s   80 PDFs found
+✓ convert:      61.2s   80/80 converted (parallel, concurrency: 5)
+✓ save_markdown:  0.8s   80 .md files saved
+✓ report:         0.0s   summary generated
+
+Converted 80 PDFs to Markdown in 63 seconds.
+All files saved to ~/dev/invoices/md/
+```
+
+Without Brix, Claude attempted this via individual MCP calls — managed 4 of 50 files in 4 minutes before being stopped. Brix completed all 80 in 63 seconds.
+
+| Method | Files completed | Time |
+|--------|----------------|------|
+| Claude alone (MCP calls) | 4 / 50 | ~4 min (stopped) |
+| **Brix pipeline** | **80 / 80** | **63 seconds** |
+
+Pipelines are composable — the output of one becomes the input of the next. Download invoices, then convert them, all through natural language.
+
 ## How It Works
 
 ```
