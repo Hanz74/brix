@@ -14,6 +14,24 @@ services:
       - shared-network
     restart: unless-stopped
 
+  brix-mcp:
+    build: .
+    container_name: brix-mcp
+    environment:
+      - BRIX_MODE=mcp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /root:/host/root
+      - ${HOME}/.brix:/root/.brix
+      - ./pipelines:/app/pipelines
+      - ./helpers:/app/helpers
+    env_file: .env
+    networks:
+      - shared-network
+    stdin_open: true
+    restart: unless-stopped
+
 networks:
   shared-network:
     external: true

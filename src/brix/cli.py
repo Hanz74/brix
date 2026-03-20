@@ -411,6 +411,14 @@ def _save_servers_yaml(path: Path, data: dict):
         yaml.dump(data, f, default_flow_style=False)
 
 
+@main.command("mcp")
+def mcp_server():
+    """Start Brix as MCP server (stdio transport)."""
+    import asyncio
+    from brix.mcp_server import run_mcp_server
+    asyncio.run(run_mcp_server())
+
+
 @main.command()
 @click.option("--limit", "-n", default=10, help="Number of runs to show")
 def history(limit):

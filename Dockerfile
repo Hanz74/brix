@@ -16,5 +16,7 @@ COPY src/ ./src/
 RUN uv pip install --system -e ".[dev]"
 
 # Docker socket is mounted via volume at runtime
-# Container stays alive; brix is invoked via docker exec
-CMD ["sleep", "infinity"]
+# Supports two modes:
+#   BRIX_MODE=mcp   → start as MCP server (stdio transport)
+#   default         → container stays alive; brix is invoked via docker exec
+CMD ["sh", "-c", "if [ \"$BRIX_MODE\" = 'mcp' ]; then exec brix mcp; else exec sleep infinity; fi"]

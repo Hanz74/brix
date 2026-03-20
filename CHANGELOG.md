@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.0] — 2026-03-20
+
+### Added
+- MCP Server Grundgerüst (stdio transport) — `src/brix/mcp_server.py`
+- 13 tool stubs registered: brix__get_tips, brix__list_bricks, brix__search_bricks, brix__get_brick_schema, brix__create_pipeline, brix__get_pipeline, brix__add_step, brix__remove_step, brix__validate_pipeline, brix__run_pipeline, brix__get_run_status, brix__get_run_history, brix__list_pipelines
+- `brix mcp` CLI command to launch MCP server mode
+- Docker dual-mode: CLI (default) + MCP via BRIX_MODE=mcp environment variable
+- `brix-mcp` service in docker-compose.yml for dedicated MCP server container
+
 ## [2.0.1] — 2026-03-20
 
 ### Added
