@@ -683,7 +683,31 @@ Brix is designed to be discovered and used by Claude Code automatically. Two mec
 
 The project's `CLAUDE.md` tells Claude that `brix` is available as a CLI tool. When working in the Brix repo (or any repo with Brix in the context), Claude will prefer `brix run` over multiple individual tool calls.
 
-### 2. Skills (slash commands)
+### 2. MCP Server (v2 — recommended)
+
+Register Brix as an MCP server. Claude sees all `mcp__brix__*` tools automatically:
+
+```bash
+claude mcp add brix -- docker exec -i brix-mcp brix mcp
+```
+
+Then start a new session. Claude can now:
+- `mcp__brix__run_pipeline` — execute any pipeline
+- `mcp__brix__list_pipelines` — discover available pipelines
+- `mcp__brix__get_tips` — get conventions and available bricks
+- `mcp__brix__pipeline__<name>` — auto-exposed pipeline tools
+- 10+ more tools for building, validating, and managing pipelines
+
+**Prerequisites:**
+```bash
+# Brix containers must be running
+docker compose up -d
+
+# Pipelines must be in ~/.brix/pipelines/
+cp pipelines/*.yaml ~/.brix/pipelines/
+```
+
+### 3. Skills (slash commands)
 
 Skills live in `.claude/commands/` (project-scoped) and `~/.claude/commands/` (global). Brix ships two skills:
 
@@ -710,7 +734,7 @@ chmod +x /usr/local/bin/brix
 
 **Important:** Skills alone are not enough. Claude only uses skills when the user types `/`. The global CLAUDE.md is the only way to make Claude **proactively** suggest Brix for multi-step tasks. Without it, Claude in other projects won't know Brix exists.
 
-### 3. Path Convention
+### 4. Path Convention
 
 Brix runs in a Docker container. Host filesystem is mounted at `/host/root/`:
 
@@ -719,7 +743,7 @@ Brix runs in a Docker container. Host filesystem is mounted at `/host/root/`:
 brix run pipeline.yaml -p output_dir=/host/root/documents
 ```
 
-### 4. MCP Server Registration
+### 5. MCP Server Registration
 
 Register MCP servers once. Claude and Brix share the same servers:
 
@@ -731,23 +755,15 @@ brix server add m365 \
 
 ## E2E Results
 
-Tested with real M365 Outlook data:
+Tested with real M365 Outlook data — same use case across all methods:
 
-```
-$ brix run download-attachments.yaml \
-    -p "query=hasAttachments eq true and contains(subject, 'Rechnung')" \
-    -p top=50 -p output_dir=/host/root/dev/attachments
+| Method | Duration | Tool calls | Tokens (est.) | PDFs | Size |
+|--------|----------|-----------|---------------|------|------|
+| **Without Brix** (Claude alone) | ~10 min+ | ~164 | ~656,000 | fragile | — |
+| **v1 CLI** (brix run via Bash) | ~35s | 1 | ~5,000 | 50 | 5.7 MB |
+| **v2 MCP** (native MCP call) | **35.4s** | **1** | **~3,000** | **50** | **5.7 MB** |
 
-✓ fetch_mails:      2.9s   50 mails found
-✓ get_attachments: 73.3s   attachments fetched (parallel in v0.6.4)
-✓ flatten:          0.3s   PDF filter applied
-✓ save_files:       2.0s   files saved to host
-✓ report:           0.0s   summary generated
-
-Total: 78.8s | 6.9 MB | 56 files | 1 tool call
-Without Brix: ~164 tool calls | ~656,000 tokens
-With Brix:    1 tool call     | ~5,000 tokens
-```
+v2 MCP has zero measurable overhead vs v1 CLI — plus lower token consumption because MCP responses are structured (no JSON parsing from stdout needed).
 
 ## Status
 
@@ -759,7 +775,7 @@ With Brix:    1 tool call     | ~5,000 tokens
 - 10 built-in bricks + MCP auto-discovery
 - 5 trigger types (MCP stdio, MCP HTTP, REST API, Webhook, Cron)
 - 5 pipeline templates
-- 7 expert reviews, 12 integration learnings
+- 7 expert reviews, 15 integration learnings
 - All architecture decisions and reviews in [`docs/`](docs/)
 
 ## License

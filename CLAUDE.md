@@ -8,6 +8,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Warum:** Jeder Tool-Call in Claude Code kostet Kontext-Tokens. 10 Tool-Calls = 10x Kontext. `brix run` macht daraus 1 Call. Token-Einsparung: ~99%.
 
+## MCP Server (v2 — empfohlen)
+
+Brix ist als MCP Server registriert. Claude sieht `mcp__brix__*` Tools automatisch.
+
+Falls nicht registriert:
+```bash
+claude mcp add brix -- docker exec -i brix-mcp brix mcp
+```
+
+Pipelines müssen in ~/.brix/pipelines/ liegen:
+```bash
+cp /root/docker/brix/pipelines/*.yaml ~/.brix/pipelines/
+```
+
 ## Brix ist verfügbar!
 
 ```bash

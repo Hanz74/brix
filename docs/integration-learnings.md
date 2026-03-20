@@ -232,6 +232,54 @@ Nur Skills allein reichen nicht — Claude nutzt Skills nur wenn der User expliz
 
 ---
 
+## 13. MCP Server Registration: claude mcp add
+
+**Problem:** Brix v2 MCP Server läuft (Port 8091), aber Claude Code weiß nichts davon. MCP-Tools sind unsichtbar. Kein Hinweis in der Dokumentation wie man den Server registriert.
+
+**Intent:** Brix v2 MCP Server muss in Claude Code registriert werden damit die Tools verfügbar sind. Das ist der wichtigste Setup-Schritt — ohne ihn ist v2 nutzlos.
+
+**Lösung:**
+```bash
+claude mcp add brix -- docker exec -i brix-mcp brix mcp
+```
+
+Danach neue Session starten. Claude sieht automatisch alle `mcp__brix__*` Tools.
+
+**Voraussetzung:** brix-mcp Container muss laufen (`docker compose up -d`).
+
+**For users:** Das ist EIN Befehl. Danach hat Claude 14+ MCP-Tools für Pipeline-Management. Aber: Pipelines müssen in `~/.brix/pipelines/` liegen (kopieren von `/app/pipelines/` oder Symlink).
+
+---
+
+## 14. v2 MCP Performance = v1 CLI Performance
+
+**Problem:** Befürchtung dass MCP-Transport langsamer ist als direkte CLI-Ausführung.
+
+**Messung:** Gleicher Use Case (50 Rechnungs-PDFs, broad strategy, top=400):
+- v1 CLI (brix run via Bash): ~35s
+- v2 MCP (mcp__brix__run_pipeline): 35.4s
+
+**Ergebnis:** Kein messbarer Overhead. MCP-Transport (stdio JSON-RPC) ist vernachlässigbar gegenüber Pipeline-Laufzeit.
+
+**Zusätzlicher Vorteil MCP:** Token-Einsparung ~3.000 statt ~5.000 (CLI) weil MCP-Response strukturiert ist und kein JSON-Parsing aus Bash-stdout nötig.
+
+---
+
+## 15. Pipeline-Pfade: Container-Volume vs. User-Pipelines
+
+**Problem:** MCP Server sucht Pipelines in `~/.brix/pipelines/`. Pipeline-Dateien liegen aber in `/app/pipelines/` (Docker Volume-Mount aus dem Repo).
+
+**Workaround:** Pipelines manuell kopieren:
+```bash
+cp /root/docker/brix/pipelines/*.yaml ~/.brix/pipelines/
+```
+
+**Eigentlicher Fix:** PipelineStore soll beide Pfade durchsuchen (Task T-BRIX-V2-19).
+
+**For users:** Bis zum Fix: Pipelines müssen in `~/.brix/pipelines/` liegen damit MCP-Tools und REST API sie finden.
+
+---
+
 ## General Principle
 
 Brix integrates with the existing system rather than creating its own isolated environment. This means:
