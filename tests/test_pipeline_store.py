@@ -119,13 +119,14 @@ class TestPipelineStoreListAll:
 
     def test_list_all_empty(self, tmp_path):
         """Empty store returns empty list."""
-        store = PipelineStore(pipelines_dir=tmp_path)
+        # Use search_paths=[tmp_path] to isolate from ~/.brix/pipelines
+        store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path])
         result = store.list_all()
         assert result == []
 
     def test_list_all(self, tmp_path):
         """list_all returns metadata for each saved pipeline."""
-        store = PipelineStore(pipelines_dir=tmp_path)
+        store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path])
         store.save(MINIMAL_PIPELINE)
         store.save(PIPELINE_WITH_INPUT)
 
@@ -137,7 +138,7 @@ class TestPipelineStoreListAll:
 
     def test_list_all_metadata_fields(self, tmp_path):
         """Each list entry has name, version, description, steps, path."""
-        store = PipelineStore(pipelines_dir=tmp_path)
+        store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path])
         store.save(MINIMAL_PIPELINE)
 
         results = store.list_all()
@@ -160,7 +161,7 @@ class TestPipelineStoreListAll:
 
     def test_list_all_broken_pipeline_still_listed(self, tmp_path):
         """A broken YAML still appears in list_all with error in description."""
-        store = PipelineStore(pipelines_dir=tmp_path)
+        store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path])
         # Write invalid YAML
         (tmp_path / "broken.yaml").write_text("name: broken\nsteps: not-a-list\n")
 
@@ -263,3 +264,125 @@ class TestPipelineStoreAutoCreate:
         assert not new_dir.exists()
         PipelineStore(pipelines_dir=new_dir)
         assert new_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Multi-path search tests (T-BRIX-V2-19)
+# ---------------------------------------------------------------------------
+
+SECOND_PIPELINE = {
+    "name": "second-pipeline",
+    "version": "2.0.0",
+    "description": "A pipeline in the second search path",
+    "steps": [{"id": "s1", "type": "cli", "args": ["echo", "second"]}],
+}
+
+
+class TestPipelineStoreMultiPath:
+    """PipelineStore searches multiple paths."""
+
+    def test_search_multiple_paths(self, tmp_path):
+        """Pipeline in second search path is found when not in first."""
+        primary = tmp_path / "primary"
+        secondary = tmp_path / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+
+        # Write pipeline only to secondary
+        (secondary / "second-pipeline.yaml").write_text(yaml.dump(SECOND_PIPELINE))
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, secondary])
+        pipeline = store.load("second-pipeline")
+        assert pipeline.name == "second-pipeline"
+        assert pipeline.version == "2.0.0"
+
+    def test_search_priority(self, tmp_path):
+        """Pipeline in first search path takes priority over second."""
+        primary = tmp_path / "primary"
+        secondary = tmp_path / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+
+        # Write different versions to each path — same name
+        primary_data = dict(MINIMAL_PIPELINE)
+        primary_data["version"] = "1.0.0"
+        (primary / "test-pipeline.yaml").write_text(yaml.dump(primary_data))
+
+        secondary_data = dict(MINIMAL_PIPELINE)
+        secondary_data["version"] = "9.9.9"
+        (secondary / "test-pipeline.yaml").write_text(yaml.dump(secondary_data))
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, secondary])
+        pipeline = store.load("test-pipeline")
+        assert pipeline.version == "1.0.0"  # primary wins
+
+    def test_list_all_deduplicates(self, tmp_path):
+        """Same pipeline name in both paths appears only once in list_all."""
+        primary = tmp_path / "primary"
+        secondary = tmp_path / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+
+        (primary / "test-pipeline.yaml").write_text(yaml.dump(MINIMAL_PIPELINE))
+        (secondary / "test-pipeline.yaml").write_text(yaml.dump(MINIMAL_PIPELINE))
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, secondary])
+        results = store.list_all()
+        names = [r["name"] for r in results]
+        assert names.count("test-pipeline") == 1
+
+    def test_list_all_includes_both_paths(self, tmp_path):
+        """list_all returns pipelines from all search paths."""
+        primary = tmp_path / "primary"
+        secondary = tmp_path / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+
+        (primary / "test-pipeline.yaml").write_text(yaml.dump(MINIMAL_PIPELINE))
+        (secondary / "second-pipeline.yaml").write_text(yaml.dump(SECOND_PIPELINE))
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, secondary])
+        results = store.list_all()
+        names = {r["name"] for r in results}
+        assert "test-pipeline" in names
+        assert "second-pipeline" in names
+
+    def test_save_goes_to_primary(self, tmp_path):
+        """save() always writes to pipelines_dir, not to other search paths."""
+        primary = tmp_path / "primary"
+        secondary = tmp_path / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, secondary])
+        path = store.save(MINIMAL_PIPELINE)
+
+        assert path.parent == primary
+        assert (primary / "test-pipeline.yaml").exists()
+        assert not (secondary / "test-pipeline.yaml").exists()
+
+    def test_search_paths_missing_dir_skipped(self, tmp_path):
+        """list_all skips non-existent directories gracefully."""
+        primary = tmp_path / "primary"
+        primary.mkdir()
+        nonexistent = tmp_path / "does-not-exist"
+
+        (primary / "test-pipeline.yaml").write_text(yaml.dump(MINIMAL_PIPELINE))
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, nonexistent])
+        results = store.list_all()
+        assert len(results) == 1
+        assert results[0]["name"] == "test-pipeline"
+
+    def test_exists_checks_all_paths(self, tmp_path):
+        """exists() returns True if pipeline is in any search path."""
+        primary = tmp_path / "primary"
+        secondary = tmp_path / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+
+        (secondary / "second-pipeline.yaml").write_text(yaml.dump(SECOND_PIPELINE))
+
+        store = PipelineStore(pipelines_dir=primary, search_paths=[primary, secondary])
+        assert store.exists("second-pipeline") is True
+        assert store.exists("nonexistent") is False

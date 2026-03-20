@@ -33,18 +33,18 @@ _loader = PipelineLoader()
 _validator = PipelineValidator()
 _store = PipelineStore()
 
-# Default pipeline directory
+# Default pipeline directory (primary save target, kept for backward compat)
 PIPELINE_DIR = Path.home() / ".brix" / "pipelines"
 
 
 def _pipeline_dir() -> Path:
-    """Return the pipeline directory, creating it if needed."""
+    """Return the primary pipeline directory, creating it if needed."""
     PIPELINE_DIR.mkdir(parents=True, exist_ok=True)
     return PIPELINE_DIR
 
 
 def _pipeline_path(name: str) -> Path:
-    """Return the path for a named pipeline YAML."""
+    """Return the save path for a named pipeline YAML (always in pipelines_dir)."""
     return _pipeline_dir() / f"{name}.yaml"
 
 
@@ -447,10 +447,9 @@ async def _handle_get_tips(arguments: dict) -> dict:
         f"  - {cat}: {count} brick(s)" for cat, count in sorted(categories.items())
     ]
 
-    # List saved pipelines
-    pipeline_dir = _pipeline_dir()
-    pipeline_files = list(pipeline_dir.glob("*.yaml"))
-    pipeline_names = [p.stem for p in pipeline_files]
+    # List saved pipelines (from all search paths, respecting current PIPELINE_DIR)
+    _tips_store = PipelineStore(pipelines_dir=PIPELINE_DIR)
+    pipeline_names = [p["name"] for p in _tips_store.list_all()]
 
     tips = [
         "=== Brix Usage Tips ===",
@@ -585,12 +584,14 @@ async def _handle_get_brick_schema(arguments: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _load_pipeline_yaml(name: str) -> dict:
-    """Load a pipeline YAML file as raw dict."""
-    path = _pipeline_path(name)
-    if not path.exists():
-        raise FileNotFoundError(f"Pipeline '{name}' not found at {path}")
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    """Load a pipeline YAML file as raw dict.
+
+    Creates a PipelineStore with PIPELINE_DIR as primary path so that
+    monkeypatching PIPELINE_DIR in tests works, while still searching
+    additional paths (e.g. /app/pipelines container volume).
+    """
+    store = PipelineStore(pipelines_dir=PIPELINE_DIR)
+    return store.load_raw(name)
 
 
 def _save_pipeline_yaml(name: str, data: dict) -> None:
@@ -956,37 +957,56 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
     """List all pipeline YAML files."""
     directory = arguments.get("directory")
     if directory:
+        # Explicit directory: scan that single directory only
         search_dir = Path(directory)
+        pipelines = []
+        if search_dir.exists():
+            for yaml_file in sorted(search_dir.glob("*.yaml")):
+                try:
+                    with open(yaml_file) as f:
+                        data = yaml.safe_load(f) or {}
+                    steps = data.get("steps", [])
+                    pipelines.append({
+                        "name": data.get("name", yaml_file.stem),
+                        "version": data.get("version", ""),
+                        "description": data.get("description", ""),
+                        "step_count": len(steps),
+                        "file": str(yaml_file),
+                    })
+                except Exception as exc:
+                    pipelines.append({
+                        "name": yaml_file.stem,
+                        "error": str(exc),
+                        "file": str(yaml_file),
+                    })
+        return {
+            "success": True,
+            "pipelines": pipelines,
+            "total": len(pipelines),
+            "directory": str(search_dir),
+        }
     else:
-        search_dir = _pipeline_dir()
-
-    pipelines = []
-    if search_dir.exists():
-        for yaml_file in sorted(search_dir.glob("*.yaml")):
-            try:
-                with open(yaml_file) as f:
-                    data = yaml.safe_load(f) or {}
-                steps = data.get("steps", [])
-                pipelines.append({
-                    "name": data.get("name", yaml_file.stem),
-                    "version": data.get("version", ""),
-                    "description": data.get("description", ""),
-                    "step_count": len(steps),
-                    "file": str(yaml_file),
-                })
-            except Exception as exc:
-                pipelines.append({
-                    "name": yaml_file.stem,
-                    "error": str(exc),
-                    "file": str(yaml_file),
-                })
-
-    return {
-        "success": True,
-        "pipelines": pipelines,
-        "total": len(pipelines),
-        "directory": str(search_dir),
-    }
+        # No directory specified: use PipelineStore with current PIPELINE_DIR
+        # (respects monkeypatching) and multi-path search
+        store = PipelineStore(pipelines_dir=PIPELINE_DIR)
+        all_pipelines = store.list_all()
+        # Normalise field names to match the explicit-dir branch
+        pipelines = [
+            {
+                "name": p["name"],
+                "version": p.get("version", ""),
+                "description": p.get("description", ""),
+                "step_count": p.get("steps", 0),
+                "file": p.get("path", ""),
+            }
+            for p in all_pipelines
+        ]
+        return {
+            "success": True,
+            "pipelines": pipelines,
+            "total": len(pipelines),
+            "directory": "multi-path",
+        }
 
 
 # Dispatch table — core tools only.

@@ -621,7 +621,8 @@ class TestPipelineToolsRegistered:
         """Multiple saved pipelines all appear as tools."""
         from brix.pipeline_store import PipelineStore
 
-        store = PipelineStore(pipelines_dir=tmp_path)
+        # search_paths=[tmp_path] for full isolation from ~/.brix/pipelines
+        store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path])
         for i in range(3):
             store.save(
                 {
@@ -642,7 +643,8 @@ class TestPipelineToolsRegistered:
         """Empty store produces no pipeline tools."""
         from brix.pipeline_store import PipelineStore
 
-        store = PipelineStore(pipelines_dir=tmp_path)
+        # search_paths=[tmp_path] for full isolation from ~/.brix/pipelines
+        store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path])
         pipeline_tools = _build_pipeline_tools(store)
         assert pipeline_tools == []
 
