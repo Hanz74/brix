@@ -39,7 +39,7 @@ class Step(BaseModel):
     """A single pipeline step."""
 
     id: str
-    type: Literal["python", "http", "cli", "mcp", "pipeline"]
+    type: Literal["python", "http", "cli", "mcp", "pipeline", "filter", "transform"]
 
     # Python runner
     script: Optional[str] = None

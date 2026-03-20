@@ -13,6 +13,8 @@ from brix.runners.python import PythonRunner
 from brix.runners.http import HttpRunner
 from brix.runners.mcp import McpRunner
 from brix.runners.pipeline import PipelineRunner
+from brix.runners.filter import FilterRunner
+from brix.runners.transform import TransformRunner
 
 
 class PipelineEngine:
@@ -28,6 +30,8 @@ class PipelineEngine:
             "http": HttpRunner(),
             "mcp": McpRunner(),
             "pipeline": pipeline_runner,
+            "filter": FilterRunner(),
+            "transform": TransformRunner(),
         }
 
     def register_runner(self, step_type: str, runner: BaseRunner) -> None:
