@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.0] — 2026-03-20
+
+### Added
+- V2-10 REST API: `src/brix/api.py` — Starlette app with endpoints: `GET /health`, `GET /pipelines`, `POST /run/{name}`, `GET /status/{run_id}`, `POST /webhook/{name}`
+- V2-11 Webhook + Cron: Webhook endpoint with optional per-pipeline secret (`BRIX_WEBHOOK_SECRET_<NAME>`), `src/brix/scheduler.py` — `BrixScheduler` with interval parsing, YAML-based schedule config (`~/.brix/schedules.yaml`)
+- `brix api` CLI command to start REST API server (default port 8090)
+- `brix scheduler` CLI command to start cron scheduler
+- `brix-api` service in `docker-compose.yml` (port 8090)
+- Optional `BRIX_API_KEY` header auth for all protected endpoints
+- 27 new tests: `tests/test_api.py` (18) + `tests/test_scheduler.py` (17)
+- `starlette>=0.40` and `uvicorn>=0.30` added as explicit dependencies
+
 ## [2.2.0] — 2026-03-20
 
 ### Added

@@ -419,6 +419,34 @@ def mcp_server():
     asyncio.run(run_mcp_server())
 
 
+@main.command("api")
+@click.option("--port", default=8090, help="Port to listen on")
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
+def api_server(port, host):
+    """Start Brix REST API server.
+
+    Exposes endpoints for pipeline execution via HTTP, webhooks, and cron.
+    Set BRIX_API_KEY env var to enable authentication.
+    """
+    import uvicorn
+    from brix.api import app
+    click.echo(f"Starting Brix API on {host}:{port}", err=True)
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+@main.command("scheduler")
+def run_scheduler():
+    """Start the cron scheduler.
+
+    Reads schedule config from ~/.brix/schedules.yaml and runs
+    pipelines on their configured intervals.
+    """
+    import asyncio
+    from brix.scheduler import BrixScheduler
+    scheduler = BrixScheduler()
+    asyncio.run(scheduler.start())
+
+
 @main.command()
 @click.option("--limit", "-n", default=10, help="Number of runs to show")
 def history(limit):

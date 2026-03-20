@@ -32,6 +32,24 @@ services:
     stdin_open: true
     restart: unless-stopped
 
+  brix-api:
+    build: .
+    container_name: brix-api
+    command: brix api --port 8090
+    ports:
+      - "8090:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /root:/host/root
+      - ${HOME}/.brix:/root/.brix
+      - ./pipelines:/app/pipelines
+      - ./helpers:/app/helpers
+    env_file: .env
+    networks:
+      - shared-network
+    restart: unless-stopped
+
 networks:
   shared-network:
     external: true
