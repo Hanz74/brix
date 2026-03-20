@@ -74,6 +74,56 @@ The broad strategy is fastest because it avoids the N+1 query problem: instead o
 
 Brix is a **Python runtime** that Claude invokes via a single Bash command. It reads a pipeline definition (YAML), executes all steps internally — parallel where possible — and returns a compact JSON result. Claude sees one tool call and one result.
 
+## What It Looks Like
+
+Here's the actual user experience. The user types a natural language request, Claude figures out the rest:
+
+**User:**
+```
+Give me the last 50 invoice PDFs from my Outlook, save them to ~/dev/invoices/
+```
+
+**Claude (with Brix):**
+```
+I'll use the broad strategy — fetching recent mails with attachments and
+filtering locally for invoices. This is faster than server-side filtering
+for common search terms.
+
+$ brix run download-attachments-broad.yaml \
+    -p keywords="Rechnung,Invoice,Abrechnung" \
+    -p top=200 \
+    -p output_dir=/host/root/dev/invoices
+
+✓ fetch_mails:      4.0s   200 mails fetched
+✓ filter_mails:     0.0s   23 mails match keywords
+✓ get_attachments:  9.8s   attachments fetched (parallel, concurrency: 5)
+✓ flatten:          0.1s   24 PDFs extracted (non-PDF filtered out)
+✓ save_files:       0.8s   saved to /root/dev/invoices/
+✓ report:           0.0s   summary generated
+
+Downloaded 24 PDF invoices (3.2 MB) to ~/dev/invoices/:
+
+  2026-03-19  Kabel-Rechnung März 2026                    52 KB
+  2026-02-28  Mistral AI invoice-032                      77 KB
+  2026-02-19  Kabel-Rechnung Februar 2026                 52 KB
+  2026-02-13  Kontoaufladung Rechnung                    245 KB
+  2025-12-05  Mistral AI invoice-001                      55 KB
+  ... and 19 more
+
+That's 24 of 50 requested. Fetching the next batch...
+
+$ brix run download-attachments-broad.yaml \
+    -p keywords="Rechnung,Invoice,Abrechnung" \
+    -p top=200 -p skip=200 \
+    -p output_dir=/host/root/dev/invoices
+
+✓ 26 more PDFs downloaded (4.1 MB)
+
+Total: 50 invoice PDFs (7.3 MB) saved to ~/dev/invoices/
+```
+
+The user typed one sentence. Claude chose the strategy, ran two pipeline batches, filtered for PDFs, and presented a clean summary. Total time: ~30 seconds. Without Brix, this would have been 10+ minutes of sequential tool calls.
+
 ## How It Works
 
 ```
