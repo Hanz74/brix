@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1] — 2026-03-20
+
+### Added
+- BrickRegistry: central registry with built-in loading, register/unregister, search, category filter
+- MCP auto-discovery: `discover_mcp_bricks` + `discover_all_mcp_servers` from SchemaCache
+- 26 tests covering all registry operations including MCP schema-to-BrickParam mapping
+
 ## [2.0.0] — 2026-03-20
 
 ### Added
