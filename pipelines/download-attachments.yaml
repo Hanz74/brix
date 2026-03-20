@@ -19,6 +19,10 @@ input:
     type: int
     default: 10
     description: "Max number of mails to fetch"
+  skip:
+    type: int
+    default: 0
+    description: "Number of mails to skip (for pagination)"
 
 error_handling:
   on_error: stop
@@ -31,6 +35,7 @@ steps:
     params:
       filter: "{{ input.query }}"
       top: "{{ input.top }}"
+      skip: "{{ input.skip }}"
     timeout: 30s
 
   - id: get_attachments

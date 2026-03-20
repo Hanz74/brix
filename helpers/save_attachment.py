@@ -35,6 +35,16 @@ def main():
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     file_path = Path(output_dir) / structured_name
 
+    # Deduplicate: if file already exists, append counter suffix
+    counter = 1
+    original_path = file_path
+    while file_path.exists():
+        stem = original_path.stem
+        suffix = original_path.suffix
+        file_path = original_path.parent / f"{stem}_{counter}{suffix}"
+        structured_name = file_path.name
+        counter += 1
+
     # Decode content_bytes (base64 from Graph API)
     content_b64 = attachment.get("content_bytes", "")
     if content_b64:

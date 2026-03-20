@@ -11,6 +11,10 @@ input:
     type: int
     default: 200
     description: "Number of mails to fetch per batch"
+  skip:
+    type: int
+    default: 0
+    description: "Number of mails to skip (for pagination)"
   output_dir:
     type: str
     default: "./attachments"
@@ -27,6 +31,7 @@ steps:
     params:
       filter: "hasAttachments eq true"
       top: "{{ input.top }}"
+      skip: "{{ input.skip }}"
     timeout: 30s
 
   - id: filter_mails

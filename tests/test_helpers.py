@@ -123,3 +123,36 @@ def test_filter_mails_case_insensitive():
     assert result.returncode == 0
     output = json.loads(result.stdout)
     assert len(output) == 1
+
+
+def test_save_attachment_duplicate(tmp_path):
+    """Second save with same name gets _1 suffix."""
+    import base64
+    content_b64 = base64.b64encode(b"hello").decode()
+    params = {
+        "attachment": {
+            "mail_date": "2026-01-01",
+            "mail_subject": "Test",
+            "name": "dup.txt",
+            "content_bytes": content_b64,
+        },
+        "output_dir": str(tmp_path),
+    }
+    # First save
+    result1 = _run_helper("save_attachment.py", params)
+    assert result1.returncode == 0
+    out1 = json.loads(result1.stdout)
+    assert out1["filename"] == "2026-01-01_Test_dup.txt"
+
+    # Second save — same params, file already exists
+    result2 = _run_helper("save_attachment.py", params)
+    assert result2.returncode == 0
+    out2 = json.loads(result2.stdout)
+    assert out2["filename"] == "2026-01-01_Test_dup_1.txt"
+    assert out2["filename"] != out1["filename"]
+
+    # Third save — both previous files exist
+    result3 = _run_helper("save_attachment.py", params)
+    assert result3.returncode == 0
+    out3 = json.loads(result3.stdout)
+    assert out3["filename"] == "2026-01-01_Test_dup_2.txt"
