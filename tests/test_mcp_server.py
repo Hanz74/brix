@@ -8,7 +8,10 @@ import pytest
 
 from brix.mcp_server import (
     BRIX_TOOLS,
+    PIPELINE_TOOL_PREFIX,
     _HANDLERS,
+    _build_pipeline_tools,
+    _handle_pipeline_tool,
     create_server,
     _handle_get_tips,
     _handle_list_bricks,
@@ -518,3 +521,214 @@ class TestExecutionHandlers:
         assert result["total"] >= 1
         names = [p["name"] for p in result["pipelines"]]
         assert "custom-pipe" in names
+
+
+# ---------------------------------------------------------------------------
+# V2-08 + V2-09 Pipeline Store + Auto-Exposure Tests
+# ---------------------------------------------------------------------------
+
+class TestPipelineToolsRegistered:
+    """V2-09: Saved pipelines appear as brix__pipeline__* MCP tools."""
+
+    def test_pipeline_tools_registered(self, tmp_path):
+        """A saved pipeline appears in the dynamic tool list."""
+        import yaml as _yaml
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "my-exposed-pipeline",
+                "version": "1.0.0",
+                "description": "A pipeline that should be auto-exposed.",
+                "steps": [{"id": "step1", "type": "cli", "args": ["echo", "hi"]}],
+            }
+        )
+
+        pipeline_tools = _build_pipeline_tools(store)
+        tool_names = [t.name for t in pipeline_tools]
+        assert "brix__pipeline__my_exposed_pipeline" in tool_names
+
+    def test_pipeline_tool_has_description(self, tmp_path):
+        """Auto-exposed pipeline tool has a non-empty description."""
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "desc-pipeline",
+                "version": "1.0.0",
+                "description": "Does something useful.",
+                "steps": [{"id": "s", "type": "cli", "args": ["echo", "ok"]}],
+            }
+        )
+
+        pipeline_tools = _build_pipeline_tools(store)
+        tool = next(t for t in pipeline_tools if t.name == "brix__pipeline__desc_pipeline")
+        assert tool.description
+        assert len(tool.description) >= 10
+        assert "Returns" in tool.description
+
+    def test_pipeline_tool_input_schema(self, tmp_path):
+        """Auto-exposed tool input schema is built from pipeline input params."""
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "param-pipeline",
+                "version": "1.0.0",
+                "input": {
+                    "query": {"type": "string", "description": "The search term"},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "steps": [{"id": "s", "type": "cli", "args": ["echo", "{{ input.query }}"]}],
+            }
+        )
+
+        pipeline_tools = _build_pipeline_tools(store)
+        tool = next(t for t in pipeline_tools if t.name == "brix__pipeline__param_pipeline")
+        schema = tool.inputSchema
+        assert schema["type"] == "object"
+        assert "query" in schema["properties"]
+        assert "limit" in schema["properties"]
+        # query has no default → required
+        assert "query" in schema["required"]
+        # limit has default → not required
+        assert "limit" not in schema["required"]
+
+    def test_pipeline_tool_no_input_schema_when_no_params(self, tmp_path):
+        """Pipeline with no input params gets empty properties schema."""
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "no-input",
+                "version": "1.0.0",
+                "steps": [{"id": "s", "type": "cli", "args": ["echo", "ok"]}],
+            }
+        )
+
+        pipeline_tools = _build_pipeline_tools(store)
+        tool = next(t for t in pipeline_tools if t.name == "brix__pipeline__no_input")
+        schema = tool.inputSchema
+        assert schema["properties"] == {}
+        assert schema["required"] == []
+
+    def test_multiple_pipelines_all_exposed(self, tmp_path):
+        """Multiple saved pipelines all appear as tools."""
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        for i in range(3):
+            store.save(
+                {
+                    "name": f"pipe-{i}",
+                    "version": "1.0.0",
+                    "steps": [{"id": "s", "type": "cli", "args": ["echo", str(i)]}],
+                }
+            )
+
+        pipeline_tools = _build_pipeline_tools(store)
+        assert len(pipeline_tools) == 3
+        names = {t.name for t in pipeline_tools}
+        assert "brix__pipeline__pipe_0" in names
+        assert "brix__pipeline__pipe_1" in names
+        assert "brix__pipeline__pipe_2" in names
+
+    def test_empty_store_no_pipeline_tools(self, tmp_path):
+        """Empty store produces no pipeline tools."""
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        pipeline_tools = _build_pipeline_tools(store)
+        assert pipeline_tools == []
+
+    def test_server_list_tools_includes_pipeline_tools(self, tmp_path, monkeypatch):
+        """_build_pipeline_tools includes pipeline tools when store has saved pipelines."""
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "server-test-pipe",
+                "version": "1.0.0",
+                "steps": [{"id": "s", "type": "cli", "args": ["echo", "test"]}],
+            }
+        )
+
+        # Core tools (BRIX_TOOLS) + pipeline tools together form the full list
+        pipeline_tools = _build_pipeline_tools(store)
+        all_tools = BRIX_TOOLS + pipeline_tools
+        tool_names = [t.name for t in all_tools]
+        # Core tools still present
+        assert "brix__get_tips" in tool_names
+        assert "brix__run_pipeline" in tool_names
+        # Pipeline tool present
+        assert "brix__pipeline__server_test_pipe" in tool_names
+
+
+class TestPipelineToolExecution:
+    """V2-09: brix__pipeline__* tools execute the underlying pipeline."""
+
+    @pytest.mark.asyncio
+    async def test_pipeline_tool_execution(self, tmp_path, monkeypatch):
+        """Execute a pipeline via its auto-exposed tool."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "exec-test",
+                "version": "1.0.0",
+                "steps": [{"id": "greet", "type": "cli", "args": ["echo", "pipeline tool works"]}],
+            }
+        )
+
+        result = await _handle_pipeline_tool("exec-test", {})
+        assert result["success"] is True
+        assert "run_id" in result
+        assert result["steps"]["greet"]["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_pipeline_tool_not_found(self, tmp_path, monkeypatch):
+        """_handle_pipeline_tool returns structured error for missing pipeline."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        result = await _handle_pipeline_tool("does-not-exist-xyz", {})
+        assert result["success"] is False
+        assert result["error"]["code"] == "PIPELINE_NOT_FOUND"
+
+    @pytest.mark.asyncio
+    async def test_pipeline_tool_with_input(self, tmp_path, monkeypatch):
+        """Pipeline tool passes input arguments to the pipeline engine."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        from brix.pipeline_store import PipelineStore
+
+        store = PipelineStore(pipelines_dir=tmp_path)
+        store.save(
+            {
+                "name": "input-exec-test",
+                "version": "1.0.0",
+                "input": {
+                    "message": {"type": "string", "description": "A message to echo"},
+                },
+                "steps": [
+                    {
+                        "id": "say",
+                        "type": "cli",
+                        "args": ["echo", "{{ input.message }}"],
+                    }
+                ],
+            }
+        )
+
+        result = await _handle_pipeline_tool("input-exec-test", {"message": "hello from tool"})
+        assert result["success"] is True
+        assert result["steps"]["say"]["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_pipeline_tool_prefix_constant(self):
+        """PIPELINE_TOOL_PREFIX is the expected string."""
+        assert PIPELINE_TOOL_PREFIX == "brix__pipeline__"

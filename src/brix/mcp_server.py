@@ -1,7 +1,8 @@
 """Brix MCP Server — stdio transport.
 
 Exposes Brix pipeline management and execution capabilities as MCP tools.
-Real implementations for Discovery (V2-05), Builder (V2-06), and Execution (V2-07).
+Real implementations for Discovery (V2-05), Builder (V2-06), Execution (V2-07),
+Pipeline Store (V2-08), and Auto-Exposure as MCP tools (V2-09).
 """
 import json
 import asyncio
@@ -19,11 +20,13 @@ from brix.loader import PipelineLoader
 from brix.validator import PipelineValidator
 from brix.history import RunHistory
 from brix.engine import PipelineEngine
+from brix.pipeline_store import PipelineStore
 
 # Shared singletons
 _registry = BrickRegistry()
 _loader = PipelineLoader()
 _validator = PipelineValidator()
+_store = PipelineStore()
 
 # Default pipeline directory
 PIPELINE_DIR = Path.home() / ".brix" / "pipelines"
@@ -38,6 +41,64 @@ def _pipeline_dir() -> Path:
 def _pipeline_path(name: str) -> Path:
     """Return the path for a named pipeline YAML."""
     return _pipeline_dir() / f"{name}.yaml"
+
+
+# ---------------------------------------------------------------------------
+# V2-09: Pipeline tool name helper
+# ---------------------------------------------------------------------------
+
+PIPELINE_TOOL_PREFIX = "brix__pipeline__"
+
+
+def _pipeline_tool_name(pipeline_name: str) -> str:
+    """Convert a pipeline name to a safe MCP tool name."""
+    return PIPELINE_TOOL_PREFIX + pipeline_name.replace("-", "_").replace(" ", "_")
+
+
+def _build_pipeline_tools(store: PipelineStore) -> list[types.Tool]:
+    """Build MCP tool definitions for all saved pipelines (V2-09).
+
+    Each saved pipeline becomes a tool named brix__pipeline__<name>.
+    The input schema is derived from the pipeline's input parameter definitions.
+    """
+    tools: list[types.Tool] = []
+    for info in store.list_all():
+        tool_name = _pipeline_tool_name(info["name"])
+        description = (
+            info.get("description") or f"Run the '{info['name']}' pipeline."
+        )
+        # Ensure description ends with period-like sentence and has Returns info
+        if "Returns" not in description and "returns" not in description:
+            description = description.rstrip(".") + ". Returns run results and step outputs."
+
+        # Build input schema from pipeline input params
+        properties: dict = {}
+        required: list[str] = []
+        try:
+            pipeline = store.load(info["name"])
+            for param_name, param in pipeline.input.items():
+                json_type = param.type if param.type in ("string", "integer", "boolean", "number", "array", "object") else "string"
+                prop: dict = {"type": json_type}
+                if param.description:
+                    prop["description"] = param.description
+                if param.default is not None:
+                    prop["default"] = param.default
+                else:
+                    required.append(param_name)
+                properties[param_name] = prop
+        except Exception:
+            pass  # pipeline with errors → empty schema, still register tool
+
+        input_schema: dict = {"type": "object", "properties": properties, "required": required}
+
+        tools.append(
+            types.Tool(
+                name=tool_name,
+                description=description,
+                inputSchema=input_schema,
+            )
+        )
+    return tools
 
 
 # ---------------------------------------------------------------------------
@@ -883,7 +944,8 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
     }
 
 
-# Dispatch table
+# Dispatch table — core tools only.
+# Pipeline tools (brix__pipeline__*) are handled dynamically in call_tool.
 _HANDLERS = {
     "brix__get_tips": _handle_get_tips,
     "brix__list_bricks": _handle_list_bricks,
@@ -902,24 +964,159 @@ _HANDLERS = {
 
 
 # ---------------------------------------------------------------------------
+# V2-09: Pipeline tool execution handler
+# ---------------------------------------------------------------------------
+
+async def _handle_pipeline_tool(pipeline_name: str, arguments: dict) -> dict:
+    """Execute a named pipeline via its auto-exposed MCP tool."""
+    try:
+        data = _load_pipeline_yaml(pipeline_name)
+    except FileNotFoundError as exc:
+        return {
+            "success": False,
+            "error": {
+                "code": "PIPELINE_NOT_FOUND",
+                "message": str(exc),
+                "step_id": None,
+                "recoverable": False,
+                "agent_actions": ["list_pipelines", "create_pipeline"],
+                "resume_command": None,
+            },
+        }
+
+    try:
+        pipeline_yaml = yaml.dump(data)
+        pipeline = _loader.load_from_string(pipeline_yaml)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": {
+                "code": "PIPELINE_PARSE_ERROR",
+                "message": str(exc),
+                "step_id": None,
+                "recoverable": True,
+                "agent_actions": ["validate_pipeline", "fix_pipeline_yaml"],
+                "resume_command": f"brix__validate_pipeline({{\"pipeline_id\": \"{pipeline_name}\"}})",
+            },
+        }
+
+    engine = PipelineEngine()
+    try:
+        result = await engine.run(pipeline, arguments)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": {
+                "code": "ENGINE_ERROR",
+                "message": str(exc),
+                "step_id": None,
+                "recoverable": True,
+                "agent_actions": ["retry_pipeline", "validate_pipeline"],
+                "resume_command": f"brix__pipeline__{pipeline_name.replace('-', '_')}({{}})",
+            },
+        }
+
+    if result.success:
+        return {
+            "success": True,
+            "run_id": result.run_id,
+            "pipeline": pipeline_name,
+            "duration": round(result.duration, 2),
+            "steps": {
+                step_id: {
+                    "status": s.status,
+                    "duration": round(s.duration, 2),
+                    "items": s.items,
+                    "errors": s.errors,
+                }
+                for step_id, s in result.steps.items()
+            },
+            "result": result.result,
+        }
+    else:
+        failed_step = next(
+            (sid for sid, s in result.steps.items() if s.status == "error"),
+            None,
+        )
+        return {
+            "success": False,
+            "run_id": result.run_id,
+            "pipeline": pipeline_name,
+            "duration": round(result.duration, 2),
+            "steps": {
+                step_id: {
+                    "status": s.status,
+                    "duration": round(s.duration, 2),
+                    "items": s.items,
+                    "errors": s.errors,
+                }
+                for step_id, s in result.steps.items()
+            },
+            "error": {
+                "code": "STEP_FAILED",
+                "message": f"Pipeline failed at step: {failed_step or 'unknown'}",
+                "step_id": failed_step,
+                "recoverable": True,
+                "agent_actions": ["retry_step", "skip_step", "abort_pipeline"],
+                "resume_command": (
+                    f"brix__pipeline__{pipeline_name.replace('-', '_')}({{}})"
+                    if failed_step else None
+                ),
+            },
+        }
+
+
+# ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
 
-def create_server() -> Server:
-    """Create and configure the Brix MCP server."""
+def create_server(store: PipelineStore = None) -> Server:
+    """Create and configure the Brix MCP server.
+
+    V2-09: Pipeline tools (brix__pipeline__*) are built dynamically at
+    list_tools() time so newly saved pipelines are immediately visible
+    without a server restart.
+    """
     server = Server("brix")
+    _pipeline_store = store or _store
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        return BRIX_TOOLS
+        # Core tools + dynamically built pipeline tools
+        pipeline_tools = _build_pipeline_tools(_pipeline_store)
+        return BRIX_TOOLS + pipeline_tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
+        # Core tool dispatch
         handler = _HANDLERS.get(name)
-        if handler is None:
-            raise ValueError(f"Unknown tool: {name}")
-        result = await handler(arguments or {})
-        return [types.TextContent(type="text", text=json.dumps(result))]
+        if handler is not None:
+            result = await handler(arguments or {})
+            return [types.TextContent(type="text", text=json.dumps(result))]
+
+        # V2-09: Dynamic pipeline tool dispatch
+        if name.startswith(PIPELINE_TOOL_PREFIX):
+            # Extract pipeline name from tool name
+            # brix__pipeline__my_pipeline → my_pipeline → try my_pipeline and my-pipeline
+            raw = name[len(PIPELINE_TOOL_PREFIX):]
+            # Try exact name first, then with dashes (reverse of the _→ mapping)
+            for pipeline_name in [raw, raw.replace("_", "-")]:
+                if _pipeline_store.exists(pipeline_name):
+                    result = await _handle_pipeline_tool(pipeline_name, arguments or {})
+                    return [types.TextContent(type="text", text=json.dumps(result))]
+            # Not found — return structured error
+            result = {
+                "success": False,
+                "error": {
+                    "code": "PIPELINE_NOT_FOUND",
+                    "message": f"Pipeline for tool '{name}' not found.",
+                    "recoverable": False,
+                    "agent_actions": ["list_pipelines"],
+                },
+            }
+            return [types.TextContent(type="text", text=json.dumps(result))]
+
+        raise ValueError(f"Unknown tool: {name}")
 
     return server
 

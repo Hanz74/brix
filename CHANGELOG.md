@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.0] — 2026-03-20
+
+### Added
+- V2-08 Pipeline Store: `src/brix/pipeline_store.py` — `PipelineStore` class with `save`, `load`, `load_raw`, `exists`, `list_all`, `delete`, `get_version`
+- V2-09 Auto-Exposure: Saved pipelines automatically registered as `brix__pipeline__<name>` MCP tools (dynamic, no server restart needed)
+- `_build_pipeline_tools()` — builds MCP tool definitions from pipeline input schemas
+- `_handle_pipeline_tool()` — executes a named pipeline via its auto-exposed tool
+- `PIPELINE_TOOL_PREFIX` constant (`brix__pipeline__`)
+- `create_server(store=...)` now accepts an optional `PipelineStore` (for testing/injection)
+- 17 new tests: `tests/test_pipeline_store.py` (13) + appended to `tests/test_mcp_server.py` (4 classes, 13 tests)
+
 ## [2.1.1] — 2026-03-20
 
 ### Added
