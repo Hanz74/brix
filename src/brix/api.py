@@ -49,10 +49,21 @@ async def run_pipeline(request: Request) -> JSONResponse:
     except FileNotFoundError:
         return JSONResponse({"error": f"Pipeline '{name}' not found"}, status_code=404)
 
+    # Warn about unknown input parameters (V2-20)
+    defined_params = set(pipeline.input.keys())
+    unknown_params = set(body.keys()) - defined_params
+    warnings: list[str] = []
+    if unknown_params:
+        warnings.append(
+            f"Unknown input parameters (ignored): {', '.join(sorted(unknown_params))}"
+        )
+
     engine = PipelineEngine()
     result = await engine.run(pipeline, body)
 
-    return JSONResponse(result.model_dump(), status_code=200 if result.success else 500)
+    response_data = result.model_dump()
+    response_data["warnings"] = warnings
+    return JSONResponse(response_data, status_code=200 if result.success else 500)
 
 
 async def get_run_status(request: Request) -> JSONResponse:

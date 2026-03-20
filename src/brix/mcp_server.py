@@ -823,6 +823,16 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
             },
         }
 
+    # Warn about unknown input parameters (V2-20)
+    user_params = arguments.get("input", {}) or {}
+    defined_params = set(pipeline.input.keys())
+    unknown_params = set(user_params.keys()) - defined_params
+    warnings: list[str] = []
+    if unknown_params:
+        warnings.append(
+            f"Unknown input parameters (ignored): {', '.join(sorted(unknown_params))}"
+        )
+
     engine = PipelineEngine()
     try:
         result = await engine.run(pipeline, user_input)
@@ -855,6 +865,7 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
                 for step_id, s in result.steps.items()
             },
             "result": result.result,
+            "warnings": warnings,
         }
     else:
         # Find the first failed step for the error report
@@ -888,6 +899,7 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
                     if failed_step else None
                 ),
             },
+            "warnings": warnings,
         }
 
 

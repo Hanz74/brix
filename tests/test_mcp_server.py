@@ -523,6 +523,50 @@ class TestExecutionHandlers:
         names = [p["name"] for p in result["pipelines"]]
         assert "custom-pipe" in names
 
+    @pytest.mark.asyncio
+    async def test_run_pipeline_unknown_params_warning(self, tmp_path, monkeypatch):
+        """Unknown input params produce a warning in the result."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        # Create a pipeline with only 'name' input
+        await _handle_create_pipeline({
+            "name": "warn-test",
+            "input_schema": {
+                "name": {"type": "string", "description": "A name param"},
+            },
+            "steps": [{"id": "greet", "type": "cli", "args": ["echo", "hello"]}],
+        })
+        # Run with 'name' + 'unknown_param'
+        result = await _handle_run_pipeline({
+            "pipeline_id": "warn-test",
+            "input": {"name": "brix", "unknown_param": "oops", "another_extra": "42"},
+        })
+        assert result["success"] is True
+        assert "warnings" in result
+        assert isinstance(result["warnings"], list)
+        assert len(result["warnings"]) == 1
+        warning_msg = result["warnings"][0]
+        assert "unknown_param" in warning_msg
+        assert "another_extra" in warning_msg
+        assert "ignored" in warning_msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_no_warning_when_params_known(self, tmp_path, monkeypatch):
+        """No warnings when all input params match the pipeline schema."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "no-warn-test",
+            "input_schema": {
+                "name": {"type": "string", "description": "A name param"},
+            },
+            "steps": [{"id": "greet", "type": "cli", "args": ["echo", "hello"]}],
+        })
+        result = await _handle_run_pipeline({
+            "pipeline_id": "no-warn-test",
+            "input": {"name": "brix"},
+        })
+        assert result["success"] is True
+        assert result["warnings"] == []
+
 
 # ---------------------------------------------------------------------------
 # V2-08 + V2-09 Pipeline Store + Auto-Exposure Tests

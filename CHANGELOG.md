@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.4] — 2026-03-20
+
+### Added (T-BRIX-V2-20)
+- Warning when unknown input parameters are passed to `run_pipeline` (MCP + REST API)
+- `mcp_server.py` `_handle_run_pipeline`: detects params not in `pipeline.input` schema, appends to `warnings` list in result dict
+- `api.py` `run_pipeline`: same check, `warnings` field added to JSON response
+- 1 new test in `tests/test_mcp_server.py` — `test_run_pipeline_unknown_params_warning`
+
 ## [2.6.2] — 2026-03-20
 
 ### Added
