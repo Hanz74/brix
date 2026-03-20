@@ -1,11 +1,14 @@
-"""Brix MCP Server — stdio transport.
+"""Brix MCP Server — stdio and HTTP/SSE transports.
 
 Exposes Brix pipeline management and execution capabilities as MCP tools.
 Real implementations for Discovery (V2-05), Builder (V2-06), Execution (V2-07),
-Pipeline Store (V2-08), and Auto-Exposure as MCP tools (V2-09).
+Pipeline Store (V2-08), Auto-Exposure as MCP tools (V2-09), and HTTP/SSE
+transport (V2-12).
 """
 import json
 import asyncio
+import contextlib
+import logging
 from pathlib import Path
 
 import yaml
@@ -14,6 +17,8 @@ from mcp.server.lowlevel import Server, NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.models import InitializationOptions
 import mcp.types as types
+
+logger = logging.getLogger(__name__)
 
 from brix.bricks.registry import BrickRegistry
 from brix.loader import PipelineLoader
@@ -1127,3 +1132,74 @@ async def run_mcp_server() -> None:
     async with stdio_server() as (read_stream, write_stream):
         init_options = server.create_initialization_options()
         await server.run(read_stream, write_stream, init_options)
+
+
+async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
+    """Run Brix MCP server with HTTP/SSE transport (V2-12).
+
+    Starts a Starlette ASGI app backed by StreamableHTTPSessionManager.
+    Clients connect via:
+      - GET/POST /mcp   — StreamableHTTP (recommended, supports resumability)
+      - GET /sse        — legacy SSE endpoint (for older MCP clients)
+      - POST /messages  — legacy POST endpoint for SSE messages
+
+    The server listens on ``host:port`` (default 0.0.0.0:8091).
+    """
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import Response
+    from starlette.routing import Mount, Route
+    from starlette.types import Receive, Scope, Send
+
+    from mcp.server.sse import SseServerTransport
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    mcp_server = create_server()
+
+    # --- Streamable HTTP (primary, modern transport) ---
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp_server,
+        event_store=None,   # no resumability — stateful sessions only
+        json_response=False,
+        stateless=False,
+    )
+
+    async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
+        await session_manager.handle_request(scope, receive, send)
+
+    # --- SSE (legacy, for older MCP clients) ---
+    sse_transport = SseServerTransport("/messages")
+
+    async def handle_sse(request: Request) -> None:
+        async with sse_transport.connect_sse(
+            request.scope, request.receive, request._send  # type: ignore[attr-defined]
+        ) as streams:
+            read_stream, write_stream = streams
+            init_options = mcp_server.create_initialization_options()
+            await mcp_server.run(read_stream, write_stream, init_options)
+
+    async def handle_messages(scope: Scope, receive: Receive, send: Send) -> None:
+        await sse_transport.handle_post_message(scope, receive, send)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):  # type: ignore[type-arg]
+        async with session_manager.run():
+            logger.info("Brix MCP HTTP server started on %s:%d", host, port)
+            yield
+        logger.info("Brix MCP HTTP server stopped")
+
+    app = Starlette(
+        lifespan=lifespan,
+        routes=[
+            # Streamable HTTP — primary transport
+            Mount("/mcp", app=handle_streamable_http),
+            # Legacy SSE transport
+            Route("/sse", endpoint=handle_sse),
+            Mount("/messages", app=handle_messages),
+        ],
+    )
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    server_instance = uvicorn.Server(config)
+    await server_instance.serve()

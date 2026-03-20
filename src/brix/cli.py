@@ -412,11 +412,38 @@ def _save_servers_yaml(path: Path, data: dict):
 
 
 @main.command("mcp")
-def mcp_server():
-    """Start Brix as MCP server (stdio transport)."""
-    import asyncio
-    from brix.mcp_server import run_mcp_server
-    asyncio.run(run_mcp_server())
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "http"]),
+    default="stdio",
+    show_default=True,
+    help="Transport to use: stdio (default) or http (HTTP/SSE via uvicorn).",
+)
+@click.option(
+    "--port",
+    default=8091,
+    show_default=True,
+    help="Port for HTTP transport (ignored for stdio).",
+)
+@click.option(
+    "--host",
+    default="0.0.0.0",
+    show_default=True,
+    help="Host to bind for HTTP transport (ignored for stdio).",
+)
+def mcp_server(transport: str, port: int, host: str):
+    """Start Brix as MCP server.
+
+    Use --transport stdio (default) for Claude Desktop / claude code.
+    Use --transport http to expose the server over HTTP/SSE on --host:--port.
+    """
+    from brix.mcp_server import run_mcp_server, run_mcp_http_server
+
+    if transport == "stdio":
+        asyncio.run(run_mcp_server())
+    else:
+        click.echo(f"Starting Brix MCP HTTP server on {host}:{port}", err=True)
+        asyncio.run(run_mcp_http_server(host=host, port=port))
 
 
 @main.command("api")

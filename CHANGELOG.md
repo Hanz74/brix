@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.0] — 2026-03-20
+
+### Added
+- V2-12 MCP HTTP/SSE Transport: `run_mcp_http_server(host, port)` in `src/brix/mcp_server.py`
+- Starlette ASGI app with two transport paths:
+  - `GET/POST /mcp` — StreamableHTTP (primary, via `StreamableHTTPSessionManager`)
+  - `GET /sse` + `POST /messages` — Legacy SSE transport (for older MCP clients)
+- `brix mcp --transport http --port 8091 --host 0.0.0.0` CLI option (extends existing `brix mcp` command)
+- `brix-mcp` service in `docker-compose.yml` now exposes port 8091 with `BRIX_MCP_TRANSPORT=stdio` env var
+- 3 new tests in `tests/test_mcp_http.py`: `test_http_transport_available`, `test_http_server_imports`, `test_http_tool_call_via_lifespan`
+
 ## [2.3.0] — 2026-03-20
 
 ### Added

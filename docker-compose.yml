@@ -19,6 +19,7 @@ services:
     container_name: brix-mcp
     environment:
       - BRIX_MODE=mcp
+      - BRIX_MCP_TRANSPORT=stdio  # set to "http" to enable HTTP/SSE transport on port 8091
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker:ro
@@ -27,6 +28,8 @@ services:
       - ./pipelines:/app/pipelines
       - ./helpers:/app/helpers
     env_file: .env
+    ports:
+      - "8091:8091"
     networks:
       - shared-network
     stdin_open: true
