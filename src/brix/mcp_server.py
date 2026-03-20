@@ -1,16 +1,43 @@
 """Brix MCP Server — stdio transport.
 
 Exposes Brix pipeline management and execution capabilities as MCP tools.
-Tool implementations are stubs in this version (Wave 2 foundation).
-Real logic is added in V2-05 through V2-07.
+Real implementations for Discovery (V2-05), Builder (V2-06), and Execution (V2-07).
 """
 import json
 import asyncio
+from pathlib import Path
+
+import yaml
 
 from mcp.server.lowlevel import Server, NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.models import InitializationOptions
 import mcp.types as types
+
+from brix.bricks.registry import BrickRegistry
+from brix.loader import PipelineLoader
+from brix.validator import PipelineValidator
+from brix.history import RunHistory
+from brix.engine import PipelineEngine
+
+# Shared singletons
+_registry = BrickRegistry()
+_loader = PipelineLoader()
+_validator = PipelineValidator()
+
+# Default pipeline directory
+PIPELINE_DIR = Path.home() / ".brix" / "pipelines"
+
+
+def _pipeline_dir() -> Path:
+    """Return the pipeline directory, creating it if needed."""
+    PIPELINE_DIR.mkdir(parents=True, exist_ok=True)
+    return PIPELINE_DIR
+
+
+def _pipeline_path(name: str) -> Path:
+    """Return the path for a named pipeline YAML."""
+    return _pipeline_dir() / f"{name}.yaml"
 
 
 # ---------------------------------------------------------------------------
@@ -93,9 +120,10 @@ BRIX_TOOLS: list[types.Tool] = [
     types.Tool(
         name="brix__create_pipeline",
         description=(
-            "Create a new empty pipeline definition. "
-            "Use this as the first step when building a pipeline. "
-            "Returns the pipeline ID and initial structure ready for steps to be added."
+            "Create a new pipeline definition, optionally with steps inline. "
+            "Use this as the first step when building a pipeline — steps can be provided "
+            "immediately to validate and save in a single call. "
+            "Returns the pipeline_id, validated flag, step_count, and any errors."
         ),
         inputSchema={
             "type": "object",
@@ -113,6 +141,10 @@ BRIX_TOOLS: list[types.Tool] = [
                     "description": "Semantic version string (default: '1.0.0').",
                     "default": "1.0.0",
                 },
+                "steps": {
+                    "type": "array",
+                    "description": "Optional list of step dicts to include inline (Lisa P0).",
+                },
                 "input_schema": {
                     "type": "object",
                     "description": "JSON Schema describing pipeline input parameters.",
@@ -124,16 +156,16 @@ BRIX_TOOLS: list[types.Tool] = [
     types.Tool(
         name="brix__get_pipeline",
         description=(
-            "Get the current definition of a pipeline by ID or name. "
+            "Get the current definition of a pipeline by name. "
             "Use to inspect pipeline structure before running or modifying it. "
-            "Returns full pipeline YAML-like structure with all steps and config."
+            "Returns full pipeline structure with all steps and config."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "pipeline_id": {
                     "type": "string",
-                    "description": "Pipeline ID (UUID) or pipeline name.",
+                    "description": "Pipeline name (used as file name in pipelines dir).",
                 },
             },
             "required": ["pipeline_id"],
@@ -151,7 +183,7 @@ BRIX_TOOLS: list[types.Tool] = [
             "properties": {
                 "pipeline_id": {
                     "type": "string",
-                    "description": "Target pipeline ID.",
+                    "description": "Target pipeline name.",
                 },
                 "step_id": {
                     "type": "string",
@@ -176,6 +208,10 @@ BRIX_TOOLS: list[types.Tool] = [
                     "description": "Whether to run this step in parallel with compatible siblings.",
                     "default": False,
                 },
+                "position": {
+                    "type": "string",
+                    "description": "Where to insert step, e.g. 'after:<step_id>'. Default: append.",
+                },
             },
             "required": ["pipeline_id", "step_id", "brick"],
         },
@@ -192,7 +228,7 @@ BRIX_TOOLS: list[types.Tool] = [
             "properties": {
                 "pipeline_id": {
                     "type": "string",
-                    "description": "Target pipeline ID.",
+                    "description": "Target pipeline name.",
                 },
                 "step_id": {
                     "type": "string",
@@ -214,7 +250,7 @@ BRIX_TOOLS: list[types.Tool] = [
             "properties": {
                 "pipeline_id": {
                     "type": "string",
-                    "description": "Pipeline ID to validate.",
+                    "description": "Pipeline name to validate.",
                 },
             },
             "required": ["pipeline_id"],
@@ -233,7 +269,7 @@ BRIX_TOOLS: list[types.Tool] = [
             "properties": {
                 "pipeline_id": {
                     "type": "string",
-                    "description": "Pipeline ID to execute.",
+                    "description": "Pipeline name to execute.",
                 },
                 "input": {
                     "type": "object",
@@ -301,7 +337,7 @@ BRIX_TOOLS: list[types.Tool] = [
             "properties": {
                 "directory": {
                     "type": "string",
-                    "description": "Directory to search for pipeline files (default: /app/pipelines).",
+                    "description": "Directory to search for pipeline files (default: ~/.brix/pipelines).",
                 },
             },
             "required": [],
@@ -311,97 +347,539 @@ BRIX_TOOLS: list[types.Tool] = [
 
 
 # ---------------------------------------------------------------------------
-# Stub handlers
+# V2-05 Discovery handlers
 # ---------------------------------------------------------------------------
 
 async def _handle_get_tips(arguments: dict) -> dict:
+    """Return usage tips and best practices for Brix."""
+    # Gather brick categories
+    all_bricks = _registry.list_all()
+    categories: dict[str, int] = {}
+    for b in all_bricks:
+        categories[b.category] = categories.get(b.category, 0) + 1
+
+    category_lines = [
+        f"  - {cat}: {count} brick(s)" for cat, count in sorted(categories.items())
+    ]
+
+    # List saved pipelines
+    pipeline_dir = _pipeline_dir()
+    pipeline_files = list(pipeline_dir.glob("*.yaml"))
+    pipeline_names = [p.stem for p in pipeline_files]
+
+    tips = [
+        "=== Brix Usage Tips ===",
+        "",
+        "## Available Brick Categories",
+        *category_lines,
+        f"  Total bricks: {len(all_bricks)}",
+        "",
+        "## Saved Pipelines",
+        (
+            "\n".join(f"  - {name}" for name in pipeline_names)
+            if pipeline_names
+            else "  (none saved yet — use brix__create_pipeline)"
+        ),
+        "",
+        "## Path Convention",
+        "  - Host paths must use /host/root/... prefix inside the container",
+        "  - Example: /root/myfile.txt on host → /host/root/myfile.txt in pipeline",
+        "",
+        "## Performance Pitfalls",
+        "  - NEVER pass base64-encoded file content in foreach loops (payload explosion)",
+        "  - Use file paths (strings) in foreach, not file contents",
+        "  - For large payloads (>100KB), use Python helper with httpx instead of http brick",
+        "",
+        "## Helper Script Pattern (argv + stdin)",
+        "  Scripts must support both input methods:",
+        "    if len(sys.argv) > 1:",
+        "        params = json.loads(sys.argv[1])",
+        "    elif not sys.stdin.isatty():",
+        "        raw = sys.stdin.read().strip()",
+        "        params = json.loads(raw) if raw else {}",
+        "",
+        "## Common Mistakes",
+        "  - concurrency must be int (not a Jinja2 template string)",
+        "  - shell=False is enforced for cli bricks (use args list, not command string)",
+        "  - No container rebuild needed for pipelines/ and helpers/ (volumes are mounted)",
+        "",
+        "## Strategies",
+        "  - targeted: use specific MCP tool → brix run → result (fast, precise)",
+        "  - broad: fetch all → filter locally → process (robust, works without API search)",
+        "",
+        "## Workflow",
+        "  1. brix__list_bricks or brix__search_bricks to find the right brick",
+        "  2. brix__get_brick_schema to learn parameters",
+        "  3. brix__create_pipeline with steps inline (Lisa P0: one call to create+validate)",
+        "  4. brix__validate_pipeline to catch errors early",
+        "  5. brix__run_pipeline to execute",
+        "  6. brix__get_run_history to review results",
+    ]
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__get_tips",
+        "tips": tips,
+        "brick_count": len(all_bricks),
+        "pipeline_count": len(pipeline_names),
+        "categories": list(categories.keys()),
     }
 
 
 async def _handle_list_bricks(arguments: dict) -> dict:
+    """List all available bricks, optionally filtered by category."""
+    category = arguments.get("category")
+
+    if category:
+        bricks = _registry.list_by_category(category)
+    else:
+        bricks = _registry.list_all()
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__list_bricks",
+        "bricks": [
+            {
+                "name": b.name,
+                "type": b.type,
+                "description": b.description,
+                "when_to_use": b.when_to_use,
+                "category": b.category,
+            }
+            for b in bricks
+        ],
+        "total": len(bricks),
+        "categories": _registry.get_categories(),
     }
 
 
 async def _handle_search_bricks(arguments: dict) -> dict:
+    """Search bricks by keyword."""
+    query = arguments.get("query", "")
+    category = arguments.get("category")
+
+    results = _registry.search(query, category=category)
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__search_bricks",
+        "query": query,
+        "results": [
+            {
+                "name": b.name,
+                "type": b.type,
+                "description": b.description,
+                "when_to_use": b.when_to_use,
+                "category": b.category,
+            }
+            for b in results
+        ],
+        "total": len(results),
     }
 
 
 async def _handle_get_brick_schema(arguments: dict) -> dict:
+    """Get full schema for a specific brick."""
+    name = arguments.get("brick_name", "")
+    brick = _registry.get(name)
+
+    if not brick:
+        return {
+            "success": False,
+            "error": f"Brick '{name}' not found. Use brix__list_bricks to see available bricks.",
+        }
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__get_brick_schema",
+        "name": brick.name,
+        "type": brick.type,
+        "description": brick.description,
+        "when_to_use": brick.when_to_use,
+        "category": brick.category,
+        "input_description": brick.input_description,
+        "output_description": brick.output_description,
+        "config_schema": brick.to_json_schema(),
     }
 
 
+# ---------------------------------------------------------------------------
+# V2-06 Builder handlers
+# ---------------------------------------------------------------------------
+
+def _load_pipeline_yaml(name: str) -> dict:
+    """Load a pipeline YAML file as raw dict."""
+    path = _pipeline_path(name)
+    if not path.exists():
+        raise FileNotFoundError(f"Pipeline '{name}' not found at {path}")
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _save_pipeline_yaml(name: str, data: dict) -> None:
+    """Save a pipeline dict to YAML."""
+    path = _pipeline_path(name)
+    with open(path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def _validate_pipeline_dict(data: dict) -> dict:
+    """Validate a pipeline dict using PipelineValidator. Returns validation summary."""
+    try:
+        pipeline = _loader.load_from_string(yaml.dump(data))
+        result = _validator.validate(pipeline)
+        return {
+            "valid": result.is_valid,
+            "errors": result.errors,
+            "warnings": result.warnings,
+            "checks": result.checks,
+        }
+    except Exception as exc:
+        return {
+            "valid": False,
+            "errors": [str(exc)],
+            "warnings": [],
+            "checks": [],
+        }
+
+
 async def _handle_create_pipeline(arguments: dict) -> dict:
+    """Create a new pipeline, optionally with inline steps."""
+    name = arguments.get("name", "")
+    if not name:
+        return {"success": False, "error": "Pipeline 'name' is required."}
+
+    description = arguments.get("description", "")
+    version = arguments.get("version", "1.0.0")
+    steps_raw = arguments.get("steps", [])
+    input_schema = arguments.get("input_schema", {})
+
+    # Build pipeline dict
+    pipeline_data: dict = {
+        "name": name,
+        "version": version,
+        "steps": steps_raw or [],
+    }
+    if description:
+        pipeline_data["description"] = description
+    if input_schema:
+        pipeline_data["input"] = input_schema
+
+    # Validate
+    validation = _validate_pipeline_dict(pipeline_data)
+
+    # Save regardless (agent can fix errors via add_step / validate)
+    _save_pipeline_yaml(name, pipeline_data)
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__create_pipeline",
+        "success": True,
+        "pipeline_id": name,
+        "pipeline_path": str(_pipeline_path(name)),
+        "step_count": len(steps_raw or []),
+        "validated": validation["valid"],
+        "validation": validation,
     }
 
 
 async def _handle_get_pipeline(arguments: dict) -> dict:
+    """Get pipeline definition by name."""
+    name = arguments.get("pipeline_id", "")
+    try:
+        data = _load_pipeline_yaml(name)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+
+    steps = data.get("steps", [])
     return {
-        "status": "not_implemented",
-        "tool": "brix__get_pipeline",
+        "name": data.get("name", name),
+        "version": data.get("version", "1.0.0"),
+        "description": data.get("description", ""),
+        "step_count": len(steps),
+        "steps": steps,
+        "input": data.get("input", {}),
+        "credentials": data.get("credentials", {}),
+        "output": data.get("output", {}),
+        "pipeline_path": str(_pipeline_path(name)),
     }
 
 
 async def _handle_add_step(arguments: dict) -> dict:
+    """Add a step to an existing pipeline."""
+    name = arguments.get("pipeline_id", "")
+    step_id = arguments.get("step_id", "")
+    brick = arguments.get("brick", "")
+
+    try:
+        data = _load_pipeline_yaml(name)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+
+    # Map brick name to type (look up in registry)
+    brick_def = _registry.get(brick)
+    step_type = brick_def.type if brick_def else "cli"  # safe fallback
+
+    # Build step dict
+    step: dict = {"id": step_id, "type": step_type}
+    if arguments.get("params"):
+        step["params"] = arguments["params"]
+    if arguments.get("on_error"):
+        step["on_error"] = arguments["on_error"]
+    if arguments.get("parallel"):
+        step["parallel"] = arguments["parallel"]
+
+    # Insert at position or append
+    steps: list = data.get("steps", [])
+    position = arguments.get("position", "")
+    if position and position.startswith("after:"):
+        after_id = position[len("after:"):]
+        idx = next((i for i, s in enumerate(steps) if s.get("id") == after_id), None)
+        if idx is not None:
+            steps.insert(idx + 1, step)
+        else:
+            steps.append(step)
+    else:
+        steps.append(step)
+
+    data["steps"] = steps
+
+    # Validate and save
+    validation = _validate_pipeline_dict(data)
+    _save_pipeline_yaml(name, data)
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__add_step",
+        "success": True,
+        "pipeline_id": name,
+        "step_count": len(steps),
+        "validated": validation["valid"],
+        "validation": validation,
     }
 
 
 async def _handle_remove_step(arguments: dict) -> dict:
+    """Remove a step from a pipeline."""
+    name = arguments.get("pipeline_id", "")
+    step_id = arguments.get("step_id", "")
+
+    try:
+        data = _load_pipeline_yaml(name)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+
+    steps: list = data.get("steps", [])
+    original_count = len(steps)
+    steps = [s for s in steps if s.get("id") != step_id]
+
+    if len(steps) == original_count:
+        return {
+            "success": False,
+            "error": f"Step '{step_id}' not found in pipeline '{name}'.",
+        }
+
+    data["steps"] = steps
+    _save_pipeline_yaml(name, data)
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__remove_step",
+        "success": True,
+        "pipeline_id": name,
+        "removed_step_id": step_id,
+        "step_count": len(steps),
     }
 
 
 async def _handle_validate_pipeline(arguments: dict) -> dict:
+    """Validate a pipeline without running it."""
+    name = arguments.get("pipeline_id", "")
+    try:
+        data = _load_pipeline_yaml(name)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+
+    validation = _validate_pipeline_dict(data)
     return {
-        "status": "not_implemented",
-        "tool": "brix__validate_pipeline",
+        "success": True,
+        "pipeline_id": name,
+        "valid": validation["valid"],
+        "errors": validation["errors"],
+        "warnings": validation["warnings"],
+        "checks": validation["checks"],
     }
 
+
+# ---------------------------------------------------------------------------
+# V2-07 Execution handlers
+# ---------------------------------------------------------------------------
 
 async def _handle_run_pipeline(arguments: dict) -> dict:
-    return {
-        "status": "not_implemented",
-        "tool": "brix__run_pipeline",
-    }
+    """Execute a pipeline and return results with dual-layer error schema."""
+    name = arguments.get("pipeline_id", "")
+    user_input = arguments.get("input", {})
+
+    try:
+        data = _load_pipeline_yaml(name)
+    except FileNotFoundError as exc:
+        return {
+            "success": False,
+            "error": {
+                "code": "PIPELINE_NOT_FOUND",
+                "message": str(exc),
+                "step_id": None,
+                "recoverable": False,
+                "agent_actions": ["list_pipelines", "create_pipeline"],
+                "resume_command": None,
+            },
+        }
+
+    try:
+        pipeline_yaml = yaml.dump(data)
+        pipeline = _loader.load_from_string(pipeline_yaml)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": {
+                "code": "PIPELINE_PARSE_ERROR",
+                "message": str(exc),
+                "step_id": None,
+                "recoverable": True,
+                "agent_actions": ["validate_pipeline", "fix_pipeline_yaml"],
+                "resume_command": f"brix__validate_pipeline({{\"pipeline_id\": \"{name}\"}})",
+            },
+        }
+
+    engine = PipelineEngine()
+    try:
+        result = await engine.run(pipeline, user_input)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": {
+                "code": "ENGINE_ERROR",
+                "message": str(exc),
+                "step_id": None,
+                "recoverable": True,
+                "agent_actions": ["retry_pipeline", "validate_pipeline"],
+                "resume_command": f"brix__run_pipeline({{\"pipeline_id\": \"{name}\"}})",
+            },
+        }
+
+    if result.success:
+        return {
+            "success": True,
+            "run_id": result.run_id,
+            "pipeline": name,
+            "duration": round(result.duration, 2),
+            "steps": {
+                step_id: {
+                    "status": s.status,
+                    "duration": round(s.duration, 2),
+                    "items": s.items,
+                    "errors": s.errors,
+                }
+                for step_id, s in result.steps.items()
+            },
+            "result": result.result,
+        }
+    else:
+        # Find the first failed step for the error report
+        failed_step = next(
+            (sid for sid, s in result.steps.items() if s.status == "error"),
+            None,
+        )
+        return {
+            "success": False,
+            "run_id": result.run_id,
+            "pipeline": name,
+            "duration": round(result.duration, 2),
+            "steps": {
+                step_id: {
+                    "status": s.status,
+                    "duration": round(s.duration, 2),
+                    "items": s.items,
+                    "errors": s.errors,
+                }
+                for step_id, s in result.steps.items()
+            },
+            "error": {
+                "code": "STEP_FAILED",
+                "message": f"Pipeline failed at step: {failed_step or 'unknown'}",
+                "step_id": failed_step,
+                "recoverable": True,
+                "agent_actions": ["retry_step", "skip_step", "abort_pipeline"],
+                "resume_command": (
+                    f"brix__run_pipeline({{\"pipeline_id\": \"{name}\", "
+                    f"\"resume_from\": \"{failed_step}\"}})"
+                    if failed_step else None
+                ),
+            },
+        }
 
 
 async def _handle_get_run_status(arguments: dict) -> dict:
+    """Get the status of a specific run by run_id."""
+    run_id = arguments.get("run_id", "")
+    history = RunHistory()
+    run = history.get_run(run_id)
+
+    if run is None:
+        return {
+            "success": False,
+            "error": f"Run '{run_id}' not found in history.",
+        }
+
+    # SQLite stores success as 0/1 integer — normalise to bool
+    run_data = dict(run)
+    if "success" in run_data:
+        run_data["success"] = bool(run_data["success"])
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__get_run_status",
+        "success": True,
+        **run_data,
     }
 
 
 async def _handle_get_run_history(arguments: dict) -> dict:
+    """Get recent run history."""
+    limit = int(arguments.get("limit", 10))
+    pipeline_name = arguments.get("pipeline_name")
+
+    history = RunHistory()
+    runs = history.get_recent(limit=limit)
+
+    if pipeline_name:
+        runs = [r for r in runs if r.get("pipeline") == pipeline_name]
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__get_run_history",
+        "success": True,
+        "runs": runs,
+        "total": len(runs),
     }
 
 
 async def _handle_list_pipelines(arguments: dict) -> dict:
+    """List all pipeline YAML files."""
+    directory = arguments.get("directory")
+    if directory:
+        search_dir = Path(directory)
+    else:
+        search_dir = _pipeline_dir()
+
+    pipelines = []
+    if search_dir.exists():
+        for yaml_file in sorted(search_dir.glob("*.yaml")):
+            try:
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f) or {}
+                steps = data.get("steps", [])
+                pipelines.append({
+                    "name": data.get("name", yaml_file.stem),
+                    "version": data.get("version", ""),
+                    "description": data.get("description", ""),
+                    "step_count": len(steps),
+                    "file": str(yaml_file),
+                })
+            except Exception as exc:
+                pipelines.append({
+                    "name": yaml_file.stem,
+                    "error": str(exc),
+                    "file": str(yaml_file),
+                })
+
     return {
-        "status": "not_implemented",
-        "tool": "brix__list_pipelines",
+        "success": True,
+        "pipelines": pipelines,
+        "total": len(pipelines),
+        "directory": str(search_dir),
     }
 
 

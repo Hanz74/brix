@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.1] — 2026-03-20
+
+### Added
+- V2-05 Discovery: `_handle_get_tips`, `_handle_list_bricks`, `_handle_search_bricks`, `_handle_get_brick_schema` — real implementations replacing stubs
+- V2-06 Builder: `_handle_create_pipeline` (with inline steps + immediate validation, Lisa P0), `_handle_get_pipeline`, `_handle_add_step` (with `position` support), `_handle_remove_step`, `_handle_validate_pipeline`
+- V2-07 Execution: `_handle_run_pipeline` (dual-layer error schema), `_handle_get_run_status`, `_handle_get_run_history` (with pipeline filter), `_handle_list_pipelines` (custom directory support)
+- 26 new integration tests across `TestDiscoveryHandlers`, `TestBuilderHandlers`, `TestExecutionHandlers`
+- Pipeline persistence in `~/.brix/pipelines/*.yaml`
+
+### Changed
+- Removed `TestStubReturnsNotImplemented` test class (stubs replaced by real handlers)
+
 ## [2.1.0] — 2026-03-20
 
 ### Added

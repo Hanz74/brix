@@ -145,99 +145,6 @@ class TestToolSchemasValid:
                 )
 
 
-class TestStubReturnsNotImplemented:
-    """Each handler stub returns the expected not_implemented response."""
-
-    @pytest.mark.asyncio
-    async def test_get_tips_stub(self):
-        result = await _handle_get_tips({})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__get_tips"
-
-    @pytest.mark.asyncio
-    async def test_list_bricks_stub(self):
-        result = await _handle_list_bricks({})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__list_bricks"
-
-    @pytest.mark.asyncio
-    async def test_search_bricks_stub(self):
-        result = await _handle_search_bricks({"query": "http"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__search_bricks"
-
-    @pytest.mark.asyncio
-    async def test_get_brick_schema_stub(self):
-        result = await _handle_get_brick_schema({"brick_name": "http_get"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__get_brick_schema"
-
-    @pytest.mark.asyncio
-    async def test_create_pipeline_stub(self):
-        result = await _handle_create_pipeline({"name": "test"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__create_pipeline"
-
-    @pytest.mark.asyncio
-    async def test_get_pipeline_stub(self):
-        result = await _handle_get_pipeline({"pipeline_id": "abc"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__get_pipeline"
-
-    @pytest.mark.asyncio
-    async def test_add_step_stub(self):
-        result = await _handle_add_step({"pipeline_id": "abc", "step_id": "s1", "brick": "http_get"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__add_step"
-
-    @pytest.mark.asyncio
-    async def test_remove_step_stub(self):
-        result = await _handle_remove_step({"pipeline_id": "abc", "step_id": "s1"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__remove_step"
-
-    @pytest.mark.asyncio
-    async def test_validate_pipeline_stub(self):
-        result = await _handle_validate_pipeline({"pipeline_id": "abc"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__validate_pipeline"
-
-    @pytest.mark.asyncio
-    async def test_run_pipeline_stub(self):
-        result = await _handle_run_pipeline({"pipeline_id": "abc"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__run_pipeline"
-
-    @pytest.mark.asyncio
-    async def test_get_run_status_stub(self):
-        result = await _handle_get_run_status({"run_id": "run-123"})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__get_run_status"
-
-    @pytest.mark.asyncio
-    async def test_get_run_history_stub(self):
-        result = await _handle_get_run_history({})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__get_run_history"
-
-    @pytest.mark.asyncio
-    async def test_list_pipelines_stub(self):
-        result = await _handle_list_pipelines({})
-        assert result["status"] == "not_implemented"
-        assert result["tool"] == "brix__list_pipelines"
-
-    @pytest.mark.asyncio
-    async def test_all_stubs_return_not_implemented(self):
-        """Dispatch table coverage: every handler returns not_implemented."""
-        for tool_name, handler in _HANDLERS.items():
-            result = await handler({})
-            assert result["status"] == "not_implemented", (
-                f"Handler for '{tool_name}' did not return not_implemented"
-            )
-            assert result["tool"] == tool_name, (
-                f"Handler for '{tool_name}' returned wrong tool name: {result['tool']}"
-            )
-
 
 class TestServerObject:
     """Tests for the Server object itself."""
@@ -263,3 +170,351 @@ class TestServerObject:
 
         handler = asyncio.run(_run())
         assert handler is None, "Unknown tools must not have handlers"
+
+
+# ---------------------------------------------------------------------------
+# V2-05 Discovery Tests
+# ---------------------------------------------------------------------------
+
+class TestDiscoveryHandlers:
+    """Tests for real Discovery handler implementations (V2-05)."""
+
+    @pytest.mark.asyncio
+    async def test_get_tips_returns_content(self):
+        """get_tips gives non-empty tips list."""
+        result = await _handle_get_tips({})
+        assert "tips" in result
+        assert isinstance(result["tips"], list)
+        assert len(result["tips"]) > 0
+        # Should mention brick count
+        assert result["brick_count"] > 0
+
+    @pytest.mark.asyncio
+    async def test_list_bricks_returns_builtins(self):
+        """list_bricks returns at least 10 built-in bricks."""
+        result = await _handle_list_bricks({})
+        assert "bricks" in result
+        assert result["total"] >= 10
+        names = [b["name"] for b in result["bricks"]]
+        assert "http_get" in names
+
+    @pytest.mark.asyncio
+    async def test_list_bricks_category_filter(self):
+        """list_bricks category filter only returns matching bricks."""
+        result = await _handle_list_bricks({"category": "http"})
+        assert result["total"] >= 1
+        for brick in result["bricks"]:
+            assert brick["category"] == "http"
+
+    @pytest.mark.asyncio
+    async def test_search_bricks_finds_http(self):
+        """Search for 'http' finds http_get brick."""
+        result = await _handle_search_bricks({"query": "http"})
+        assert result["total"] > 0
+        names = [b["name"] for b in result["results"]]
+        assert any("http" in n for n in names)
+
+    @pytest.mark.asyncio
+    async def test_search_bricks_no_match(self):
+        """Search for nonsense query returns empty list."""
+        result = await _handle_search_bricks({"query": "xyzzy_nonexistent_brick_9999"})
+        assert result["total"] == 0
+        assert result["results"] == []
+
+    @pytest.mark.asyncio
+    async def test_get_brick_schema_valid(self):
+        """Schema for http_get has properties with url."""
+        result = await _handle_get_brick_schema({"brick_name": "http_get"})
+        assert "config_schema" in result
+        assert "properties" in result["config_schema"]
+        assert "url" in result["config_schema"]["properties"]
+
+    @pytest.mark.asyncio
+    async def test_get_brick_schema_not_found(self):
+        """Schema for unknown brick returns error."""
+        result = await _handle_get_brick_schema({"brick_name": "nonexistent_brick_xyz"})
+        assert result.get("success") is False
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# V2-06 Builder Tests
+# ---------------------------------------------------------------------------
+
+class TestBuilderHandlers:
+    """Tests for real Builder handler implementations (V2-06)."""
+
+    @pytest.mark.asyncio
+    async def test_create_pipeline_empty(self, tmp_path, monkeypatch):
+        """Create an empty pipeline saves a YAML file."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        result = await _handle_create_pipeline({"name": "test-empty"})
+        assert result["success"] is True
+        assert result["pipeline_id"] == "test-empty"
+        assert result["step_count"] == 0
+        assert (tmp_path / "test-empty.yaml").exists()
+
+    @pytest.mark.asyncio
+    async def test_create_pipeline_inline(self, tmp_path, monkeypatch):
+        """Create a pipeline with inline steps — validated immediately (Lisa P0)."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        steps = [{"id": "greet", "type": "cli", "args": ["echo", "hello"]}]
+        result = await _handle_create_pipeline({
+            "name": "test-inline",
+            "description": "Test inline pipeline",
+            "steps": steps,
+        })
+        assert result["success"] is True
+        assert result["step_count"] == 1
+        assert "validated" in result
+        assert (tmp_path / "test-inline.yaml").exists()
+
+    @pytest.mark.asyncio
+    async def test_get_pipeline(self, tmp_path, monkeypatch):
+        """Get a pipeline that was previously created."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        # Create first
+        await _handle_create_pipeline({
+            "name": "test-get",
+            "description": "A test pipeline",
+            "steps": [{"id": "step1", "type": "cli", "args": ["echo", "hi"]}],
+        })
+        # Now retrieve it
+        result = await _handle_get_pipeline({"pipeline_id": "test-get"})
+        assert result["name"] == "test-get"
+        assert result["step_count"] == 1
+        assert result["description"] == "A test pipeline"
+
+    @pytest.mark.asyncio
+    async def test_get_pipeline_not_found(self, tmp_path, monkeypatch):
+        """Get a nonexistent pipeline returns error."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        result = await _handle_get_pipeline({"pipeline_id": "does-not-exist"})
+        assert result.get("success") is False
+
+    @pytest.mark.asyncio
+    async def test_add_step(self, tmp_path, monkeypatch):
+        """Add a step to an existing pipeline."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        # Create empty pipeline
+        await _handle_create_pipeline({"name": "test-add-step"})
+        # Add a step
+        result = await _handle_add_step({
+            "pipeline_id": "test-add-step",
+            "step_id": "say_hello",
+            "brick": "run_cli",
+            "params": {"args": ["echo", "hello"]},
+        })
+        assert result["success"] is True
+        assert result["step_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_add_step_position(self, tmp_path, monkeypatch):
+        """Add a step after a specific step ID."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-position",
+            "steps": [
+                {"id": "first", "type": "cli", "args": ["echo", "1"]},
+                {"id": "third", "type": "cli", "args": ["echo", "3"]},
+            ],
+        })
+        result = await _handle_add_step({
+            "pipeline_id": "test-position",
+            "step_id": "second",
+            "brick": "run_cli",
+            "position": "after:first",
+        })
+        assert result["success"] is True
+        assert result["step_count"] == 3
+        # Verify order
+        pipeline = await _handle_get_pipeline({"pipeline_id": "test-position"})
+        step_ids = [s["id"] for s in pipeline["steps"]]
+        assert step_ids == ["first", "second", "third"]
+
+    @pytest.mark.asyncio
+    async def test_remove_step(self, tmp_path, monkeypatch):
+        """Remove a step from a pipeline."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-remove",
+            "steps": [
+                {"id": "keep", "type": "cli", "args": ["echo", "keep"]},
+                {"id": "remove_me", "type": "cli", "args": ["echo", "gone"]},
+            ],
+        })
+        result = await _handle_remove_step({
+            "pipeline_id": "test-remove",
+            "step_id": "remove_me",
+        })
+        assert result["success"] is True
+        assert result["step_count"] == 1
+        # Verify step is gone
+        pipeline = await _handle_get_pipeline({"pipeline_id": "test-remove"})
+        step_ids = [s["id"] for s in pipeline["steps"]]
+        assert "remove_me" not in step_ids
+        assert "keep" in step_ids
+
+    @pytest.mark.asyncio
+    async def test_remove_step_not_found(self, tmp_path, monkeypatch):
+        """Removing a nonexistent step returns error."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({"name": "test-remove-missing"})
+        result = await _handle_remove_step({
+            "pipeline_id": "test-remove-missing",
+            "step_id": "ghost_step",
+        })
+        assert result.get("success") is False
+
+    @pytest.mark.asyncio
+    async def test_validate_pipeline(self, tmp_path, monkeypatch):
+        """A valid pipeline returns valid=True."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-validate",
+            "steps": [{"id": "step1", "type": "cli", "args": ["echo", "ok"]}],
+        })
+        result = await _handle_validate_pipeline({"pipeline_id": "test-validate"})
+        assert result["success"] is True
+        assert result["valid"] is True
+        assert isinstance(result["errors"], list)
+        assert isinstance(result["warnings"], list)
+        assert isinstance(result["checks"], list)
+
+    @pytest.mark.asyncio
+    async def test_validate_pipeline_not_found(self, tmp_path, monkeypatch):
+        """Validate nonexistent pipeline returns error."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        result = await _handle_validate_pipeline({"pipeline_id": "ghost-pipeline"})
+        assert result.get("success") is False
+
+
+# ---------------------------------------------------------------------------
+# V2-07 Execution Tests
+# ---------------------------------------------------------------------------
+
+class TestExecutionHandlers:
+    """Tests for real Execution handler implementations (V2-07)."""
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline(self, tmp_path, monkeypatch):
+        """Run a pipeline with a simple CLI step returns success."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-run",
+            "steps": [{"id": "greet", "type": "cli", "args": ["echo", "hello brix"]}],
+        })
+        result = await _handle_run_pipeline({"pipeline_id": "test-run"})
+        assert result["success"] is True
+        assert "run_id" in result
+        assert result["steps"]["greet"]["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_not_found(self, tmp_path, monkeypatch):
+        """Running a nonexistent pipeline returns structured error."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        result = await _handle_run_pipeline({"pipeline_id": "nonexistent-xyz"})
+        assert result["success"] is False
+        assert "error" in result
+        assert result["error"]["code"] == "PIPELINE_NOT_FOUND"
+        assert result["error"]["recoverable"] is False
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_error_has_dual_layer(self, tmp_path, monkeypatch):
+        """A failing pipeline step returns the dual-layer error schema."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        # Create pipeline with a failing step (command that always fails)
+        await _handle_create_pipeline({
+            "name": "test-fail",
+            "steps": [{"id": "fail_step", "type": "cli", "args": ["false"]}],
+        })
+        result = await _handle_run_pipeline({"pipeline_id": "test-fail"})
+        assert result["success"] is False
+        assert "error" in result
+        error = result["error"]
+        assert "code" in error
+        assert "message" in error
+        assert "recoverable" in error
+        assert "agent_actions" in error
+        assert isinstance(error["agent_actions"], list)
+
+    @pytest.mark.asyncio
+    async def test_get_run_status(self, tmp_path, monkeypatch):
+        """After running a pipeline, get_run_status returns the run."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-status",
+            "steps": [{"id": "hi", "type": "cli", "args": ["echo", "status test"]}],
+        })
+        run_result = await _handle_run_pipeline({"pipeline_id": "test-status"})
+        run_id = run_result["run_id"]
+
+        status = await _handle_get_run_status({"run_id": run_id})
+        assert status["success"] is True
+        assert status["run_id"] == run_id
+
+    @pytest.mark.asyncio
+    async def test_get_run_status_not_found(self):
+        """Unknown run_id returns error."""
+        result = await _handle_get_run_status({"run_id": "run-nonexistent-xyz"})
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_run_history(self, tmp_path, monkeypatch):
+        """After running a pipeline, history has at least one entry."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-history",
+            "steps": [{"id": "h1", "type": "cli", "args": ["echo", "history"]}],
+        })
+        await _handle_run_pipeline({"pipeline_id": "test-history"})
+
+        history_result = await _handle_get_run_history({"limit": 20})
+        assert history_result["success"] is True
+        assert history_result["total"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_get_run_history_pipeline_filter(self, tmp_path, monkeypatch):
+        """get_run_history pipeline_name filter works."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-filter-hist",
+            "steps": [{"id": "f1", "type": "cli", "args": ["echo", "filter"]}],
+        })
+        await _handle_run_pipeline({"pipeline_id": "test-filter-hist"})
+
+        result = await _handle_get_run_history({
+            "pipeline_name": "test-filter-hist",
+            "limit": 10,
+        })
+        assert result["success"] is True
+        for run in result["runs"]:
+            assert run["pipeline"] == "test-filter-hist"
+
+    @pytest.mark.asyncio
+    async def test_list_pipelines(self, tmp_path, monkeypatch):
+        """list_pipelines returns saved pipeline files."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({"name": "listed-pipeline-a"})
+        await _handle_create_pipeline({"name": "listed-pipeline-b"})
+
+        result = await _handle_list_pipelines({})
+        assert result["success"] is True
+        assert result["total"] >= 2
+        names = [p["name"] for p in result["pipelines"]]
+        assert "listed-pipeline-a" in names
+        assert "listed-pipeline-b" in names
+
+    @pytest.mark.asyncio
+    async def test_list_pipelines_custom_dir(self, tmp_path):
+        """list_pipelines with custom directory argument."""
+        import yaml as _yaml
+        # Write a pipeline file manually
+        (tmp_path / "custom-pipe.yaml").write_text(
+            _yaml.dump({"name": "custom-pipe", "version": "1.0.0", "steps": []})
+        )
+        result = await _handle_list_pipelines({"directory": str(tmp_path)})
+        assert result["success"] is True
+        assert result["total"] >= 1
+        names = [p["name"] for p in result["pipelines"]]
+        assert "custom-pipe" in names
