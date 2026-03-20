@@ -210,6 +210,28 @@ Nur Skills allein reichen nicht — Claude nutzt Skills nur wenn der User expliz
 
 ---
 
+## 11. Base64 in foreach = Payload-Explosion
+
+**Problem:** Pipeline liest 80 PDFs, kodiert sie als base64, schickt sie per foreach HTTP-Step an MarkItDown. 80 × 200KB base64 = 16MB JSON durch die Pipeline. Crash.
+
+**Intent:** Große Binärdaten dürfen nie durch die JSON-Datenfluss-Kette. Dateien per Pfad referenzieren, nicht inline.
+
+**Fix:** Helper-Script liest Dateien direkt (Pfade statt base64), macht HTTP-Calls intern mit httpx. foreach über Pfad-Referenzen (`{"path": "/host/root/file.pdf", "size": 12345}`), nicht über Dateiinhalte.
+
+**For users:** Wenn deine Pipeline große Dateien verarbeitet: Pfade übergeben, nicht Inhalte. Python-Helper mit httpx.AsyncClient für Batch-HTTP ist besser als foreach-HTTP mit base64-Payloads.
+
+---
+
+## 12. Container-Netzwerk: Services per Name erreichbar
+
+**Problem:** Claude wusste nicht dass MarkItDown (`markitdown-mcp:8081`) aus dem Brix-Container erreichbar ist. Versuchte curl (nicht installiert). Unnötiger Debug-Aufwand.
+
+**Intent:** Brix ist im shared-network — alle anderen Container sind per Name erreichbar. Das muss dokumentiert sein.
+
+**For users:** Brix kann Services im selben Docker-Netzwerk per Name ansprechen. Zum Debuggen: `docker exec brix python3 -c "import httpx; print(httpx.get('http://service:port/health').text)"`
+
+---
+
 ## General Principle
 
 Brix integrates with the existing system rather than creating its own isolated environment. This means:
