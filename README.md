@@ -756,8 +756,8 @@ With Brix:    1 tool call     | ~5,000 tokens
 - 274 tests passing
 - 27 tasks completed (26 epic + 1 bugfix)
 - 6 waves, 21 architecture decisions, 4 expert reviews
-- 8 integration learnings documented
-- [Detailed documentation in Outline Wiki](https://wiki.kuhlen.dev/doc/brix-D9aLp2qhE5)
+- 12 integration learnings documented
+- All architecture decisions and reviews in [`docs/`](docs/)
 
 ## License
 
