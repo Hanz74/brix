@@ -1,0 +1,59 @@
+name: convert-folder
+version: "1.1.0"
+description: Convert all files in a folder through MarkItDown and save as Markdown
+
+input:
+  source_dir:
+    type: str
+    description: "Source directory with files to convert"
+  output_dir:
+    type: str
+    default: ""
+    description: "Output directory for .md files (default: source_dir/md)"
+  accuracy:
+    type: str
+    default: "standard"
+    description: "Accuracy mode: 'standard' or 'high'"
+  extensions:
+    type: str
+    default: "pdf,docx,pptx,xlsx,png,jpg"
+    description: "Comma-separated file extensions to convert"
+
+error_handling:
+  on_error: continue
+
+steps:
+  - id: list_files
+    type: python
+    script: helpers/list_files.py
+    params:
+      source_dir: "{{ input.source_dir }}"
+      extensions: "{{ input.extensions }}"
+
+  - id: convert
+    type: python
+    script: helpers/convert_files.py
+    params:
+      files: "{{ list_files.output }}"
+      accuracy: "{{ input.accuracy }}"
+      concurrency: 5
+    timeout: 600s
+
+  - id: save_markdown
+    type: python
+    script: helpers/save_markdown.py
+    params:
+      files: "{{ list_files.output }}"
+      results: "{{ convert.output }}"
+      output_dir: "{{ input.output_dir or (input.source_dir + '/md') }}"
+
+  - id: report
+    type: python
+    script: helpers/convert_report.py
+    params:
+      files: "{{ list_files.output }}"
+      results: "{{ convert.output }}"
+      saved: "{{ save_markdown.output }}"
+
+output:
+  report: "{{ report.output }}"
