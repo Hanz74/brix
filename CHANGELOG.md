@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.6.0] — 2026-03-20
+
+### Added (Wave 7 — T-BRIX-V2-16)
+- `src/brix/security.py` — `SecurityConfig` class with YAML-based allowlists and shell enforcement
+- Allowlist checks: `check_container`, `check_executable`, `check_script_path`, `check_shell_mode`
+- Configurable via `~/.brix/security.yaml` (optional — open by default when absent)
+- `enforce_shell_false: true` default — blocks `shell=True` unless explicitly disabled in config
+- Empty allowlists treated as "no restriction" (open by default)
+- 10 new tests in `tests/test_security.py` covering all check methods and edge cases
+
 ## [2.5.0] — 2026-03-20
 
 ### Added
