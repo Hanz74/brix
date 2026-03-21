@@ -1,8 +1,8 @@
 # Brix
 
-**A skill runtime for Claude Code.** Turn multi-step workflows into reusable slash commands backed by real pipelines — not prompt chains.
+**A universal pipeline orchestrator accessible via MCP.** Combine Python, HTTP, CLI and MCP building blocks into pipelines — executable by any MCP client, REST API, webhook, or cron trigger.
 
-Brix combines modular building blocks (Python, HTTP, CLI, MCP) into pipelines with a unified JSON interface. Each pipeline can be exposed as a Claude Code [custom slash command](https://docs.anthropic.com/en/docs/claude-code/tutorials/custom-slash-commands) — giving Claude powerful, token-efficient skills that run as native processes.
+Brix exposes pipelines as MCP tools that any AI agent can discover and call: Claude Code, Claude Desktop, Cursor, Cline, n8n, or custom clients. Each saved pipeline automatically becomes an MCP tool (`mcp__brix__pipeline__<name>`). No YAML writing, no scripting — the agent configures pipelines through structured MCP calls.
 
 ## The Problem
 
