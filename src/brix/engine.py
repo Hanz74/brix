@@ -57,156 +57,159 @@ class PipelineEngine:
 
         self.progress.pipeline_start(pipeline.name, len(pipeline.steps))
 
-        for step in pipeline.steps:
-            # Resume: skip completed steps
-            if context.is_step_completed(step.id):
-                step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
-                last_output = context.get_output(step.id)
-                self.progress.step_resumed(step.id)
-                continue
+        final_result = None
+        all_ok = False
+        pipeline_aborted = False  # set to True on early-stop so we skip post-loop work
 
-            # Evaluate when condition
-            jinja_ctx = context.to_jinja_context()
-            if step.when:
-                should_run = self.loader.evaluate_condition(step.when, jinja_ctx)
-                if not should_run:
-                    step_statuses[step.id] = StepStatus(
-                        status="skipped", duration=0.0, reason="condition not met"
-                    )
-                    self.progress.step_skipped(step.id)
+        try:
+            for step in pipeline.steps:
+                # Resume: skip completed steps
+                if context.is_step_completed(step.id):
+                    step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
+                    last_output = context.get_output(step.id)
+                    self.progress.step_resumed(step.id)
                     continue
 
-            # Get runner
-            runner = self._runners.get(step.type)
-            if not runner:
-                step_statuses[step.id] = StepStatus(
-                    status="error", duration=0.0, errors=1
-                )
-                self.progress.step_start(step.id, step.type)
-                self.progress.step_error(step.id, f"no runner registered for type '{step.type}'")
-                effective_on_error = step.on_error or pipeline.error_handling.on_error
-                if effective_on_error == "stop":
-                    return RunResult(
-                        success=False,
-                        run_id=context.run_id,
-                        steps=step_statuses,
-                        result=None,
-                        duration=time.monotonic() - start_time,
-                    )
-                continue
-
-            # --- foreach branch ---
-            if step.foreach:
+                # Evaluate when condition
                 jinja_ctx = context.to_jinja_context()
-                items = self.loader.resolve_foreach(step.foreach, jinja_ctx)
+                if step.when:
+                    should_run = self.loader.evaluate_condition(step.when, jinja_ctx)
+                    if not should_run:
+                        step_statuses[step.id] = StepStatus(
+                            status="skipped", duration=0.0, reason="condition not met"
+                        )
+                        self.progress.step_skipped(step.id)
+                        continue
 
+                # Get runner
+                runner = self._runners.get(step.type)
+                if not runner:
+                    step_statuses[step.id] = StepStatus(
+                        status="error", duration=0.0, errors=1
+                    )
+                    self.progress.step_start(step.id, step.type)
+                    self.progress.step_error(step.id, f"no runner registered for type '{step.type}'")
+                    effective_on_error = step.on_error or pipeline.error_handling.on_error
+                    if effective_on_error == "stop":
+                        pipeline_aborted = True
+                        break
+                    continue
+
+                # --- foreach branch ---
+                if step.foreach:
+                    jinja_ctx = context.to_jinja_context()
+                    items = self.loader.resolve_foreach(step.foreach, jinja_ctx)
+
+                    step_start = time.monotonic()
+                    if step.parallel:
+                        foreach_result = await self._run_foreach_parallel(step, items, context, pipeline)
+                    else:
+                        foreach_result = await self._run_foreach_sequential(step, items, context, pipeline)
+                    step_duration = time.monotonic() - step_start
+
+                    if foreach_result["success"]:
+                        context.set_output(step.id, foreach_result)
+                        last_output = foreach_result
+                        summary = foreach_result.get("summary", {})
+                        step_statuses[step.id] = StepStatus(
+                            status="ok",
+                            duration=step_duration,
+                            items=summary.get("total"),
+                            errors=summary.get("failed") or None,
+                        )
+                        self.progress.foreach_done(
+                            step.id,
+                            summary.get("total", 0),
+                            summary.get("succeeded", 0),
+                            summary.get("failed", 0),
+                            step_duration,
+                        )
+                    else:
+                        summary = foreach_result.get("summary", {})
+                        step_statuses[step.id] = StepStatus(
+                            status="error",
+                            duration=step_duration,
+                            errors=summary.get("failed", 1),
+                        )
+                        self.progress.step_start(step.id, step.type)
+                        self.progress.step_error(
+                            step.id,
+                            f"foreach failed ({summary.get('failed', '?')} of {summary.get('total', '?')} items failed)",
+                            step_duration,
+                        )
+                        effective_on_error = step.on_error or pipeline.error_handling.on_error
+                        if effective_on_error == "stop":
+                            pipeline_aborted = True
+                            break
+                    continue
+
+                # --- single-step branch ---
+                # Render step params with current context
+                jinja_ctx = context.to_jinja_context()
+                rendered_params = self.loader.render_step_params(step, jinja_ctx)
+
+                # Create a rendered step-like object for the runner
+                rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
+
+                self.progress.step_start(step.id, step.type)
                 step_start = time.monotonic()
-                if step.parallel:
-                    foreach_result = await self._run_foreach_parallel(step, items, context, pipeline)
-                else:
-                    foreach_result = await self._run_foreach_sequential(step, items, context, pipeline)
+                result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
                 step_duration = time.monotonic() - step_start
 
-                if foreach_result["success"]:
-                    context.set_output(step.id, foreach_result)
-                    last_output = foreach_result
-                    summary = foreach_result.get("summary", {})
+                if result.get("success"):
+                    context.set_output(step.id, result.get("data"))
+                    last_output = result.get("data")
                     step_statuses[step.id] = StepStatus(
                         status="ok",
                         duration=step_duration,
-                        items=summary.get("total"),
-                        errors=summary.get("failed") or None,
+                        items=result.get("items_count"),
                     )
-                    self.progress.foreach_done(
-                        step.id,
-                        summary.get("total", 0),
-                        summary.get("succeeded", 0),
-                        summary.get("failed", 0),
-                        step_duration,
-                    )
+                    self.progress.step_ok(step.id, step_duration, result.get("items_count"))
                 else:
-                    summary = foreach_result.get("summary", {})
                     step_statuses[step.id] = StepStatus(
-                        status="error",
-                        duration=step_duration,
-                        errors=summary.get("failed", 1),
+                        status="error", duration=step_duration, errors=1
                     )
-                    self.progress.step_start(step.id, step.type)
-                    self.progress.step_error(
-                        step.id,
-                        f"foreach failed ({summary.get('failed', '?')} of {summary.get('total', '?')} items failed)",
-                        step_duration,
-                    )
+                    self.progress.step_error(step.id, result.get("error", "unknown error"), step_duration)
+
                     effective_on_error = step.on_error or pipeline.error_handling.on_error
                     if effective_on_error == "stop":
-                        return RunResult(
-                            success=False,
-                            run_id=context.run_id,
-                            steps=step_statuses,
-                            result=None,
-                            duration=time.monotonic() - start_time,
-                        )
-                continue
+                        pipeline_aborted = True
+                        break
+                    # continue: log error and move on
 
-            # --- single-step branch ---
-            # Render step params with current context
-            jinja_ctx = context.to_jinja_context()
-            rendered_params = self.loader.render_step_params(step, jinja_ctx)
+        except Exception as e:
+            # Unexpected exception (e.g. schema validation error, MCP crash) —
+            # treat the run as failed but always reach the finally block.
+            print(f"✗ Pipeline error: {e}", file=sys.stderr)
+            pipeline_aborted = True
 
-            # Create a rendered step-like object for the runner
-            rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
+        finally:
+            # Resolve output (best-effort; may be None if pipeline aborted early)
+            if not pipeline_aborted and pipeline.output:
+                jinja_ctx = context.to_jinja_context()
+                final_result = self.loader.render_value(pipeline.output, jinja_ctx)
+            elif not pipeline_aborted:
+                final_result = last_output
 
-            self.progress.step_start(step.id, step.type)
-            step_start = time.monotonic()
-            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-            step_duration = time.monotonic() - step_start
+            total_duration = time.monotonic() - start_time
+            all_ok = (not pipeline_aborted) and all(
+                s.status in ("ok", "skipped") for s in step_statuses.values()
+            )
 
-            if result.get("success"):
-                context.set_output(step.id, result.get("data"))
-                last_output = result.get("data")
-                step_statuses[step.id] = StepStatus(
-                    status="ok",
-                    duration=step_duration,
-                    items=result.get("items_count"),
+            context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
+            if all_ok:
+                context.cleanup(keep=keep_workdir)
+
+            self.progress.pipeline_done(pipeline.name, all_ok, total_duration, len(pipeline.steps))
+
+            try:
+                history.record_finish(
+                    context.run_id, all_ok, total_duration,
+                    {k: v.model_dump() for k, v in step_statuses.items()},
+                    {"result_type": type(final_result).__name__ if final_result is not None else "None"},
                 )
-                self.progress.step_ok(step.id, step_duration, result.get("items_count"))
-            else:
-                step_statuses[step.id] = StepStatus(
-                    status="error", duration=step_duration, errors=1
-                )
-                self.progress.step_error(step.id, result.get("error", "unknown error"), step_duration)
-
-                effective_on_error = step.on_error or pipeline.error_handling.on_error
-                if effective_on_error == "stop":
-                    return RunResult(
-                        success=False,
-                        run_id=context.run_id,
-                        steps=step_statuses,
-                        result=None,
-                        duration=time.monotonic() - start_time,
-                    )
-                # continue: log error and move on
-
-        # Resolve output
-        final_result = last_output
-        if pipeline.output:
-            jinja_ctx = context.to_jinja_context()
-            final_result = self.loader.render_value(pipeline.output, jinja_ctx)
-
-        total_duration = time.monotonic() - start_time
-        all_ok = all(s.status in ("ok", "skipped") for s in step_statuses.values())
-
-        context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
-        if all_ok:
-            context.cleanup(keep=keep_workdir)
-
-        self.progress.pipeline_done(pipeline.name, all_ok, total_duration, len(pipeline.steps))
-
-        history.record_finish(
-            context.run_id, all_ok, total_duration,
-            {k: v.model_dump() for k, v in step_statuses.items()},
-            {"result_type": type(final_result).__name__},
-        )
+            except Exception:
+                pass  # Never let history errors mask the real result
 
         return RunResult(
             success=all_ok,

@@ -892,3 +892,30 @@ output:
     assert result.success is True
     assert result.result["primary"] == "done"
     assert result.result["extra"] == "none"
+
+
+# ---------------------------------------------------------------------------
+# Unhandled exception in runner still finalises history (T-BRIX-V2-25)
+# ---------------------------------------------------------------------------
+
+
+async def test_engine_unhandled_exception_still_records_history():
+    """Even if a step raises an unexpected exception, run() returns a result."""
+
+    class _CrashRunner(BaseRunner):
+        async def execute(self, step, context):
+            raise RuntimeError("Unexpected crash")
+
+    pipeline = load_pipeline("""
+name: crash-test
+steps:
+  - id: crasher
+    type: cli
+    args: ["echo", "test"]
+""")
+    engine = PipelineEngine()
+    engine.register_runner("cli", _CrashRunner())
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    # The important thing: run() returned, didn't hang
