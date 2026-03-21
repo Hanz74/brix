@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.6.5] — 2026-03-21
+
+### Fixed (T-BRIX-V2-24)
+- Port corrected from 8032 → 8030 in all buddy helpers: `buddy_intake_process.py`, `buddy_import_eltern_process.py`, `buddy_intake_onedrive.py`, `buddy_prepare_onedrive.py`
+
+### Fixed (T-BRIX-V2-27)
+- Ingest errors (non-201/409 status) are now included in the `errors` list of the report in `buddy_intake_process.py`
+- Both attachment and body processing paths add a descriptive entry to `errors` when `ingest_document` returns a failure status
+
 ## [2.6.4] — 2026-03-20
 
 ### Added (T-BRIX-V2-20)
