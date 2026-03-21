@@ -6,6 +6,7 @@ from pathlib import Path
 
 from brix.runners.mcp import McpRunner, load_server_config
 from brix.models import ServerConfig
+from brix.cache import SchemaCache
 
 
 # ---------------------------------------------------------------------------
@@ -182,3 +183,144 @@ async def test_mcp_internal_params_stripped(tmp_path: Path):
     # but we should NOT get a param-related error
     assert result["success"] is False
     assert "_internal" not in result.get("error", "")
+
+
+# ---------------------------------------------------------------------------
+# McpRunner — _validate_params_against_schema
+# ---------------------------------------------------------------------------
+
+
+def _make_cache_with_schema(tmp_path: Path, server_name: str, tool_name: str, properties: dict) -> SchemaCache:
+    """Create a SchemaCache populated with a single tool schema."""
+    cache = SchemaCache(cache_dir=tmp_path / "cache")
+    tools = [
+        {
+            "name": tool_name,
+            "inputSchema": {
+                "type": "object",
+                "properties": properties,
+            },
+        }
+    ]
+    cache.save_tools(server_name, tools)
+    return cache
+
+
+def test_validate_params_string_instead_of_array(tmp_path: Path):
+    """String param where array is expected produces a type-mismatch warning."""
+    cache = _make_cache_with_schema(
+        tmp_path, "myserver", "my_tool", {"tags": {"type": "array"}}
+    )
+    runner = McpRunner(schema_cache=cache)
+
+    warnings = runner._validate_params_against_schema(
+        "myserver", "my_tool", {"tags": "not-an-array"}
+    )
+
+    assert len(warnings) == 1
+    assert "tags" in warnings[0]
+    assert "array" in warnings[0]
+    assert "str" in warnings[0]
+
+
+def test_validate_params_correct_types(tmp_path: Path):
+    """Correct parameter types produce no warnings."""
+    cache = _make_cache_with_schema(
+        tmp_path,
+        "myserver",
+        "my_tool",
+        {
+            "name": {"type": "string"},
+            "count": {"type": "integer"},
+            "active": {"type": "boolean"},
+            "tags": {"type": "array"},
+            "meta": {"type": "object"},
+        },
+    )
+    runner = McpRunner(schema_cache=cache)
+
+    warnings = runner._validate_params_against_schema(
+        "myserver",
+        "my_tool",
+        {
+            "name": "hello",
+            "count": 3,
+            "active": True,
+            "tags": ["a", "b"],
+            "meta": {"key": "val"},
+        },
+    )
+
+    assert warnings == []
+
+
+def test_validate_params_no_cache(tmp_path: Path):
+    """When no cached schema exists validation is skipped and returns no warnings."""
+    cache = SchemaCache(cache_dir=tmp_path / "empty_cache")
+    runner = McpRunner(schema_cache=cache)
+
+    warnings = runner._validate_params_against_schema(
+        "unknown_server", "unknown_tool", {"tags": "not-an-array"}
+    )
+
+    assert warnings == []
+
+
+def test_validate_params_unknown_tool(tmp_path: Path):
+    """Params for a tool not in cache produce no warnings (graceful skip)."""
+    cache = _make_cache_with_schema(
+        tmp_path, "myserver", "other_tool", {"tags": {"type": "array"}}
+    )
+    runner = McpRunner(schema_cache=cache)
+
+    warnings = runner._validate_params_against_schema(
+        "myserver", "my_tool", {"tags": "not-an-array"}
+    )
+
+    assert warnings == []
+
+
+def test_validate_params_extra_params_ignored(tmp_path: Path):
+    """Extra params not in the schema produce no warnings."""
+    cache = _make_cache_with_schema(
+        tmp_path, "myserver", "my_tool", {"name": {"type": "string"}}
+    )
+    runner = McpRunner(schema_cache=cache)
+
+    warnings = runner._validate_params_against_schema(
+        "myserver", "my_tool", {"name": "ok", "extra_param": 42}
+    )
+
+    assert warnings == []
+
+
+def test_validate_params_number_accepts_int(tmp_path: Path):
+    """JSON 'number' type accepts both int and float values."""
+    cache = _make_cache_with_schema(
+        tmp_path, "myserver", "my_tool", {"score": {"type": "number"}}
+    )
+    runner = McpRunner(schema_cache=cache)
+
+    assert runner._validate_params_against_schema("myserver", "my_tool", {"score": 5}) == []
+    assert runner._validate_params_against_schema("myserver", "my_tool", {"score": 3.14}) == []
+
+
+async def test_execute_returns_error_on_type_mismatch(tmp_path: Path):
+    """execute() returns success=False with helpful error when params fail type check."""
+    cache = _make_cache_with_schema(
+        tmp_path, "fake", "my_tool", {"items": {"type": "array"}}
+    )
+    config = {"servers": {"fake": {"command": "false", "args": []}}}
+    config_path = tmp_path / "servers.yaml"
+    config_path.write_text(yaml.dump(config))
+
+    runner = McpRunner(servers_config_path=config_path, schema_cache=cache)
+    step = _Step(server="fake", tool="my_tool", params={"items": "not-a-list"})
+
+    result = await runner.execute(step, context=None)
+
+    assert result["success"] is False
+    assert "Parameter type mismatch" in result["error"]
+    assert "items" in result["error"]
+    assert "warnings" in result
+    assert len(result["warnings"]) == 1

@@ -9,6 +9,7 @@ from typing import Any, Optional
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
 from brix.models import ServerConfig
+from brix.cache import SchemaCache
 
 
 # Default path for servers.yaml
@@ -46,8 +47,41 @@ def load_server_config(server_name: str, config_path: Optional[Path] = None) -> 
 class McpRunner(BaseRunner):
     """Runs MCP tool calls via stdio protocol using the official MCP SDK."""
 
-    def __init__(self, servers_config_path: Optional[Path] = None):
+    def __init__(self, servers_config_path: Optional[Path] = None, schema_cache: Optional[SchemaCache] = None):
         self._config_path = servers_config_path or SERVERS_CONFIG_PATH
+        self._schema_cache = schema_cache or SchemaCache()
+
+    def _validate_params_against_schema(self, server_name: str, tool_name: str, arguments: dict) -> list[str]:
+        """Validate parameter types against cached tool schema. Returns list of warnings."""
+        warnings: list[str] = []
+        tool_schema = self._schema_cache.get_tool_schema(server_name, tool_name)
+        if not tool_schema:
+            return warnings  # No cached schema — skip validation
+
+        input_schema = tool_schema.get("inputSchema", {})
+        properties = input_schema.get("properties", {})
+
+        type_map: dict[str, Any] = {
+            "string": str,
+            "integer": int,
+            "number": (int, float),
+            "boolean": bool,
+            "array": list,
+            "object": dict,
+        }
+
+        for param_name, param_value in arguments.items():
+            if param_name in properties:
+                expected_type = properties[param_name].get("type", "")
+                expected_python_type = type_map.get(expected_type)
+                if expected_python_type and not isinstance(param_value, expected_python_type):
+                    actual_type = type(param_value).__name__
+                    warnings.append(
+                        f"Parameter '{param_name}' expects {expected_type}, "
+                        f"got {actual_type} ({repr(param_value)[:50]})"
+                    )
+
+        return warnings
 
     async def execute(self, step: Any, context: Any) -> dict:
         """Execute an MCP tool call step.
@@ -76,6 +110,16 @@ class McpRunner(BaseRunner):
         # Timeout
         timeout_str = getattr(step, "timeout", None)
         timeout_seconds = parse_timeout(timeout_str) if timeout_str else 60.0
+
+        # Pre-validate parameter types against cached schema
+        type_warnings = self._validate_params_against_schema(server_name, tool_name, arguments)
+        if type_warnings:
+            return {
+                "success": False,
+                "error": "Parameter type mismatch: " + "; ".join(type_warnings),
+                "duration": time.monotonic() - start,
+                "warnings": type_warnings,
+            }
 
         # Resolve server config before importing the SDK so config errors surface first
         try:

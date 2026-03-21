@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.6.6] — 2026-03-21
+
+### Added (T-BRIX-V2-26)
+- Parameter type validation in `McpRunner` before MCP tool calls
+- `_validate_params_against_schema()` checks arguments against cached tool schema from `SchemaCache`
+- Type mismatches return `success=False` with descriptive error and `warnings` list instead of cryptic MCP server errors
+- Supports JSON schema types: `string`, `integer`, `number`, `boolean`, `array`, `object`
+- Validation is skipped gracefully when no cached schema is available
+- 7 new tests in `tests/test_mcp_runner.py` covering mismatch, correct types, missing cache, unknown tool, extra params, number type, and execute() integration
+
 ## [2.6.5] — 2026-03-21
 
 ### Fixed (T-BRIX-V2-24)
