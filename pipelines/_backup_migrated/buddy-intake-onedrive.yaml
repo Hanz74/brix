@@ -1,0 +1,119 @@
+name: buddy-intake-onedrive
+version: "1.0.0"
+description: >
+  OneDrive-Intake für Buddy: Holt Dokumente aus angegebenen OneDrive-Ordnern,
+  filtert auf verarbeitbare Dateitypen (PDF, DOCX, XLSX, Bilder), prüft auf
+  Duplikate (source_id + content_hash), konvertiert via MarkItDown, klassifiziert
+  per LLM/Regex und ingestiert in buddy-api.
+
+input:
+  folder_ids:
+    type: str
+    description: >
+      Komma-getrennte OneDrive-Folder-IDs (Drive Item IDs, z.B. aus OneDrive URL).
+      Mindestens eine ID erforderlich.
+  recursive:
+    type: bool
+    default: false
+    description: >
+      Rekursiv in Unterordner schauen (noch nicht implementiert — reserviert für Phase 3).
+  output_dir:
+    type: str
+    default: "/host/root/docker/buddy/data/originals"
+    description: "Zielverzeichnis für Originaldateien (Container-Pfad, /host/root/ = Host /root/)"
+  owner:
+    type: str
+    default: "hans"
+    description: "Scope-Owner: 'hans' oder 'eltern'"
+  import_run_id:
+    type: int
+    default: 0
+    description: "Bestehende import_run.id zum Verknüpfen (0 = automatisch erstellen)"
+
+error_handling:
+  on_error: continue
+
+steps:
+  # -----------------------------------------------------------------------
+  # Step 1: Dateiliste für jeden Ordner abrufen
+  # M365 list-folder-files liefert OneDrive-Items inkl. Metadaten
+  # -----------------------------------------------------------------------
+  - id: list_files
+    type: mcp
+    server: m365
+    tool: list-folder-files
+    foreach: "{{ input.folder_ids.split(',') | map('trim') | list }}"
+    parallel: true
+    concurrency: 5
+    params:
+      driveId: "{{ item.split('!')[0] }}"
+      driveItemId: "{{ item }}"
+      fetchAllPages: true
+    on_error: continue
+    timeout: 60s
+
+  # -----------------------------------------------------------------------
+  # Step 2: Dateien filtern + Duplikate prüfen (source_id-Level)
+  # Ergebnis: bereinigte Liste von File-Metadaten-Objekten
+  # -----------------------------------------------------------------------
+  - id: prepare_files
+    type: python
+    script: helpers/buddy_prepare_onedrive.py
+    params:
+      file_results: "{{ list_files.output | default({}) }}"
+      folder_ids: "{{ input.folder_ids }}"
+      recursive: "{{ input.recursive }}"
+    on_error: stop
+
+  # -----------------------------------------------------------------------
+  # Step 3: Pro Datei verarbeiten:
+  #   - Download via pre-signed URL aus dem listing
+  #   - Content-Hash berechnen (SHA256)
+  #   - Content-Hash Dedup-Check gegen buddy-api
+  #   - Original auf Disk speichern
+  #   - MarkItDown → Markdown
+  #   - Klassifizieren (LLM/Regex)
+  #   - HTTP POST → buddy-api/v1/ingest
+  #
+  # Concurrency 3: MarkItDown-Last + externe Downloads
+  # -----------------------------------------------------------------------
+  - id: process_files
+    type: python
+    script: helpers/buddy_intake_onedrive.py
+    foreach: "{{ prepare_files.output | default([]) }}"
+    parallel: true
+    concurrency: 3
+    params:
+      file_id: "{{ item.file_id }}"
+      file_name: "{{ item.file_name }}"
+      file_ext: "{{ item.file_ext }}"
+      mime_type: "{{ item.mime_type }}"
+      size: "{{ item.size }}"
+      created_at: "{{ item.created_at }}"
+      folder_id: "{{ item.folder_id }}"
+      web_url: "{{ item.web_url }}"
+      download_url: "{{ item.download_url }}"
+      file_created: "{{ item.file_created | default('') }}"
+      file_modified: "{{ item.file_modified | default('') }}"
+      folder_path: "{{ item.folder_path | default('') }}"
+      folder_name: "{{ item.folder_name | default('') }}"
+      parent_folder_id: "{{ item.parent_folder_id | default('') }}"
+      output_dir: "{{ input.output_dir }}"
+      import_run_id: "{{ input.import_run_id }}"
+      owner: "{{ input.owner }}"
+    on_error: continue
+    timeout: 300s
+
+  # -----------------------------------------------------------------------
+  # Step 5: Zusammenfassung
+  # -----------------------------------------------------------------------
+  - id: report
+    type: python
+    script: helpers/buddy_onedrive_report.py
+    params:
+      process_results: "{{ process_files.output | default({}) }}"
+      folder_ids: "{{ input.folder_ids }}"
+      recursive: "{{ input.recursive }}"
+
+output:
+  report: "{{ report.output }}"

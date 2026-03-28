@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // \"\"' | { read -r f; echo \"$f\" | grep -qE '/docker/brix/(pipelines|helpers)/' && echo '{\"decision\":\"block\",\"reason\":\"VERBOTEN: Nutze mcp__brix__create_pipeline, mcp__brix__add_step, mcp__brix__update_step, mcp__brix__update_pipeline statt manuell Dateien zu schreiben. Erst mcp__brix__get_tips aufrufen!\"}' || true; }",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

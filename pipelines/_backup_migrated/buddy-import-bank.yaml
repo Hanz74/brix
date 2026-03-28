@@ -1,0 +1,59 @@
+name: buddy-import-bank
+version: "1.0.0"
+description: >
+  Importiert Sparkasse-Kontoauszüge (CSV) in buddy-api als Transaktionen.
+  Unterstützt Sparkasse Giro CAMT V2 und Sparkasse Kreditkarte.
+  Steps: CSV parsen → foreach Transaktionen → POST buddy-api/v1/ingest.
+
+input:
+  csv_path:
+    type: str
+    description: "Absoluter Pfad zur CSV-Datei auf dem Host (wird als /host/root/... im Container erwartet)"
+  account_id:
+    type: int
+    description: "ID des Kontos in buddy-db (accounts.id)"
+  format:
+    type: str
+    default: "sparkasse_giro"
+    description: "CSV-Format: 'sparkasse_giro' (Giro CAMT V2) oder 'sparkasse_kk' (Kreditkarte)"
+
+error_handling:
+  on_error: continue
+
+steps:
+  # -------------------------------------------------------------------------
+  # Step 1: CSV parsen
+  # Liest die CSV-Datei, erkennt Format-spezifische Spalten, normalisiert
+  # Daten und gibt eine Liste von Transaction-Dicts zurück.
+  # -------------------------------------------------------------------------
+  - id: parse
+    type: python
+    script: helpers/buddy_parse_bank.py
+    params:
+      csv_path: "{{ input.csv_path }}"
+      account_id: "{{ input.account_id }}"
+      format: "{{ input.format }}"
+    on_error: stop
+
+  # -------------------------------------------------------------------------
+  # Step 2: Transaktionen ingestieren
+  # foreach über die geparste Liste → POST buddy-api /v1/ingest (Transaction).
+  # Concurrency 5 wegen DB-Last und buddy-api Rate-Limits.
+  # 409 = Duplikat (external_id bereits vorhanden) → OK, kein Fehler.
+  # -------------------------------------------------------------------------
+  - id: ingest
+    type: http
+    foreach: "{{ parse.output | default([]) }}"
+    parallel: true
+    concurrency: 5
+    method: POST
+    url: "http://buddy-api:8032/v1/ingest"
+    headers:
+      Content-Type: "application/json"
+    body: "{{ item }}"
+    on_error: continue
+    timeout: 30s
+
+output:
+  parsed_count: "{{ parse.output | length }}"
+  ingest_results: "{{ ingest.output | default([]) }}"

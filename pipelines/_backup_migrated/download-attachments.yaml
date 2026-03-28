@@ -1,0 +1,78 @@
+name: download-attachments
+version: "2.0.0"
+description: Download email attachments from M365 Outlook
+
+input:
+  query:
+    type: str
+    default: "hasAttachments eq true"
+    description: "OData filter for mail search (e.g. hasAttachments eq true and contains(subject, 'Rechnung'))"
+  folder:
+    type: str
+    default: "Inbox"
+    description: "Mail folder to search"
+  output_dir:
+    type: str
+    default: "./attachments"
+    description: "Target directory for downloaded files"
+  top:
+    type: int
+    default: 10
+    description: "Max number of mails to fetch"
+  skip:
+    type: int
+    default: 0
+    description: "Number of mails to skip (for pagination)"
+
+error_handling:
+  on_error: stop
+
+steps:
+  - id: fetch_mails
+    type: mcp
+    server: m365
+    tool: list-mail-messages
+    params:
+      filter: "{{ input.query }}"
+      top: "{{ input.top }}"
+      skip: "{{ input.skip }}"
+    timeout: 30s
+
+  - id: get_attachments
+    type: mcp
+    server: m365
+    tool: list-mail-attachments
+    foreach: "{{ fetch_mails.output.value }}"
+    parallel: true
+    concurrency: 5
+    params:
+      messageId: "{{ item.id }}"
+    on_error: continue
+    timeout: 30s
+
+  - id: flatten
+    type: python
+    script: helpers/flatten_attachments.py
+    params:
+      mails: "{{ fetch_mails.output.value }}"
+      attachment_results: "{{ get_attachments.output }}"
+
+  - id: save_files
+    type: python
+    foreach: "{{ flatten.output }}"
+    script: helpers/save_attachment.py
+    params:
+      attachment: "{{ item }}"
+      output_dir: "{{ input.output_dir }}"
+    on_error: continue
+
+  - id: report
+    type: python
+    script: helpers/summary_report.py
+    params:
+      files: "{{ save_files.output | default({}) }}"
+      converted: "{}"
+      input_query: "{{ input.query }}"
+
+output:
+  report: "{{ report.output }}"

@@ -1,0 +1,161 @@
+name: buddy-intake-outlook
+version: "1.0.0"
+description: >
+  Outlook-Intake für Buddy: Holt Finanz-Emails (Rechnungen, Mahnungen, Zahlungen etc.)
+  ab einem Startdatum, konvertiert Anhänge via MarkItDown, klassifiziert per LLM und
+  ingestiert in buddy-api. Verarbeitet auch Finance-relevante Email-Bodies ohne Anhang.
+
+input:
+  since:
+    type: str
+    default: "2024-11-01"
+    description: "Startdatum für Email-Fetch (ISO 8601, z.B. 2024-11-01)"
+  keywords:
+    type: str
+    default: ""
+    description: >
+      Komma-getrennte Keywords für Keyword-Filter (z.B. 'Rechnung,Invoice,Mahnung').
+      Leer = Standard-Finanz-Keywords (Rechnung, Invoice, Zahlung, Mahnung, etc.)
+  top:
+    type: int
+    default: 100
+    description: "Max. Anzahl Emails pro Batch (für Pagination)"
+  skip:
+    type: int
+    default: 0
+    description: "Anzahl zu überspringende Emails (für Pagination)"
+  folder_ids:
+    type: str
+    default: ""
+    description: "Outlook-Ordner-ID (von list-mail-folders). Leer = globaler Posteingang (/me/messages)."
+  output_dir:
+    type: str
+    default: "/host/root/docker/buddy/data/originals"
+    description: "Zielverzeichnis für Originaldateien (Container-Pfad, /host/root/ = Host /root/)"
+  owner:
+    type: str
+    default: "hans"
+    description: "Scope-Owner: 'hans' oder 'eltern'"
+error_handling:
+  on_error: continue
+
+steps:
+  # -----------------------------------------------------------------------
+  # Step 0: Import-Run in buddy-api anlegen (für Audit-Tracking)
+  # Returned {"import_run_id": <int>} — wird an process_mails weitergereicht
+  # -----------------------------------------------------------------------
+  - id: create_import_run
+    type: http
+    method: POST
+    url: "http://buddy-api:8030/v1/import-runs/create"
+    body:
+      source: "outlook"
+    on_error: stop
+    timeout: 15s
+
+  # -----------------------------------------------------------------------
+  # Step 1: Emails aus Outlook holen
+  # Python-Helper: unterstützt folder_ids (komma-getrennt), since, top, skip
+  # Gibt {mails: [...], total: N, folders_queried: [...]} zurück
+  # -----------------------------------------------------------------------
+  - id: fetch_emails
+    type: python
+    script: helpers/buddy_fetch_mails.py
+    params:
+      folder_ids: "{{ input.folder_ids }}"
+      since: "{{ input.since }}"
+      top: "{{ input.top }}"
+      skip: "{{ input.skip }}"
+    timeout: 120s
+    on_error: stop
+
+  # -----------------------------------------------------------------------
+  # Step 2: Attachment-Metadaten + Content für alle Emails holen
+  # (Graph API liefert contentBytes direkt in list-mail-attachments)
+  # -----------------------------------------------------------------------
+  - id: get_attachments
+    type: mcp
+    server: m365
+    tool: list-mail-attachments
+    foreach: "{{ fetch_emails.output.mails | default([]) }}"
+    parallel: true
+    concurrency: 5
+    params:
+      messageId: "{{ item.id }}"
+    on_error: continue
+    timeout: 60s
+
+  # -----------------------------------------------------------------------
+  # Step 3: Mails und Attachments zusammenführen + filtern
+  # Ergebnis: Liste von {mail, attachments} Items
+  # -----------------------------------------------------------------------
+  - id: prepare_mails
+    type: python
+    script: helpers/buddy_prepare_mails.py
+    params:
+      mails: "{{ fetch_emails.output.mails | default([]) }}"
+      # NOTE: attachment_results intentionally NOT passed here — 488MB ForeachResult
+      # causes OOM when Jinja2 materializes it. Helper auto-discovers get_attachments.json
+      # from ~/.brix/runs/ on disk instead.
+      keywords: "{{ input.keywords }}"
+      since: "{{ input.since }}"
+    on_error: stop
+
+  # -----------------------------------------------------------------------
+  # Step 4: Pro Email: Anhänge speichern → MarkItDown → Klassifizieren → Ingestieren
+  # Bei keinem Anhang: Email-Body verarbeiten wenn Finance-relevant
+  # Concurrency 5 wegen M365 Rate-Limits + MarkItDown-Last
+  # -----------------------------------------------------------------------
+  - id: process_mails
+    type: python
+    script: helpers/buddy_intake_process.py
+    foreach: "{{ prepare_mails.output }}"
+    parallel: true
+    concurrency: 5
+    params:
+      mail: "{{ item.mail }}"
+      attachments: "{{ item.attachments }}"
+      output_dir: "{{ input.output_dir }}"
+      import_run_id: "{{ create_import_run.output.import_run_id }}"
+      owner: "{{ input.owner }}"
+    on_error: continue
+    timeout: 300s
+
+  # -----------------------------------------------------------------------
+  # Step 5: Outlook-Emails mit ki_tags taggen
+  # Python-Helper statt mcp-foreach (Workaround für Brix ForeachResult-Bug).
+  # Iteriert selbst über process_mails.output.items, filtert success+ki_tags,
+  # und ruft update-mail-message via docker exec stdio auf.
+  # on_error: continue — Tagging-Fehler darf Pipeline nicht abbrechen
+  # -----------------------------------------------------------------------
+  - id: tag_emails
+    type: python
+    script: helpers/buddy_tag_emails.py
+    params:
+      process_results: "{{ process_mails.output | default({}) }}"
+    on_error: continue
+    timeout: 600s
+
+  # -----------------------------------------------------------------------
+  # Step 6: Import-Run abschließen (status → completed, finished_at gesetzt)
+  # -----------------------------------------------------------------------
+  - id: complete_import_run
+    type: http
+    method: POST
+    url: "http://buddy-api:8030/v1/import-runs/{{ create_import_run.output.import_run_id }}/complete"
+    on_error: continue
+    timeout: 15s
+
+  # -----------------------------------------------------------------------
+  # Step 7: Zusammenfassung
+  # -----------------------------------------------------------------------
+  - id: report
+    type: python
+    script: helpers/buddy_intake_report.py
+    params:
+      process_results: "{{ process_mails.output | default({}) }}"
+      since: "{{ input.since }}"
+      keywords: "{{ input.keywords }}"
+
+output:
+  report: "{{ report.output }}"

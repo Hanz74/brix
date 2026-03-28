@@ -1,0 +1,36 @@
+pipeline: pipelines/download-attachments.yaml
+description: "Test download-attachments with mock M365 data"
+input:
+  query: "test"
+  folder: "Inbox"
+  output_dir: "/tmp/brix-test-attachments"
+  convert: false
+mocks:
+  fetch_mails:
+    - subject: "Invoice March"
+      receivedDateTime: "2026-03-15T10:00:00Z"
+      attachments:
+        - name: "invoice.pdf"
+          contentUrl: "https://example.com/invoice.pdf"
+          size: 524288
+    - subject: "Contract"
+      receivedDateTime: "2026-03-10T14:00:00Z"
+      attachments:
+        - name: "contract.docx"
+          contentUrl: "https://example.com/contract.docx"
+          size: 1048576
+  download:
+    items:
+      - success: true
+        data: "mock-pdf-content"
+      - success: true
+        data: "mock-docx-content"
+    summary:
+      total: 2
+      succeeded: 2
+      failed: 0
+assertions:
+  extract_attachments:
+    - status: ok
+  report:
+    - status: ok

@@ -1,0 +1,36 @@
+name: buddy-extract-kfz
+version: "1.0.0"
+description: >
+  Extrahiert KFZ-/Fahrzeugdaten (Kennzeichen, Marke, Modell, VIN,
+  Versicherungsnummer) aus Buddy-Dokumenten via Mistral Batch API.
+  Spezialist: kfz.
+
+input:
+  source_pattern:
+    type: str
+    default: "%"
+    description: "LIKE pattern for documents.source"
+  limit:
+    type: int
+    default: 5000
+    description: "Max documents to process"
+  batch_size:
+    type: int
+    default: 500
+    description: "Batch size for Mistral API"
+
+error_handling:
+  on_error: stop
+
+steps:
+  - id: extract
+    type: python
+    script: helpers/buddy_extract_kfz.py
+    params:
+      source_pattern: "{{ input.source_pattern }}"
+      limit: "{{ input.limit }}"
+      batch_size: "{{ input.batch_size }}"
+    on_error: stop
+
+output:
+  result: "{{ extract.output }}"

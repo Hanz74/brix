@@ -1,0 +1,30 @@
+name: buddy-extract-language
+version: "1.0.0"
+description: >
+  Erkennt die Sprache von Buddy-Dokumenten per Regex-Marker-Heuristik.
+  Kein LLM nötig — schnell und kostenlos. Spezialist: sprach_erkennung.
+
+input:
+  source_pattern:
+    type: str
+    default: "%"
+    description: "LIKE pattern for documents.source"
+  limit:
+    type: str
+    default: "10000"
+    description: "Max documents to process"
+
+error_handling:
+  on_error: stop
+
+steps:
+  - id: extract
+    type: python
+    script: helpers/buddy_extract_language.py
+    params:
+      source_pattern: "{{ input.source_pattern }}"
+      limit: "{{ input.limit }}"
+    on_error: stop
+
+output:
+  result: "{{ extract.output }}"

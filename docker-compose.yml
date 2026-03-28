@@ -1,0 +1,70 @@
+services:
+  brix:
+    build: .
+    container_name: brix
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - ${HOME}/.brix:/root/.brix
+      - /root:/host/root                              # host filesystem access
+      - ./src/brix:/app/src/brix                      # dev-mode: live code reload
+    env_file: .env
+    networks:
+      - shared-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  brix-mcp:
+    build: .
+    container_name: brix-mcp
+    environment:
+      - BRIX_MODE=mcp
+      - BRIX_MCP_TRANSPORT=stdio  # set to "http" to enable HTTP/SSE transport on port 8091
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /root:/host/root
+      - ${HOME}/.brix:/root/.brix
+      - ./src/brix:/app/src/brix                      # dev-mode: live code reload
+    env_file: .env
+    ports:
+      - "8091:8091"
+    networks:
+      - shared-network
+    stdin_open: true
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  brix-api:
+    build: .
+    container_name: brix-api
+    command: brix api --port 8090
+    ports:
+      - "8090:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /root:/host/root
+      - ${HOME}/.brix:/root/.brix
+      - ./src/brix:/app/src/brix                      # dev-mode: live code reload
+    env_file: .env
+    networks:
+      - shared-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+networks:
+  shared-network:
+    external: true

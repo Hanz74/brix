@@ -1,0 +1,31 @@
+name: buddy-extract-cases
+version: "1.0.0"
+description: >
+  Verknuepft zusammengehoerige Dokumente und Transaktionen zu Vorgaengen/Cases.
+  Startet mit Debeka-Leistungsmitteilungen als Ankerpunkt und sucht passende
+  Arztrechnungen, Beihilfe-Bescheide und Transaktionen.
+
+input:
+  limit:
+    type: str
+    default: "100"
+    description: "Max Leistungsmitteilungen to process"
+  dry_run:
+    type: str
+    default: "true"
+    description: "If true, only plan without writing to DB"
+
+error_handling:
+  on_error: stop
+
+steps:
+  - id: extract_cases
+    type: python
+    script: helpers/buddy_extract_cases.py
+    params:
+      limit: "{{ input.limit }}"
+      dry_run: "{{ input.dry_run }}"
+    on_error: stop
+
+output:
+  result: "{{ extract_cases.output }}"

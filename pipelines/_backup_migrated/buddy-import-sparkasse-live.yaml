@@ -1,0 +1,94 @@
+name: buddy-import-sparkasse-live
+version: "1.0.0"
+description: >
+  Live Sparkasse-Transaktionen via FinTS/HBCI abrufen und in buddy-api importieren.
+  Verwendet python-fints (pushTAN) -- der User bestaetigt die TAN in seiner Banking-App.
+  Flow: Import-Run erstellen -> FinTS-Fetch -> Transaktionen ingestieren -> Run abschliessen.
+
+input:
+  since:
+    type: str
+    default: "2024-11-01"
+    description: "Startdatum fuer Transaktions-Abruf (ISO 8601, z.B. 2024-11-01)"
+  account_iban:
+    type: str
+    default: ""
+    description: "Optionale IBAN-Filterung (leer = alle Konten abrufen)"
+
+error_handling:
+  on_error: stop
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Step 1: Import-Run anlegen
+  # Erstellt einen Audit-Eintrag in buddy-api fuer diesen Import-Lauf.
+  # ---------------------------------------------------------------------------
+  - id: create_run
+    type: http
+    method: POST
+    url: "http://buddy-api:8030/v1/import-runs/create"
+    headers:
+      Content-Type: "application/json"
+    body:
+      source: "sparkasse:fints"
+      params:
+        since: "{{ input.since }}"
+        account_iban: "{{ input.account_iban }}"
+    on_error: stop
+    timeout: 30s
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Transaktionen via FinTS holen
+  # Verbindet sich mit der Sparkasse, listet Konten und holt Buchungen.
+  # pushTAN: User bestaetigt in Banking-App. Script wartet bis bestaetigt.
+  # Credentials kommen aus Brix-Umgebungsvariablen (nie im YAML hardcoden!).
+  # ---------------------------------------------------------------------------
+  - id: fetch
+    type: python
+    script: helpers/buddy_fetch_sparkasse.py
+    params:
+      blz: "{{ env.SPARKASSE_BLZ }}"
+      fints_url: "{{ env.SPARKASSE_FINTS_URL }}"
+      login: "{{ env.SPARKASSE_LOGIN }}"
+      pin: "{{ env.SPARKASSE_PIN }}"
+      since: "{{ input.since }}"
+      account_iban: "{{ input.account_iban }}"
+    on_error: stop
+    timeout: 180s
+
+  # ---------------------------------------------------------------------------
+  # Step 3: Transaktionen ingestieren
+  # Schickt jede Transaktion einzeln an buddy-api /v1/ingest.
+  # 409 = Duplikat (external_id already exists) -> OK, kein Fehler.
+  # ---------------------------------------------------------------------------
+  - id: ingest
+    type: python
+    script: helpers/buddy_ingest_transactions.py
+    params:
+      transactions: "{{ fetch.output.transactions | default([]) }}"
+      source: "sparkasse:fints"
+      import_run_id: "{{ create_run.output.import_run_id }}"
+    on_error: continue
+    timeout: 300s
+
+  # ---------------------------------------------------------------------------
+  # Step 4: Import-Run abschliessen
+  # Markiert den Run als completed mit Anzahl der ingestierten Transaktionen.
+  # ---------------------------------------------------------------------------
+  - id: complete_run
+    type: http
+    method: POST
+    url: "http://buddy-api:8030/v1/import-runs/{{ create_run.output.import_run_id }}/complete"
+    headers:
+      Content-Type: "application/json"
+    body:
+      total_items: "{{ fetch.output.transactions | default([]) | length }}"
+    on_error: continue
+    timeout: 30s
+
+output:
+  import_run_id: "{{ create_run.output.import_run_id }}"
+  accounts_found: "{{ fetch.output.accounts | default([]) | length }}"
+  transactions_fetched: "{{ fetch.output.transactions | default([]) | length }}"
+  ingest_result: "{{ ingest.output | default({}) }}"
+  balance: "{{ fetch.output.balance | default({}) }}"

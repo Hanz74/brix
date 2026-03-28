@@ -1,0 +1,79 @@
+name: buddy-import-eltern
+version: "1.0.0"
+description: >
+  Importiert Kontoauszüge der Eltern aus einem lokalen Ordner (PDFs, Bilder) in buddy-api.
+  Flow: Dateiliste → foreach Datei: MarkItDown OCR → Buchungszeilen extrahieren (LLM-gestützt)
+  → POST buddy-api /v1/ingest (type=transaction, owner=eltern via account).
+
+input:
+  folder_path:
+    type: str
+    description: >
+      Absoluter Host-Pfad zum Ordner mit Kontoauszügen (PDFs/Bilder).
+      Im Container als /host/root/... verfügbar. Beispiel: /host/root/documents/eltern/kontoauszuege
+  account_id:
+    type: int
+    description: "ID des Eltern-Kontos in buddy-db (accounts.id)"
+  owner:
+    type: str
+    default: "eltern"
+    description: "Scope-Owner: 'eltern' (default) oder 'hans'"
+  output_dir:
+    type: str
+    default: "/host/root/docker/buddy/data/originals"
+    description: "Zielverzeichnis für Originaldateien (Container-Pfad)"
+
+error_handling:
+  on_error: continue
+
+steps:
+  # -------------------------------------------------------------------------
+  # Step 1: Dateiliste
+  # Listet alle PDFs und Bilder im angegebenen Ordner auf.
+  # -------------------------------------------------------------------------
+  - id: list_files
+    type: python
+    script: helpers/list_files.py
+    params:
+      source_dir: "{{ input.folder_path }}"
+      extensions: "pdf,png,jpg,jpeg,tiff,tif,bmp"
+    on_error: stop
+
+  # -------------------------------------------------------------------------
+  # Step 2: Pro Datei verarbeiten
+  # a) MarkItDown MCP → OCR → Markdown
+  # b) LLM-gestützte Buchungszeilen-Extraktion (buddy_parse_kontoauszug.py)
+  # c) POST buddy-api /v1/ingest für jede Transaktion
+  # Concurrency 3: MarkItDown ist CPU-intensiv, nicht überladen
+  # -------------------------------------------------------------------------
+  - id: process
+    type: python
+    script: helpers/buddy_import_eltern_process.py
+    foreach: "{{ list_files.output | default([]) }}"
+    parallel: true
+    concurrency: 3
+    params:
+      filename: "{{ item.filename }}"
+      path: "{{ item.path }}"
+      size: "{{ item.size }}"
+      account_id: "{{ input.account_id }}"
+      owner: "{{ input.owner }}"
+      output_dir: "{{ input.output_dir }}"
+    on_error: continue
+    timeout: 300s
+
+  # -------------------------------------------------------------------------
+  # Step 3: Zusammenfassung
+  # -------------------------------------------------------------------------
+  - id: report
+    type: python
+    script: helpers/buddy_eltern_report.py
+    params:
+      process_results: "{{ process.output | default({}) }}"
+      folder_path: "{{ input.folder_path }}"
+      account_id: "{{ input.account_id }}"
+      owner: "{{ input.owner }}"
+
+output:
+  report: "{{ report.output }}"
+  file_count: "{{ list_files.output | length }}"
