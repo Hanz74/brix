@@ -1,4 +1,4 @@
-"""MCP runner — tool calls via stdio protocol."""
+"""MCP runner — tool calls via stdio/SSE protocol."""
 import json
 import time
 import yaml
@@ -10,6 +10,19 @@ from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout, get_default_timeout
 from brix.models import ServerConfig
 from brix.cache import SchemaCache
+
+try:
+    from mcp import ClientSession, StdioServerParameters, McpError
+    from mcp.client.stdio import stdio_client
+    from mcp.client.sse import sse_client
+    _MCP_AVAILABLE = True
+except ImportError:
+    _MCP_AVAILABLE = False
+    ClientSession = None  # type: ignore[assignment,misc]
+    StdioServerParameters = None  # type: ignore[assignment,misc]
+    McpError = Exception  # type: ignore[assignment,misc]
+    stdio_client = None  # type: ignore[assignment]
+    sse_client = None  # type: ignore[assignment]
 
 
 # Default path for servers.yaml
@@ -189,25 +202,32 @@ class McpRunner(BaseRunner):
         except (FileNotFoundError, KeyError) as e:
             return {"success": False, "error": str(e), "duration": time.monotonic() - start}
 
-        try:
-            from mcp import ClientSession, StdioServerParameters
-            from mcp.client.stdio import stdio_client
-            from mcp import McpError
-        except ImportError:
+        if not _MCP_AVAILABLE:
             return {
                 "success": False,
                 "error": "MCP SDK not installed. Run: pip install mcp",
                 "duration": time.monotonic() - start,
             }
 
-        server_params = StdioServerParameters(
-            command=server_config.command,
-            args=server_config.args,
-            env=server_config.env if server_config.env else None,
-        )
+        # Choose transport based on server config
+        if server_config.transport == "sse":
+            if not server_config.url:
+                return {
+                    "success": False,
+                    "error": f"SSE server '{server_name}' has no 'url' configured",
+                    "duration": time.monotonic() - start,
+                }
+            ctx_manager = sse_client(url=server_config.url)
+        else:
+            server_params = StdioServerParameters(
+                command=server_config.command,
+                args=server_config.args,
+                env=server_config.env if server_config.env else None,
+            )
+            ctx_manager = stdio_client(server_params)
 
         try:
-            async with stdio_client(server_params) as (read, write):
+            async with ctx_manager as (read, write):
                 async with ClientSession(
                     read,
                     write,

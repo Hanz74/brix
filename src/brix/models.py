@@ -515,10 +515,19 @@ class RunResult(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    """Configuration for an MCP server."""
+    """Configuration for an MCP server.
+
+    Supports two transports:
+    - ``stdio`` (default): launch a subprocess and communicate over stdin/stdout.
+      Requires ``command`` to be set.
+    - ``sse``: connect to an already-running HTTP/SSE MCP server.
+      Requires ``url`` to be set; ``command`` is ignored.
+    """
 
     name: str
-    command: str
+    command: str = ""
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     tools_prefix: Optional[str] = None
+    transport: str = "stdio"  # "stdio" or "sse"
+    url: str = ""  # SSE endpoint URL (used when transport="sse")

@@ -322,8 +322,10 @@ class McpConnectionPool:
     async def _connect(self, server_name: str) -> object:
         """Establish a new connection to *server_name* via the SDK group.
 
-        Loads server config from ``servers.yaml``, creates
-        ``StdioServerParameters``, and calls ``group.connect_to_server``.
+        Loads server config from ``servers.yaml``.  For stdio servers creates
+        ``StdioServerParameters``; for SSE servers creates
+        ``SseServerParameters``.  Both are passed to
+        ``group.connect_to_server`` which handles the transport transparently.
 
         Returns the ``ClientSession`` returned by the group.
         """
@@ -331,11 +333,20 @@ class McpConnectionPool:
             server_name, self._config_path
         )
 
-        params = StdioServerParameters(
-            command=server_config.command,
-            args=server_config.args,
-            env=server_config.env if server_config.env else None,
-        )
+        if server_config.transport == "sse":
+            if not server_config.url:
+                raise ValueError(
+                    f"SSE server '{server_name}' has no 'url' configured"
+                )
+            from mcp.client.session_group import SseServerParameters
+
+            params = SseServerParameters(url=server_config.url)
+        else:
+            params = StdioServerParameters(
+                command=server_config.command,
+                args=server_config.args,
+                env=server_config.env if server_config.env else None,
+            )
 
         # connect_to_server returns the ClientSession
         session = await self._group.connect_to_server(params)
