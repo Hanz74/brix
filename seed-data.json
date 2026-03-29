@@ -14,7 +14,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "action.move_file",
@@ -95,7 +96,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "action.notify",
@@ -168,7 +170,8 @@
         }
       ],
       "related_connector": "mattermost",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "action.respond",
@@ -184,7 +187,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "cody.batch",
@@ -202,7 +206,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "cody.call",
@@ -220,7 +225,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "cody.gatekeeper",
@@ -239,7 +245,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "cody.notify",
@@ -257,7 +264,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "cody.read",
@@ -275,7 +283,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "cody.task_start",
@@ -293,7 +302,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "convert.extract_text",
@@ -364,7 +374,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "convert.to_json",
@@ -443,7 +454,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "convert.to_markdown",
@@ -488,7 +500,8 @@
         }
       ],
       "related_connector": "markitdown",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "db.ingest",
@@ -556,7 +569,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "db.query",
@@ -619,7 +633,8 @@
         }
       ],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "db.upsert",
@@ -635,7 +650,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "extract.specialist",
@@ -651,7 +667,56 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
+    },
+    {
+      "name": "file.read_base64",
+      "runner": "python",
+      "namespace": "file",
+      "category": "custom",
+      "description": "Liest Datei von Disk und gibt base64 + filename + size zurueck",
+      "when_to_use": "Wenn eine Datei fuer einen nachfolgenden Step als base64 benoetigt wird (z.B. vor http.request Upload)",
+      "when_NOT_to_use": "Wenn die Datei als Text gelesen werden soll (nutze file.read stattdessen)",
+      "aliases": [
+        "datei lesen",
+        "file read",
+        "base64 encode",
+        "datei encodieren"
+      ],
+      "input_type": "none",
+      "output_type": "dict",
+      "config_schema": {
+        "helper": "file_to_base64"
+      },
+      "examples": [],
+      "related_connector": "",
+      "system": 0,
+      "org_tags": "[]"
+    },
+    {
+      "name": "file.write_text",
+      "runner": "python",
+      "namespace": "file",
+      "category": "custom",
+      "description": "Schreibt Text (z.B. Markdown) in eine Datei auf Disk",
+      "when_to_use": "Wenn ein Step-Ergebnis (Markdown, JSON, Text) als Datei gespeichert werden soll",
+      "when_NOT_to_use": "Wenn Daten in eine DB geschrieben werden sollen (nutze db.upsert)",
+      "aliases": [
+        "datei schreiben",
+        "file write",
+        "save file",
+        "markdown speichern"
+      ],
+      "input_type": "dict",
+      "output_type": "dict",
+      "config_schema": {
+        "helper": "save_markdown"
+      },
+      "examples": [],
+      "related_connector": "",
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "file_read",
@@ -689,7 +754,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "file_write",
@@ -727,7 +793,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "filter",
@@ -758,7 +825,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "flow.aggregate",
@@ -774,7 +842,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.choose",
@@ -790,7 +859,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.dedup",
@@ -806,7 +876,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.diff",
@@ -822,7 +893,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.error_handler",
@@ -838,7 +910,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.filter",
@@ -854,7 +927,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.flatten",
@@ -870,7 +944,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.merge",
@@ -886,7 +961,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.parallel",
@@ -902,7 +978,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.pipeline",
@@ -918,7 +995,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.pipeline_group",
@@ -934,7 +1012,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.repeat",
@@ -950,7 +1029,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.set",
@@ -966,7 +1046,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.switch",
@@ -982,7 +1063,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.transform",
@@ -998,7 +1080,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.validate",
@@ -1014,7 +1097,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "flow.wait",
@@ -1030,7 +1114,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "http.request",
@@ -1046,7 +1131,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "http_get",
@@ -1084,7 +1170,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "http_post",
@@ -1129,7 +1216,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "llm.batch",
@@ -1145,7 +1233,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "llm.classify",
@@ -1217,7 +1306,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "llm.extract",
@@ -1303,7 +1393,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "markitdown.convert",
@@ -1319,7 +1410,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "mcp.call",
@@ -1335,7 +1427,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "mcp_call",
@@ -1380,7 +1473,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "python_script",
@@ -1418,7 +1512,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "run_cli",
@@ -1449,7 +1544,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "script.cli",
@@ -1465,7 +1561,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "script.python",
@@ -1481,7 +1578,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "source.fetch",
@@ -1497,7 +1595,8 @@
       "config_schema": {},
       "examples": [],
       "related_connector": "",
-      "system": 1
+      "system": 1,
+      "org_tags": "[]"
     },
     {
       "name": "source.fetch_emails",
@@ -1577,7 +1676,8 @@
         }
       ],
       "related_connector": "outlook",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "source.fetch_files",
@@ -1658,7 +1758,8 @@
         }
       ],
       "related_connector": "onedrive",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "source.http_fetch",
@@ -1747,7 +1848,8 @@
         }
       ],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "specialist",
@@ -1796,7 +1898,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "sub_pipeline",
@@ -1827,7 +1930,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     },
     {
       "name": "transform",
@@ -1858,7 +1962,8 @@
       },
       "examples": [],
       "related_connector": "",
-      "system": 0
+      "system": 0,
+      "org_tags": "[]"
     }
   ],
   "connector_definitions": [
@@ -2978,6 +3083,17 @@
               }
             },
             "additionalProperties": true
+          },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung (PFLICHT). Bekannte: buddy, cody, utility, system."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags (PFLICHT). Bekannte: intake, extraction, conversion, batch, monitoring, one-shot."
           }
         },
         "required": [
@@ -3054,6 +3170,21 @@
               }
             },
             "additionalProperties": true
+          },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung (PFLICHT). Bekannte Projekte: buddy, cody, utility, system. Neue Projekte via brix__org erstellen."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Kategorisierung (PFLICHT). Bekannte Tags: intake, extraction, classification, monitoring, scheduled, one-shot, conversion, notification, batch."
+          },
+          "group": {
+            "type": "string",
+            "description": "Workflow-Kette. z.B. buddy-onedrive-chain, cody-task-workflow."
           }
         },
         "required": [
@@ -5382,6 +5513,17 @@
               }
             },
             "additionalProperties": true
+          },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags aktualisieren."
           }
         },
         "required": [
@@ -5452,6 +5594,21 @@
               }
             },
             "additionalProperties": true
+          },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung. Bekannte: buddy, cody, utility, system."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags aktualisieren."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group aktualisieren."
           }
         },
         "required": [
