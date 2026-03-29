@@ -2,7 +2,7 @@
 
 **DB-First Pipeline Orchestrator — konfigurieren statt coden.**
 
-The pipeline runtime built for AI agents. ~3750 tests. 101 MCP tools. Built for Claude Code.
+The pipeline runtime built for AI agents. ~3800 tests. 81 pipelines. 59 bricks. Built for Claude Code.
 
 ---
 
@@ -86,7 +86,7 @@ Everything lives in `brix.db`. Pipelines, helpers, bricks, connectors, tools, he
 
 ### Bricks
 
-51 Bricks (30 System + 21 Domain) organized in 10 namespaces. Instead of writing a Python helper script for each step, you pick a Brick and configure it:
+59 Bricks organized in 10 namespaces. Instead of writing a Python helper script for each step, you pick a Brick and configure it:
 
 | Namespace | What it covers |
 |-----------|---------------|
@@ -102,6 +102,14 @@ Everything lives in `brix.db`. Pipelines, helpers, bricks, connectors, tools, he
 | `markitdown.*` | Document conversion — PDF/DOCX/HTML to Markdown |
 
 Custom Bricks can be registered at runtime. The Universal Registry (`discover()`) finds bricks, connectors, helpers, and tools from a single entry point. Referential integrity ensures no brick can be deleted while pipelines reference it.
+
+### unwrap_json — Nested JSON Responses
+
+The `unwrap_json` feature handles nested JSON responses automatically. When a step returns a JSON string inside a JSON field (a common pattern with MCP servers), Brix unwraps it transparently so downstream steps receive the actual object, not the escaped string.
+
+### org_registry — Projekt/Tag/Group Definitions
+
+A dedicated `org_registry` stores project, tag, and group definitions. All 15 entity types carry org fields (`project`, `tags`, `group`, `description`) — required fields emit a warning when omitted. The registry is the single source of truth for organizational taxonomy across pipelines and helpers.
 
 ### Discover Bricks
 
@@ -472,6 +480,18 @@ MCP tools for database backup and restore. Backups include all pipelines, helper
 
 Trigger groups: start/stop multiple triggers together with one call.
 
+### Auto-Tagging + Auto-Version-Bump
+
+Pipelines and helpers are auto-tagged based on their content and org-field hints. Every save triggers an automatic version bump, so the version history is always in sync without manual intervention.
+
+### SSE Transport — MCP Server (Cody-Bridge)
+
+The MCP server supports SSE transport in addition to stdio. This enables persistent connections from browser-based clients and the Cody-Bridge integration. SSE transport runs on a configurable port alongside the stdio server.
+
+### PII Scan Integration
+
+The PII scan tool (`mcp__cody__pii_scan`) is integrated into the Gatekeeper pipeline. Every pipeline and helper saved to the registry is scanned for personally identifiable information (emails, IBANs, phone numbers, credentials, addresses). Findings at BLOCK severity prevent the commit.
+
 ### Schema Migrations
 
 Automatic schema migrations on container startup. Each migration is versioned and idempotent. The migration system tracks which migrations have been applied and runs pending ones in order. No manual SQL needed.
@@ -539,12 +559,12 @@ Claude Code / MCP Client
 ┌─────────────────────────────────────────────┐
 │              Brix MCP Server                 │
 │                                              │
-│  101 MCP Tools (from 133 consolidated)       │
-│  30+ Runners                                 │
+│  MCP Tools · SSE + stdio transport           │
+│  30 Helpers · 59 Bricks · 81 Pipelines      │
 │                                              │
 │  Pipeline Engine (asyncio)                   │
 │  ├─ DB-First: all objects in brix.db        │
-│  ├─ Brick Registry (51 bricks, 10 NS)      │
+│  ├─ Brick Registry (59 bricks, 10 NS)      │
 │  ├─ Universal Registry (discover())         │
 │  ├─ DAG resolver + parallel executor        │
 │  ├─ foreach checkpoints + item resume       │
@@ -552,6 +572,8 @@ Claude Code / MCP Client
 │  ├─ Auto-pagination (follows nextLink)      │
 │  ├─ Resilience (CB, RL, Cache, Saga)       │
 │  ├─ Advanced Flow (Queue, Events, Stream)  │
+│  ├─ unwrap_json + org_registry + PII scan  │
+│  ├─ Auto-tagging + Auto-version-bump       │
 │  └─ JSON result → MCP response              │
 │                                              │
 │  Storage (SQLite — brix.db)                  │
@@ -654,8 +676,8 @@ Brix strictly separates result from logs:
 
 ## Repo
 
-- `src/brix/` — Engine, Brick Registry, runners, MCP server
-- `pipelines/` — Pipeline YAML files (volume-mounted, no rebuild needed)
-- `helpers/` — Python helper scripts (volume-mounted)
+- `src/brix/` — Engine, Brick Registry, runners, MCP server (stdio + SSE)
+- `pipelines/` — 81 pipelines: buddy (34), cody (36), utility (7), system (4) — volume-mounted
+- `helpers/` — 30 Python helper scripts (volume-mounted)
 - `docs/` — Architecture decisions, integration learnings, expert reviews
-- `tests/` — ~3750 tests
+- `tests/` — ~3800+ tests

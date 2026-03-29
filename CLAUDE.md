@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist Brix?
 
-**Brix** ist ein DB-First Pipeline-Orchestrator für Claude Code. Alles lebt in `brix.db` — Pipelines, Helpers, Bricks, Connectors, Tools, Help Topics. Workflows werden aus 51 Bricks (30 System + 21 Domain) zusammengesteckt — konfigurieren statt coden. 101 MCP-Tools, 30+ Runner, ~3750 Tests.
+**Brix** ist ein DB-First Pipeline-Orchestrator für Claude Code. Alles lebt in `brix.db` — Pipelines, Helpers, Bricks, Connectors, Tools, Help Topics. Workflows werden aus 59 Bricks zusammengesteckt — konfigurieren statt coden. 81 Pipelines, 30 Helpers, ~3800+ Tests. MCP-Server mit stdio + SSE Transport.
 
 **Warum:** Jeder Tool-Call in Claude Code kostet Kontext-Tokens. `brix run` macht 164 Calls zu einem. Token-Einsparung: ~99%.
 
@@ -29,7 +29,7 @@ claude mcp add brix -- docker exec -i brix-mcp brix mcp
 ## Brix ist verfügbar!
 
 ```bash
-brix --version          # 8.0.0
+brix --version          # 7.52.0
 brix run <pipeline.yaml> -p key=value
 brix validate <pipeline.yaml>
 brix run --dry-run <pipeline.yaml>
@@ -49,11 +49,13 @@ brix stats              # Erfolgsrate, Avg Duration
 | `llm.*` | `llm.batch` — LLM-Inferenz im Batch-Modus |
 | `extract.*` | `extract.specialist` — Deklarative Feldextraktion |
 | `flow.*` | `filter`, `transform`, `aggregate`, `merge`, `dedup`, `diff`, `flatten`, `set`, `choose`, `switch`, `parallel`, `repeat`, `wait`, `validate`, `error_handler`, `pipeline`, `pipeline_group` |
-| `action.*` | `action.notify`, `action.approval`, `action.respond` |
+| `action.*` | `action.notify`, `action.approval`, `action.respond`, `action.emit`, `action.queue` |
 | `http.*` | `http.request` — HTTP-Calls |
 | `mcp.*` | `mcp.call` — Beliebiger MCP-Server-Call |
 | `script.*` | `script.python`, `script.cli` — Code-Ausführung |
 | `markitdown.*` | `markitdown.convert` — Dokumente zu Markdown |
+
+59 Bricks gesamt — `mcp__brix__list_bricks()` für die vollständige Liste.
 
 **Brick-Discovery:**
 ```python
@@ -82,7 +84,7 @@ Connectors abstrahieren Authentifizierung und API-Details:
 mcp__brix__plan_pipeline(goal="...")          # Schrittweise Plan mit Brick-Namen
 mcp__brix__compose_pipeline(goal="...")       # Fertige Pipeline-Definition
 
-# Bricks (51 total: 30 System + 21 Domain, 10 Namespaces)
+# Bricks (59 total, 10 Namespaces)
 mcp__brix__list_bricks()                      # alle Bricks
 mcp__brix__search_bricks(query="...")         # Suche
 mcp__brix__get_brick_schema(name="...")       # Schema eines Bricks
@@ -146,9 +148,16 @@ Brix läuft im Docker Container. Host-Dateisystem unter `/host/root/`:
 - Host `/root/dev/...` → Brix `/host/root/dev/...`
 - Pipeline `output_dir`: `/host/root/pfad/zum/ziel`
 
-## v8.0.0 Features
+## v7.52.0 Features
 
 - **DB-First**: Pipelines, Helpers, Bricks, Connectors, Tools, Help — alles in brix.db. Hard Cut: Code-Dateien entfernt.
+- **15 Entity-Typen** mit vollständigem CRUD (create/update/get/list/search/delete)
+- **Org-Felder** (`project`/`tags`/`group`/`description`) auf allen 15 Entities — Pflicht-Warnings bei fehlenden Feldern
+- **org_registry**: Zentrale Definitions-Datenbank für Projekte, Tags und Groups
+- **Auto-Tagging + Auto-Version-Bump**: Automatisch bei jedem Save
+- **SSE Transport**: MCP-Server unterstützt SSE zusätzlich zu stdio (Cody-Bridge, Browser-Clients)
+- **unwrap_json**: Automatisches Entpacken verschachtelter JSON-Responses in Downstream-Steps
+- **PII-Scan Integration**: Gatekeeper prüft automatisch auf personenbezogene Daten (BLOCK-Severity)
 - **Resilience**: Circuit Breaker, Rate Limiter, Step-Level Cache, Saga (kompensatorische Transaktionen)
 - **Advanced Flow**: Queue, Event Bus, Debounce, Streaming
 - **Profiles/Mixins + Dynamic Dispatch + Brick-Vererbung**: Config-Overrides pro Environment, geteilte Step-Sequenzen, Runtime-Routing
@@ -212,11 +221,12 @@ docker compose build --quiet && docker compose up -d
 ## Cody-Projekt
 
 - Slug: `forge`
-- Version: 8.0.0
-- Tests: ~3750
-- MCP-Tools: 101 (von 133 konsolidiert)
-- Bricks: 51 (30 System + 21 Domain)
-- Runner: 30+
+- Version: 7.52.0
+- Tests: ~3800+
+- Bricks: 59 (10 Namespaces)
+- Helpers: 30
+- Pipelines: 81 (buddy: 34, cody: 36, utility: 7, system: 4)
+- MCP-Transport: stdio + SSE
 - DB-First: alles in brix.db (Hard Cut — Code-Dateien entfernt)
 
 ## Docs
