@@ -1,3 +1,3 @@
 """Brix — Generic process orchestrator for Claude Code."""
 
-__version__ = "7.55.1"
+__version__ = "7.55.2"

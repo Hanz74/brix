@@ -2818,6 +2818,22 @@
       }
     },
     {
+      "name": "brix__alert",
+      "description": "Alert-Rules CRUD. action: add/list/update/delete/history. Params: name, condition, channel, project, tags, description.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/list/update/delete/history"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
       "name": "brix__auto_fix_step",
       "description": "Attempt to automatically fix a failing step in a pipeline. Handles: ModuleNotFoundError (installs missing package), UndefinedError/is undefined (adds | default('') via update_step), Timeout (doubles the timeout value via update_step). Returns {fixed, action, rerun_hint} — use rerun_hint to re-run the pipeline.",
       "input_schema": {
@@ -3377,6 +3393,22 @@
         },
         "required": [
           "name"
+        ]
+      }
+    },
+    {
+      "name": "brix__credential",
+      "description": "Credentials CRUD. action: add/get/list/update/delete/rotate/search. Params: name, type, value.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/get/list/update/delete/rotate/search"
+          }
+        },
+        "required": [
+          "action"
         ]
       }
     },
@@ -4579,6 +4611,22 @@
       }
     },
     {
+      "name": "brix__org",
+      "description": "Org-Definitionen CRUD. action: create/list/delete/seed. type: project/tag/group. Params: name, description.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: create/list/delete/seed"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
       "name": "brix__plan_pipeline",
       "description": "Formalized reasoning phase before creating a pipeline. Decomposes a goal into atomic steps, recommends bricks/helpers/pipelines for each step with rationale and alternatives, checks constraints, and estimates complexity (simple/moderate/complex). Call this BEFORE compose_pipeline for complex goals to get a structured analysis. Returns a plan with per-step recommendations, constraint violations, and warnings about missing implementations.",
       "input_schema": {
@@ -4676,6 +4724,22 @@
         "required": [
           "name",
           "script"
+        ]
+      }
+    },
+    {
+      "name": "brix__registry",
+      "description": "Knowledge-Registry CRUD. action: add/get/list/update/delete/search. Params: registry_type (templates/patterns/schemas/error_patterns/best_practices/lessons_learned), name, content, tags, project.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/get/list/update/delete/search"
+          }
+        },
+        "required": [
+          "action"
         ]
       }
     },
@@ -5400,6 +5464,22 @@
       }
     },
     {
+      "name": "brix__server",
+      "description": "MCP-Server CRUD. action: add/list/update/remove/health/refresh. Params: name, command, args, transport, url.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/list/update/remove/health/refresh"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
       "name": "brix__set_variable",
       "description": "Create or update a managed variable. Variables are available in pipeline Jinja2 templates as {{ var.name }}. Returns {set: true, name}.",
       "input_schema": {
@@ -5451,6 +5531,22 @@
         "required": [
           "name",
           "value"
+        ]
+      }
+    },
+    {
+      "name": "brix__state",
+      "description": "Shared-State KV. action: get/set/list/delete. Params: key, value, pipeline_name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: get/set/list/delete"
+          }
+        },
+        "required": [
+          "action"
         ]
       }
     },
@@ -5645,6 +5741,38 @@
         },
         "required": [
           "name"
+        ]
+      }
+    },
+    {
+      "name": "brix__trigger",
+      "description": "Trigger CRUD. action: add/get/list/update/delete/test. Params: name, type, pipeline, config, enabled, project, tags, group, description.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/get/list/update/delete/test"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "brix__trigger_group",
+      "description": "Trigger-Group CRUD. action: add/get/list/start/stop/delete/update. Params: name, triggers, project, tags, description.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/get/list/start/stop/delete/update"
+          }
+        },
+        "required": [
+          "action"
         ]
       }
     },
