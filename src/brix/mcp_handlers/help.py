@@ -118,8 +118,31 @@ async def _handle_get_tips(arguments: dict) -> dict:
     except Exception:
         pass  # Never break get_tips over tracking errors
 
+    # T-BRIX-ORG-01: Project overview
+    project_overview_lines: list[str] = []
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _proj_db = _BrixDB()
+        proj_stats = _proj_db.get_project_stats()
+        if proj_stats:
+            project_overview_lines.append("## PROJEKTE")
+            for proj, counts in sorted(proj_stats.items()):
+                proj_label = proj if proj else "(unassigned)"
+                p_cnt = counts.get("pipelines", 0)
+                h_cnt = counts.get("helpers", 0)
+                project_overview_lines.append(
+                    f"  - {proj_label}: {p_cnt} pipeline(s), {h_cnt} helper(s)"
+                )
+            project_overview_lines.append(
+                "  Nutze list_pipelines(project=...) oder list_helpers(project=...) zum Filtern."
+            )
+            project_overview_lines.append("")
+    except Exception:
+        pass  # Never break get_tips
+
     tips = [
         *legacy_alert_lines,
+        *project_overview_lines,
         "=== Brix Quick Reference ===",
         "",
         "## BRICK-FIRST — HÖCHSTE PRIORITÄT",

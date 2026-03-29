@@ -1719,6 +1719,9 @@ class BrixDB:
         requirements: Optional[list[str]] = None,
         pipeline_id: Optional[str] = None,
         yaml_content: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> str:
         """Insert or update a pipeline index entry. Returns the pipeline id."""
         now = _now_iso()
@@ -1733,38 +1736,51 @@ class BrixDB:
                 pid = pipeline_id or str(uuid4())
                 created_at = now
 
-            # Check if yaml_content column exists (migration v1)
+            # Build dynamic column list based on which optional columns exist
             has_yaml_content = self._column_exists(conn, "pipelines", "yaml_content")
+            has_project = self._column_exists(conn, "pipelines", "project")
+            has_tags = self._column_exists(conn, "pipelines", "tags")
+            has_group = self._column_exists(conn, "pipelines", "group_name")
+
+            cols = ["id", "name", "path", "created_at", "updated_at", "requirements_json"]
+            vals: list = [pid, name, path, created_at, now, json.dumps(requirements or [])]
+            updates = [
+                "path=excluded.path",
+                "updated_at=excluded.updated_at",
+                "requirements_json=excluded.requirements_json",
+            ]
+
             if has_yaml_content and yaml_content is not None:
-                conn.execute(
-                    """INSERT INTO pipelines (id, name, path, created_at, updated_at, requirements_json, yaml_content)
-                       VALUES (?,?,?,?,?,?,?)
-                       ON CONFLICT(name) DO UPDATE SET
-                         path=excluded.path,
-                         updated_at=excluded.updated_at,
-                         requirements_json=excluded.requirements_json,
-                         yaml_content=excluded.yaml_content
-                    """,
-                    (
-                        pid, name, path, created_at, now,
-                        json.dumps(requirements or []),
-                        yaml_content,
-                    ),
-                )
-            else:
-                conn.execute(
-                    """INSERT INTO pipelines (id, name, path, created_at, updated_at, requirements_json)
-                       VALUES (?,?,?,?,?,?)
-                       ON CONFLICT(name) DO UPDATE SET
-                         path=excluded.path,
-                         updated_at=excluded.updated_at,
-                         requirements_json=excluded.requirements_json
-                    """,
-                    (
-                        pid, name, path, created_at, now,
-                        json.dumps(requirements or []),
-                    ),
-                )
+                cols.append("yaml_content")
+                vals.append(yaml_content)
+                updates.append("yaml_content=excluded.yaml_content")
+
+            if has_project and project is not None:
+                cols.append("project")
+                vals.append(project)
+                updates.append("project=excluded.project")
+
+            if has_tags and tags is not None:
+                cols.append("tags")
+                vals.append(json.dumps(tags))
+                updates.append("tags=excluded.tags")
+
+            if has_group and group_name is not None:
+                cols.append("group_name")
+                vals.append(group_name)
+                updates.append("group_name=excluded.group_name")
+
+            placeholders = ",".join("?" * len(cols))
+            col_str = ",".join(cols)
+            update_str = ",".join(updates)
+
+            conn.execute(
+                f"""INSERT INTO pipelines ({col_str})
+                   VALUES ({placeholders})
+                   ON CONFLICT(name) DO UPDATE SET {update_str}
+                """,
+                vals,
+            )
         return pid
 
     def delete_pipeline(self, name: str) -> bool:
@@ -1784,18 +1800,102 @@ class BrixDB:
             result["requirements"] = json.loads(result.get("requirements_json") or "[]")
             return result
 
-    def list_pipelines(self) -> list[dict]:
+    def list_pipelines(
+        self,
+        project: Optional[str] = None,
+        group_name: Optional[str] = None,
+        tags: Optional[list] = None,
+    ) -> list[dict]:
+        """Return pipelines, optionally filtered by project, group_name, or tags."""
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM pipelines ORDER BY name"
             ).fetchall()
             out = []
-            for row in rows:
-                d = dict(row)
-                d["requirements"] = json.loads(d.get("requirements_json") or "[]")
-                out.append(d)
-            return out
+            has_project = self._column_exists(conn, "pipelines", "project")
+            has_tags = self._column_exists(conn, "pipelines", "tags")
+            has_group = self._column_exists(conn, "pipelines", "group_name")
+
+        for row in rows:
+            d = dict(row)
+            d["requirements"] = json.loads(d.get("requirements_json") or "[]")
+            if has_project:
+                d.setdefault("project", "")
+            if has_tags:
+                raw_tags = d.get("tags") or "[]"
+                try:
+                    d["tags"] = json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+                except (json.JSONDecodeError, TypeError):
+                    d["tags"] = []
+            if has_group:
+                d.setdefault("group_name", "")
+
+            # Apply filters
+            if project is not None and d.get("project", "") != project:
+                continue
+            if group_name is not None and d.get("group_name", "") != group_name:
+                continue
+            if tags is not None:
+                pipeline_tags = d.get("tags", [])
+                if not any(t in pipeline_tags for t in tags):
+                    continue
+
+            out.append(d)
+        return out
+
+    def pipeline_set_project(self, name: str, project: str) -> bool:
+        """Update the project field for a pipeline. Returns True if updated."""
+        with self._connect() as conn:
+            if not self._column_exists(conn, "pipelines", "project"):
+                return False
+            cursor = conn.execute(
+                "UPDATE pipelines SET project=? WHERE name=?", (project, name)
+            )
+            return cursor.rowcount > 0
+
+    def delete_pipelines_by_project(self, project: str) -> int:
+        """Delete all pipelines with the given project. Returns count deleted."""
+        with self._connect() as conn:
+            if not self._column_exists(conn, "pipelines", "project"):
+                return 0
+            cursor = conn.execute(
+                "DELETE FROM pipelines WHERE project=?", (project,)
+            )
+            return cursor.rowcount
+
+    def get_project_stats(self) -> dict[str, dict]:
+        """Return per-project counts for pipelines and helpers.
+
+        Returns {project: {pipelines: N, helpers: M}}.
+        """
+        stats: dict[str, dict] = {}
+
+        with self._connect() as conn:
+            has_p_project = self._column_exists(conn, "pipelines", "project")
+            has_h_project = self._column_exists(conn, "helpers", "project")
+
+            if has_p_project:
+                rows = conn.execute(
+                    "SELECT COALESCE(project,'') as proj, COUNT(*) as cnt "
+                    "FROM pipelines GROUP BY proj"
+                ).fetchall()
+                for row in rows:
+                    proj = row[0] or ""
+                    stats.setdefault(proj, {"pipelines": 0, "helpers": 0})
+                    stats[proj]["pipelines"] = row[1]
+
+            if has_h_project:
+                rows = conn.execute(
+                    "SELECT COALESCE(project,'') as proj, COUNT(*) as cnt "
+                    "FROM helpers GROUP BY proj"
+                ).fetchall()
+                for row in rows:
+                    proj = row[0] or ""
+                    stats.setdefault(proj, {"pipelines": 0, "helpers": 0})
+                    stats[proj]["helpers"] = row[1]
+
+        return stats
 
     # ------------------------------------------------------------------
     # Helpers CRUD
@@ -1811,6 +1911,9 @@ class BrixDB:
         output_schema: Optional[dict] = None,
         helper_id: Optional[str] = None,
         code: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> str:
         """Insert or update a helper index entry. Returns the helper id."""
         now = _now_iso()
@@ -1826,54 +1929,62 @@ class BrixDB:
                 created_at = now
 
             has_code_col = self._column_exists(conn, "helpers", "code")
+            has_project = self._column_exists(conn, "helpers", "project")
+            has_tags = self._column_exists(conn, "helpers", "tags")
+            has_group = self._column_exists(conn, "helpers", "group_name")
+
+            # Build dynamic column list
+            cols = [
+                "id", "name", "script_path", "description",
+                "requirements_json", "input_schema_json", "output_schema_json",
+                "created_at", "updated_at",
+            ]
+            vals: list = [
+                hid, name, script_path, description,
+                json.dumps(requirements or []),
+                json.dumps(input_schema or {}),
+                json.dumps(output_schema or {}),
+                created_at, now,
+            ]
+            updates = [
+                "script_path=excluded.script_path",
+                "description=excluded.description",
+                "requirements_json=excluded.requirements_json",
+                "input_schema_json=excluded.input_schema_json",
+                "output_schema_json=excluded.output_schema_json",
+                "updated_at=excluded.updated_at",
+            ]
+
             if has_code_col and code is not None:
-                conn.execute(
-                    """INSERT INTO helpers
-                       (id, name, script_path, description,
-                        requirements_json, input_schema_json, output_schema_json,
-                        created_at, updated_at, code)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)
-                       ON CONFLICT(name) DO UPDATE SET
-                         script_path=excluded.script_path,
-                         description=excluded.description,
-                         requirements_json=excluded.requirements_json,
-                         input_schema_json=excluded.input_schema_json,
-                         output_schema_json=excluded.output_schema_json,
-                         updated_at=excluded.updated_at,
-                         code=excluded.code
-                    """,
-                    (
-                        hid, name, script_path, description,
-                        json.dumps(requirements or []),
-                        json.dumps(input_schema or {}),
-                        json.dumps(output_schema or {}),
-                        created_at, now,
-                        code,
-                    ),
-                )
-            else:
-                conn.execute(
-                    """INSERT INTO helpers
-                       (id, name, script_path, description,
-                        requirements_json, input_schema_json, output_schema_json,
-                        created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?)
-                       ON CONFLICT(name) DO UPDATE SET
-                         script_path=excluded.script_path,
-                         description=excluded.description,
-                         requirements_json=excluded.requirements_json,
-                         input_schema_json=excluded.input_schema_json,
-                         output_schema_json=excluded.output_schema_json,
-                         updated_at=excluded.updated_at
-                    """,
-                    (
-                        hid, name, script_path, description,
-                        json.dumps(requirements or []),
-                        json.dumps(input_schema or {}),
-                        json.dumps(output_schema or {}),
-                        created_at, now,
-                    ),
-                )
+                cols.append("code")
+                vals.append(code)
+                updates.append("code=excluded.code")
+
+            if has_project and project is not None:
+                cols.append("project")
+                vals.append(project)
+                updates.append("project=excluded.project")
+
+            if has_tags and tags is not None:
+                cols.append("tags")
+                vals.append(json.dumps(tags))
+                updates.append("tags=excluded.tags")
+
+            if has_group and group_name is not None:
+                cols.append("group_name")
+                vals.append(group_name)
+                updates.append("group_name=excluded.group_name")
+
+            placeholders = ",".join("?" * len(cols))
+            col_str = ",".join(cols)
+            update_str = ",".join(updates)
+            conn.execute(
+                f"""INSERT INTO helpers ({col_str})
+                   VALUES ({placeholders})
+                   ON CONFLICT(name) DO UPDATE SET {update_str}
+                """,
+                vals,
+            )
         return hid
 
     def delete_helper(self, name: str) -> bool:
@@ -1897,13 +2008,68 @@ class BrixDB:
                 return None
             return self._helper_row_to_dict(dict(row))
 
-    def list_helpers(self) -> list[dict]:
+    def list_helpers(
+        self,
+        project: Optional[str] = None,
+        group_name: Optional[str] = None,
+        tags: Optional[list] = None,
+    ) -> list[dict]:
+        """Return helpers, optionally filtered by project, group_name, or tags."""
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM helpers ORDER BY name"
             ).fetchall()
-            return [self._helper_row_to_dict(dict(r)) for r in rows]
+            has_project = self._column_exists(conn, "helpers", "project")
+            has_tags = self._column_exists(conn, "helpers", "tags")
+            has_group = self._column_exists(conn, "helpers", "group_name")
+
+        out = []
+        for row in rows:
+            d = self._helper_row_to_dict(dict(row))
+            if has_project:
+                d.setdefault("project", "")
+            if has_tags:
+                raw_tags = d.get("tags") or "[]"
+                try:
+                    d["tags"] = json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+                except (json.JSONDecodeError, TypeError):
+                    d["tags"] = []
+            if has_group:
+                d.setdefault("group_name", "")
+
+            # Apply filters
+            if project is not None and d.get("project", "") != project:
+                continue
+            if group_name is not None and d.get("group_name", "") != group_name:
+                continue
+            if tags is not None:
+                helper_tags = d.get("tags", [])
+                if not any(t in helper_tags for t in tags):
+                    continue
+
+            out.append(d)
+        return out
+
+    def helper_set_project(self, name: str, project: str) -> bool:
+        """Update the project field for a helper. Returns True if updated."""
+        with self._connect() as conn:
+            if not self._column_exists(conn, "helpers", "project"):
+                return False
+            cursor = conn.execute(
+                "UPDATE helpers SET project=? WHERE name=?", (project, name)
+            )
+            return cursor.rowcount > 0
+
+    def delete_helpers_by_project(self, project: str) -> int:
+        """Delete all helpers with the given project. Returns count deleted."""
+        with self._connect() as conn:
+            if not self._column_exists(conn, "helpers", "project"):
+                return 0
+            cursor = conn.execute(
+                "DELETE FROM helpers WHERE project=?", (project,)
+            )
+            return cursor.rowcount
 
     @staticmethod
     def _helper_row_to_dict(row: dict) -> dict:

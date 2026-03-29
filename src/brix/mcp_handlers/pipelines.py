@@ -87,6 +87,10 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     output = arguments.get("output")
     compositor_mode = arguments.get("compositor_mode")
     allow_code = arguments.get("allow_code")
+    # Project organisation (T-BRIX-ORG-01)
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
 
     # Build pipeline dict
     pipeline_data: dict = {
@@ -167,6 +171,21 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     # Save regardless (agent can fix errors via add_step / validate)
     _save_pipeline_yaml(name, pipeline_data)
 
+    # Update project/tags/group_name in DB (T-BRIX-ORG-01)
+    if org_project is not None or org_tags is not None or org_group is not None:
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            _org_db.upsert_pipeline(
+                name=name,
+                path=str(_pipeline_path(name)),
+                project=org_project,
+                tags=org_tags,
+                group_name=org_group,
+            )
+        except Exception:
+            pass  # Non-fatal — org fields are metadata only
+
     # Audit log
     _audit_db.write_audit_entry(
         tool="brix__create_pipeline",
@@ -183,6 +202,8 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
         "validated": validation["valid"],
         "validation": validation,
     }
+    if org_project is not None:
+        result["project"] = org_project
     if pipeline_warnings:
         result["warnings"] = pipeline_warnings
     return result
@@ -279,7 +300,13 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
         raw["output"] = arguments["output"]
         changed_fields.append("output")
 
-    if not changed_fields:
+    # Project organisation (T-BRIX-ORG-01)
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+    has_org_update = (org_project is not None or org_tags is not None or org_group is not None)
+
+    if not changed_fields and not has_org_update:
         return {
             "success": True,
             "pipeline_name": name,
@@ -287,16 +314,39 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
             "message": "No fields provided — pipeline unchanged.",
         }
 
-    store.save(raw, name)
+    if changed_fields:
+        store.save(raw, name)
 
-    # Validate after save
-    try:
-        store.load(name)
-        validated = True
-        validation_error = None
-    except Exception as exc:
-        validated = False
-        validation_error = str(exc)
+    # Update project/tags/group_name in DB (T-BRIX-ORG-01)
+    if has_org_update:
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            _org_db.upsert_pipeline(
+                name=name,
+                path=str(_pipeline_path(name)),
+                project=org_project,
+                tags=org_tags,
+                group_name=org_group,
+            )
+            if org_project is not None:
+                changed_fields.append("project")
+            if org_tags is not None:
+                changed_fields.append("tags")
+            if org_group is not None:
+                changed_fields.append("group")
+        except Exception:
+            pass  # Non-fatal
+
+    # Validate after save (only if YAML was changed)
+    validated = True
+    validation_error = None
+    if changed_fields:
+        try:
+            store.load(name)
+        except Exception as exc:
+            validated = False
+            validation_error = str(exc)
 
     _audit_db.write_audit_entry(
         tool="brix__update_pipeline",
@@ -479,8 +529,14 @@ async def _handle_validate_pipeline(arguments: dict) -> dict:
 
 
 async def _handle_list_pipelines(arguments: dict) -> dict:
-    """List all pipeline YAML files."""
+    """List all pipeline YAML files, with optional project/tags/group filter."""
     directory = arguments.get("directory")
+    # T-BRIX-ORG-01: project/tags/group filter
+    filter_project = arguments.get("project") or None
+    filter_tags = arguments.get("tags") or None
+    filter_group = arguments.get("group") or None
+    has_org_filter = (filter_project is not None or filter_tags is not None or filter_group is not None)
+
     if directory:
         # Explicit directory: scan that single directory only
         search_dir = Path(directory)
@@ -509,6 +565,42 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
             "pipelines": pipelines,
             "total": len(pipelines),
             "directory": str(search_dir),
+        }
+    elif has_org_filter:
+        # Use DB-filtered query when org filters are present (T-BRIX-ORG-01)
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            db_rows = _org_db.list_pipelines(
+                project=filter_project,
+                group_name=filter_group,
+                tags=filter_tags,
+            )
+            pipelines = [
+                {
+                    "name": p["name"],
+                    "version": p.get("version", ""),
+                    "description": p.get("description", ""),
+                    "step_count": p.get("steps", 0),
+                    "file": p.get("path", ""),
+                    "project": p.get("project", ""),
+                    "tags": p.get("tags", []),
+                    "group": p.get("group_name", ""),
+                }
+                for p in db_rows
+            ]
+        except Exception:
+            pipelines = []
+        return {
+            "success": True,
+            "pipelines": pipelines,
+            "total": len(pipelines),
+            "directory": "multi-path",
+            "filter": {
+                "project": filter_project,
+                "tags": filter_tags,
+                "group": filter_group,
+            },
         }
     else:
         # No directory specified: use PipelineStore with current PIPELINE_DIR

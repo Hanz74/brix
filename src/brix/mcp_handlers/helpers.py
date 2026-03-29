@@ -72,6 +72,26 @@ async def _handle_create_helper(arguments: dict) -> dict:
         input_schema=arguments.get("input_schema") or {},
         output_schema=arguments.get("output_schema") or {},
     )
+
+    # Update project/tags/group_name in DB (T-BRIX-ORG-01)
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+    if org_project is not None or org_tags is not None or org_group is not None:
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            _org_db.upsert_helper(
+                name=name,
+                script_path=str(script_path),
+                description=description,
+                project=org_project,
+                tags=org_tags,
+                group_name=org_group,
+            )
+        except Exception:
+            pass  # Non-fatal
+
     _audit_db.write_audit_entry(
         tool="brix__create_helper",
         source=source,
@@ -83,6 +103,8 @@ async def _handle_create_helper(arguments: dict) -> dict:
         "path": str(script_path),
         "helper": _make_helper_dict(entry),
     }
+    if org_project is not None:
+        result["project"] = org_project
     if warnings:
         result["warnings"] = warnings
     return result
@@ -122,7 +144,46 @@ async def _handle_register_helper(arguments: dict) -> dict:
 
 
 async def _handle_list_helpers(arguments: dict) -> dict:
-    """List all registered helpers."""
+    """List all registered helpers, with optional project/tags/group filter."""
+    # T-BRIX-ORG-01: project/tags/group filter
+    filter_project = arguments.get("project") or None
+    filter_tags = arguments.get("tags") or None
+    filter_group = arguments.get("group") or None
+    has_org_filter = (filter_project is not None or filter_tags is not None or filter_group is not None)
+
+    if has_org_filter:
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            db_rows = _org_db.list_helpers(
+                project=filter_project,
+                group_name=filter_group,
+                tags=filter_tags,
+            )
+            helpers = [
+                {
+                    "name": h["name"],
+                    "description": h.get("description", ""),
+                    "script": h.get("script_path", ""),
+                    "project": h.get("project", ""),
+                    "tags": h.get("tags", []),
+                    "group": h.get("group_name", ""),
+                }
+                for h in db_rows
+            ]
+        except Exception:
+            helpers = []
+        return {
+            "success": True,
+            "helpers": helpers,
+            "total": len(helpers),
+            "filter": {
+                "project": filter_project,
+                "tags": filter_tags,
+                "group": filter_group,
+            },
+        }
+
     registry = HelperRegistry()
     entries = registry.list_all()
     return {
@@ -234,29 +295,70 @@ async def _handle_update_helper(arguments: dict) -> dict:
         if field_name in arguments:
             update_fields[field_name] = arguments[field_name]
 
-    if not update_fields:
+    # T-BRIX-ORG-01: project/tags/group update
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+    has_org_update = (org_project is not None or org_tags is not None or org_group is not None)
+
+    if not update_fields and not has_org_update:
         return {
             "success": False,
-            "error": "No fields to update. Provide at least one of: code, script, description, requirements, input_schema, output_schema",
+            "error": "No fields to update. Provide at least one of: code, script, description, requirements, input_schema, output_schema, project, tags, group",
         }
 
-    try:
-        entry = registry.update(name, **update_fields)
-    except KeyError:
-        return {"success": False, "error": f"Helper '{name}' not found in registry"}
+    entry = None
+    if update_fields:
+        try:
+            entry = registry.update(name, **update_fields)
+        except KeyError:
+            return {"success": False, "error": f"Helper '{name}' not found in registry"}
+
+    # Update project/tags/group_name in DB
+    if has_org_update:
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            # Get existing script_path if not in update_fields
+            existing = registry.get(name)
+            script_p = update_fields.get("script", str(existing.script) if existing else "")
+            _org_db.upsert_helper(
+                name=name,
+                script_path=script_p,
+                project=org_project,
+                tags=org_tags,
+                group_name=org_group,
+            )
+        except Exception:
+            pass  # Non-fatal
+
+    if entry is None:
+        # Only org-fields were updated, no registry update happened
+        existing = registry.get(name)
+        if existing is None:
+            return {"success": False, "error": f"Helper '{name}' not found in registry"}
+        entry = existing
+
+    updated_fields_list = list(update_fields.keys())
+    if org_project is not None:
+        updated_fields_list.append("project")
+    if org_tags is not None:
+        updated_fields_list.append("tags")
+    if org_group is not None:
+        updated_fields_list.append("group")
 
     _audit_db.write_audit_entry(
         tool="brix__update_helper",
         source=source,
         arguments_summary=_source_summary(
-            source, helper=name, fields=",".join(update_fields.keys())
+            source, helper=name, fields=",".join(updated_fields_list)
         ),
     )
 
     result = {
         "success": True,
         "action": "updated",
-        "updated_fields": list(update_fields.keys()),
+        "updated_fields": updated_fields_list,
         "helper": _make_helper_dict(entry),
     }
     if backup_path:

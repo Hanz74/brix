@@ -488,6 +488,102 @@ def import_helper_code(db: BrixDB) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Auto-tagging by prefix — T-BRIX-ORG-01
+# ---------------------------------------------------------------------------
+
+# Maps pipeline/helper name prefix → project label.
+# First match wins (evaluated top-to-bottom).
+_PREFIX_TO_PROJECT: list[tuple[str, str]] = [
+    ("buddy-", "buddy"),
+    ("buddy_", "buddy"),
+    ("cody-", "cody"),
+    ("cody_", "cody"),
+    ("_system/", "system"),
+    ("_system-", "system"),
+    # Utility-action prefixes
+    ("download-", "utility"),
+    ("download_", "utility"),
+    ("convert-", "utility"),
+    ("convert_", "utility"),
+    ("import-", "utility"),
+    ("import_", "utility"),
+    ("analyze-", "utility"),
+    ("analyze_", "utility"),
+    ("generate-", "utility"),
+    ("generate_", "utility"),
+    ("enrich-", "utility"),
+    ("enrich_", "utility"),
+    ("apply-", "utility"),
+    ("apply_", "utility"),
+    # Test prefixes
+    ("test-", "test"),
+    ("test_", "test"),
+    ("xtest-", "test"),
+    ("xtest_", "test"),
+    ("assert-", "test"),
+    ("assert_", "test"),
+    ("mock-", "test"),
+    ("mock_", "test"),
+    ("fail-", "test"),
+    ("fail_", "test"),
+]
+
+
+def _infer_project_from_name(name: str) -> str:
+    """Return the project label for a pipeline/helper name based on prefix rules."""
+    name_lower = name.lower()
+    for prefix, project in _PREFIX_TO_PROJECT:
+        if name_lower.startswith(prefix):
+            return project
+    return ""
+
+
+def auto_tag_by_prefix(db: BrixDB) -> dict[str, int]:
+    """Apply project labels to all pipelines and helpers that have no project set yet.
+
+    Pipelines/helpers that already have a non-empty project are left unchanged.
+    Returns dict with counts: {pipelines_tagged, helpers_tagged}.
+    """
+    counts: dict[str, int] = {"pipelines_tagged": 0, "helpers_tagged": 0}
+
+    # Tag pipelines
+    for p in db.list_pipelines():
+        if p.get("project"):
+            continue  # already tagged
+        inferred = _infer_project_from_name(p["name"])
+        if inferred:
+            db.pipeline_set_project(p["name"], inferred)
+            counts["pipelines_tagged"] += 1
+            logger.debug("auto_tag: pipeline '%s' → project '%s'", p["name"], inferred)
+
+    # Tag helpers
+    for h in db.list_helpers():
+        if h.get("project"):
+            continue  # already tagged
+        inferred = _infer_project_from_name(h["name"])
+        if inferred:
+            db.helper_set_project(h["name"], inferred)
+            counts["helpers_tagged"] += 1
+            logger.debug("auto_tag: helper '%s' → project '%s'", h["name"], inferred)
+
+    total = counts["pipelines_tagged"] + counts["helpers_tagged"]
+    if total > 0:
+        logger.info("auto_tag_by_prefix: tagged %d items total", total)
+    return counts
+
+
+def delete_test_pipelines(db: BrixDB) -> int:
+    """Delete all pipelines that have project='test'.
+
+    Returns the number of pipelines deleted.
+    """
+    deleted = db.delete_pipelines_by_project("test")
+    if deleted > 0:
+        logger.info("delete_test_pipelines: removed %d test pipelines", deleted)
+    return deleted
+
+
+# ---------------------------------------------------------------------------
 # Legacy step-type migration
 # ---------------------------------------------------------------------------
 

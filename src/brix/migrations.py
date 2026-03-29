@@ -43,6 +43,85 @@ MIGRATIONS: list[dict] = [
         "up": "ALTER TABLE helpers ADD COLUMN code TEXT DEFAULT ''",
         "down": "",
     },
+    # T-BRIX-ORG-01: Project organisation — project, tags, group columns
+    {
+        "version": 3,
+        "name": "add_project_to_pipelines",
+        "up": "ALTER TABLE pipelines ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 4,
+        "name": "add_tags_to_pipelines",
+        "up": "ALTER TABLE pipelines ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 5,
+        "name": "add_group_name_to_pipelines",
+        "up": "ALTER TABLE pipelines ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 6,
+        "name": "add_project_to_helpers",
+        "up": "ALTER TABLE helpers ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 7,
+        "name": "add_tags_to_helpers",
+        "up": "ALTER TABLE helpers ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 8,
+        "name": "add_group_name_to_helpers",
+        "up": "ALTER TABLE helpers ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 9,
+        "name": "add_project_to_variables",
+        "up": "ALTER TABLE variables ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 10,
+        "name": "add_tags_to_variables",
+        "up": "ALTER TABLE variables ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 11,
+        "name": "add_group_name_to_variables",
+        "up": "ALTER TABLE variables ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 12,
+        "name": "add_project_to_triggers",
+        "up": "ALTER TABLE triggers ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 13,
+        "name": "add_tags_to_triggers",
+        "up": "ALTER TABLE triggers ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 14,
+        "name": "add_group_name_to_triggers",
+        "up": "ALTER TABLE triggers ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 15,
+        "name": "add_tags_to_brick_definitions",
+        "up": "ALTER TABLE brick_definitions ADD COLUMN org_tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
 ]
 
 
