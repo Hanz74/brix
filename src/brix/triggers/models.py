@@ -1,5 +1,5 @@
 """Trigger configuration models."""
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Any, Optional
 
 from brix.config import config
@@ -13,6 +13,17 @@ class TriggerConfig(BaseModel):
     params: dict[str, Any] = {}  # Template params ({{ trigger.* }})
     dedupe_key: str = ""  # Jinja2 expression for dedup
     enabled: bool = True
+
+    @field_validator("enabled", mode="before")
+    @classmethod
+    def coerce_enabled(cls, v: Any) -> bool:
+        """Coerce string 'true'/'false' to bool (T-BRIX-BUG-enabled-str)."""
+        if isinstance(v, str):
+            if v.lower() == "false":
+                return False
+            if v.lower() == "true":
+                return True
+        return v
     # Type-specific fields
     filter: dict[str, Any] = {}
     path: Optional[str] = None

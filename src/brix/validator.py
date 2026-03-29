@@ -160,15 +160,21 @@ class PipelineValidator:
 
         # 7. Output references valid
         if pipeline.output:
+            input_keys = set(pipeline.input.keys())
             for key, ref in pipeline.output.items():
                 for step_id in step_ids:
                     if step_id in ref:
                         break
                 else:
                     if "{{" in ref:
-                        result.add_warning(
-                            f"Output '{key}': may reference non-existent step"
-                        )
+                        # Allow references to input.* (pipeline input params)
+                        refs = re.findall(r'\{\{\s*(\w+)\.', str(ref))
+                        if any(r == "input" or r in input_keys for r in refs):
+                            pass  # Valid input reference
+                        else:
+                            result.add_warning(
+                                f"Output '{key}': may reference non-existent step"
+                            )
 
         # 10. Proactive hints: when + else_of on same step (T-BRIX-V5-03)
         for step in pipeline.steps:
@@ -446,10 +452,19 @@ class PipelineValidator:
                         )
 
     def _lint_progress_on_long_timeout(self, pipeline: Pipeline, rule: dict, result: ValidationResult) -> None:
-        """Warn when a step has a long timeout but progress:false."""
+        """Warn when a step has a long timeout but progress:false.
+
+        MCP steps calling external servers are excluded — progress:true only makes
+        sense for runners that natively emit progress events (python, cli, http).
+        """
         threshold = rule.get("timeout_threshold_seconds", 60)
+        # Runners that do not support progress events
+        _PROGRESS_UNSUPPORTED = {"mcp", "mcp.call"}
         for step in pipeline.steps:
             if not step.timeout:
+                continue
+            # Skip MCP steps — external servers don't support Brix progress events
+            if step.type in _PROGRESS_UNSUPPORTED:
                 continue
             timeout_secs = self._parse_timeout_seconds(step.timeout)
             if timeout_secs is not None and timeout_secs > threshold and not step.progress:
