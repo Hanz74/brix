@@ -142,3 +142,25 @@ async def _handle_delete_profile(arguments: dict) -> dict:
         return {"success": True, "deleted": name}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+async def _handle_search_profiles(arguments: dict) -> dict:
+    """Search profiles by name or description substring."""
+    from brix.db import BrixDB
+
+    query = arguments.get("query", "").strip()
+    if not query:
+        return {"success": False, "error": "Parameter 'query' is required"}
+
+    try:
+        db = BrixDB()
+        all_profiles = db.profile_list()
+        q_lower = query.lower()
+        matches = [
+            p for p in all_profiles
+            if q_lower in p.get("name", "").lower()
+            or q_lower in p.get("description", "").lower()
+        ]
+        return {"success": True, "query": query, "profiles": matches, "total": len(matches)}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}

@@ -135,6 +135,23 @@ async def _handle_delete_variable(arguments: dict) -> dict:
     return {"deleted": deleted, "name": name}
 
 
+async def _handle_search_variables(arguments: dict) -> dict:
+    """Search managed variables by name or description substring."""
+    query = arguments.get("query", "").strip()
+    if not query:
+        return {"success": False, "error": "Parameter 'query' is required"}
+
+    db = BrixDB()
+    all_vars = db.variable_list()
+    q_lower = query.lower()
+    matches = [
+        v for v in all_vars
+        if q_lower in v.get("name", "").lower()
+        or q_lower in v.get("description", "").lower()
+    ]
+    return {"success": True, "query": query, "variables": matches, "total": len(matches)}
+
+
 # ------------------------------------------------------------------
 # Persistent Data Store
 # ------------------------------------------------------------------

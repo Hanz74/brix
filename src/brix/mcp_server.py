@@ -226,6 +226,8 @@ from brix.mcp_handlers.alerts import (
     _handle_alert_update,
     _handle_alert_delete,
     _handle_alert_history,
+    _handle_get_alert_rule,
+    _handle_search_alert_rules,
 )
 from brix.mcp_handlers.triggers import (
     _handle_trigger_add,
@@ -242,6 +244,10 @@ from brix.mcp_handlers.triggers import (
     _handle_trigger_group_delete,
     _handle_trigger_group_start,
     _handle_trigger_group_stop,
+    _handle_trigger_group_get,
+    _handle_trigger_group_update,
+    _handle_search_trigger_groups,
+    _handle_search_triggers,
     _auto_start_scheduler_if_needed,
 )
 from brix.mcp_handlers.insights import (
@@ -276,6 +282,7 @@ from brix.mcp_handlers.variables import (
     _handle_store_get,
     _handle_store_list,
     _handle_store_delete,
+    _handle_search_variables,
 )
 from brix.mcp_handlers.servers import (
     _handle_server_add,
@@ -306,11 +313,22 @@ from brix.mcp_handlers.templates import (
     _handle_list_templates,
     _handle_instantiate_template,
 )
+from brix.mcp_handlers.profiles import (
+    _handle_create_profile,
+    _handle_get_profile,
+    _handle_list_profiles,
+    _handle_update_profile,
+    _handle_delete_profile,
+    _handle_search_profiles,
+)
 from brix.mcp_handlers.connections import (
     _handle_connection_add,
     _handle_connection_list,
     _handle_connection_test,
     _handle_connection_delete,
+    _handle_get_connection,
+    _handle_update_connection,
+    _handle_search_connections,
 )
 from brix.mcp_handlers.bricks import (
     _handle_create_brick,
@@ -405,8 +423,10 @@ async def _handle_trigger(arguments: dict) -> dict:
         return await _handle_trigger_delete(arguments)
     elif action == "test":
         return await _handle_trigger_test(arguments)
+    elif action == "search":
+        return await _handle_search_triggers(arguments)
     else:
-        return {"success": False, "error": f"Unknown action '{action}'. Valid actions: add, get, list, update, delete, test."}
+        return {"success": False, "error": f"Unknown action '{action}'. Valid actions: add, get, list, update, delete, test, search."}
 
 
 async def _handle_credential(arguments: dict) -> dict:
@@ -435,6 +455,8 @@ async def _handle_alert(arguments: dict) -> dict:
     action = arguments.get("action", "")
     if action == "add":
         return await _handle_alert_add(arguments)
+    elif action == "get":
+        return await _handle_get_alert_rule(arguments)
     elif action == "list":
         return await _handle_alert_list(arguments)
     elif action == "update":
@@ -443,8 +465,10 @@ async def _handle_alert(arguments: dict) -> dict:
         return await _handle_alert_delete(arguments)
     elif action == "history":
         return await _handle_alert_history(arguments)
+    elif action == "search":
+        return await _handle_search_alert_rules(arguments)
     else:
-        return {"success": False, "error": f"Unknown action '{action}'. Valid actions: add, list, update, delete, history."}
+        return {"success": False, "error": f"Unknown action '{action}'. Valid actions: add, get, list, update, delete, history, search."}
 
 
 async def _handle_server(arguments: dict) -> dict:
@@ -486,8 +510,14 @@ async def _handle_trigger_group(arguments: dict) -> dict:
     action = arguments.get("action", "")
     if action == "add":
         return await _handle_trigger_group_add(arguments)
+    elif action == "get":
+        return await _handle_trigger_group_get(arguments)
     elif action == "list":
         return await _handle_trigger_group_list(arguments)
+    elif action == "update":
+        return await _handle_trigger_group_update(arguments)
+    elif action == "search":
+        return await _handle_search_trigger_groups(arguments)
     elif action == "start":
         return await _handle_trigger_group_start(arguments)
     elif action == "stop":
@@ -495,7 +525,7 @@ async def _handle_trigger_group(arguments: dict) -> dict:
     elif action == "delete":
         return await _handle_trigger_group_delete(arguments)
     else:
-        return {"success": False, "error": f"Unknown action '{action}'. Valid actions: add, list, start, stop, delete."}
+        return {"success": False, "error": f"Unknown action '{action}'. Valid actions: add, get, list, update, search, start, stop, delete."}
 
 
 # Dispatch table — core tools only.
@@ -576,6 +606,8 @@ _HANDLERS = {
     "brix__get_variable": _handle_get_variable,
     "brix__list_variables": _handle_list_variables,
     "brix__delete_variable": _handle_delete_variable,
+    # T-BRIX-CRUD-01: variable search
+    "brix__search_variables": _handle_search_variables,
     # Persistent Data Store (T-BRIX-DB-13)
     "brix__store_set": _handle_store_set,
     "brix__store_get": _handle_store_get,
@@ -601,6 +633,10 @@ _HANDLERS = {
     "brix__connection_list": _handle_connection_list,
     "brix__connection_test": _handle_connection_test,
     "brix__connection_delete": _handle_connection_delete,
+    # T-BRIX-CRUD-01: new connection handlers
+    "brix__connection_get": _handle_get_connection,
+    "brix__connection_update": _handle_update_connection,
+    "brix__connection_search": _handle_search_connections,
     # Custom Bricks (T-BRIX-DB-20)
     "brix__create_brick": _handle_create_brick,
     "brix__update_brick": _handle_update_brick,
@@ -630,6 +666,21 @@ _HANDLERS = {
     "brix__list_pins": _handle_list_pins,
     # Org Registry — project/tag/group definitions (T-BRIX-ORG-02)
     "brix__org": _handle_org,
+    # T-BRIX-CRUD-01: Profiles CRUD + search
+    "brix__create_profile": _handle_create_profile,
+    "brix__get_profile": _handle_get_profile,
+    "brix__list_profiles": _handle_list_profiles,
+    "brix__update_profile": _handle_update_profile,
+    "brix__delete_profile": _handle_delete_profile,
+    "brix__search_profiles": _handle_search_profiles,
+    # T-BRIX-CRUD-01: standalone alert get + search
+    "brix__get_alert_rule": _handle_get_alert_rule,
+    "brix__search_alert_rules": _handle_search_alert_rules,
+    # T-BRIX-CRUD-01: standalone trigger group get/update/search + trigger search
+    "brix__trigger_group_get": _handle_trigger_group_get,
+    "brix__trigger_group_update": _handle_trigger_group_update,
+    "brix__search_trigger_groups": _handle_search_trigger_groups,
+    "brix__search_triggers": _handle_search_triggers,
 }
 
 

@@ -346,6 +346,90 @@ async def _handle_trigger_group_delete(arguments: dict) -> dict:
     return {"success": True, "name": name}
 
 
+async def _handle_trigger_group_get(arguments: dict) -> dict:
+    """Get a trigger group by name including its triggers."""
+    from brix.triggers.store import TriggerGroupStore
+    name = arguments.get("name", "").strip()
+    if not name:
+        return {"success": False, "error": "Parameter 'name' is required."}
+    store = TriggerGroupStore()
+    group = store.get(name)
+    if group is None:
+        return {"success": False, "error": f"Trigger group '{name}' not found."}
+    return {"success": True, "group": group}
+
+
+async def _handle_trigger_group_update(arguments: dict) -> dict:
+    """Update a trigger group: name, description, project/tags/group."""
+    from brix.triggers.store import TriggerGroupStore
+    name = arguments.get("name", "").strip()
+    if not name:
+        return {"success": False, "error": "Parameter 'name' is required."}
+
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+
+    store = TriggerGroupStore()
+    updated = store.update(
+        name=name,
+        triggers=arguments.get("triggers"),
+        description=arguments.get("description"),
+        enabled=arguments.get("enabled"),
+        project=org_project,
+        tags=org_tags,
+        group_name=org_group,
+    )
+    if updated is None:
+        return {"success": False, "error": f"Trigger group '{name}' not found."}
+
+    warnings: list[str] = []
+    if org_project is None and not updated.get("project"):
+        warnings.append(
+            "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+
+    result: dict = {"success": True, "group": updated}
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
+async def _handle_search_trigger_groups(arguments: dict) -> dict:
+    """Search trigger groups by name or description substring."""
+    from brix.triggers.store import TriggerGroupStore
+    query = arguments.get("query", "").strip()
+    if not query:
+        return {"success": False, "error": "Parameter 'query' is required."}
+    store = TriggerGroupStore()
+    all_groups = store.list_all()
+    q_lower = query.lower()
+    matches = [
+        g for g in all_groups
+        if q_lower in g.get("name", "").lower()
+        or q_lower in g.get("description", "").lower()
+    ]
+    return {"success": True, "query": query, "groups": matches, "total": len(matches)}
+
+
+async def _handle_search_triggers(arguments: dict) -> dict:
+    """Search triggers by name, pipeline, or type substring."""
+    from brix.triggers.store import TriggerStore
+    query = arguments.get("query", "").strip()
+    if not query:
+        return {"success": False, "error": "Parameter 'query' is required."}
+    store = TriggerStore()
+    all_triggers = store.list_all()
+    q_lower = query.lower()
+    matches = [
+        t for t in all_triggers
+        if q_lower in t.get("name", "").lower()
+        or q_lower in t.get("pipeline", "").lower()
+        or q_lower in t.get("type", "").lower()
+    ]
+    return {"success": True, "query": query, "triggers": matches, "total": len(matches)}
+
+
 async def _handle_trigger_group_start(arguments: dict) -> dict:
     """Enable all triggers in a group."""
     from brix.triggers.store import TriggerGroupStore, TriggerStore

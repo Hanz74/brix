@@ -163,3 +163,67 @@ async def _handle_alert_history(arguments: dict) -> dict:
     mgr = AlertManager()
     history = mgr.get_alert_history(limit=limit)
     return {"history": history, "total": len(history)}
+
+
+async def _handle_get_alert_rule(arguments: dict) -> dict:
+    """Get a single alert rule by name or ID."""
+    from brix.db import BrixDB
+    name_or_id = arguments.get("name", arguments.get("id", "")).strip()
+    if not name_or_id:
+        return {"success": False, "error": "Parameter 'name' (or 'id') is required."}
+
+    db = BrixDB()
+    # Try by ID first
+    row = db.alert_rule_get(name_or_id)
+    if row is None:
+        # Try by name
+        rows = db.alert_rule_list()
+        for r in rows:
+            if r.get("name") == name_or_id:
+                row = r
+                break
+    if row is None:
+        return {"success": False, "error": f"Alert rule '{name_or_id}' not found."}
+    return {
+        "success": True,
+        "rule": {
+            "id": row["id"],
+            "name": row["name"],
+            "condition": row["condition"],
+            "channel": row["channel"],
+            "config": row["config"],
+            "enabled": row["enabled"],
+            "created_at": row["created_at"],
+            "project": row.get("project", ""),
+            "tags": row.get("tags", []),
+            "group": row.get("group_name", ""),
+        },
+    }
+
+
+async def _handle_search_alert_rules(arguments: dict) -> dict:
+    """Search alert rules by name or condition substring."""
+    from brix.db import BrixDB
+    query = arguments.get("query", "").strip()
+    if not query:
+        return {"success": False, "error": "Parameter 'query' is required."}
+
+    db = BrixDB()
+    all_rules = db.alert_rule_list()
+    q_lower = query.lower()
+    matches = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "condition": r["condition"],
+            "channel": r["channel"],
+            "enabled": r["enabled"],
+            "project": r.get("project", ""),
+            "tags": r.get("tags", []),
+            "group": r.get("group_name", ""),
+        }
+        for r in all_rules
+        if q_lower in r.get("name", "").lower()
+        or q_lower in r.get("condition", "").lower()
+    ]
+    return {"success": True, "query": query, "rules": matches, "total": len(matches)}

@@ -293,6 +293,69 @@ class ConnectionManager:
             result.append(d)
         return result
 
+    def update(
+        self,
+        name: str,
+        driver: Optional[str] = None,
+        env_var: Optional[str] = None,
+        description: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Update connection metadata fields. Returns updated metadata dict or None if not found."""
+        import json as _json
+        row = self._find_row(name)
+        if row is None:
+            return None
+
+        updates: dict[str, object] = {"updated_at": self._now_iso()}
+        if driver is not None:
+            if driver not in SUPPORTED_DRIVERS:
+                raise ValueError(
+                    f"Unsupported driver '{driver}'. Supported: {', '.join(SUPPORTED_DRIVERS)}"
+                )
+            updates["driver"] = driver
+        if env_var is not None:
+            updates["env_var"] = env_var
+        if description is not None:
+            updates["description"] = description
+        if project is not None:
+            updates["project"] = project
+        if tags is not None:
+            updates["tags"] = _json.dumps(tags)
+        if group_name is not None:
+            updates["group_name"] = group_name
+
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        values = list(updates.values()) + [name]
+        with self._db._connect() as conn:
+            conn.execute(
+                f"UPDATE connections SET {set_clause} WHERE name=?", values
+            )
+
+        # Re-fetch updated row
+        updated_row = self._find_row(name)
+        if updated_row is None:
+            return None
+
+        rd = dict(updated_row)
+        meta = self._row_to_meta(
+            rd["id"], rd["name"], rd["driver"], rd["dsn_credential_id"],
+            rd.get("env_var"), rd.get("description"), rd["created_at"], rd.get("updated_at"),
+        )
+        meta["project"] = rd.get("project", "") or ""
+        raw_tags = rd.get("tags", "[]")
+        if isinstance(raw_tags, str):
+            try:
+                meta["tags"] = _json.loads(raw_tags)
+            except (ValueError, TypeError):
+                meta["tags"] = []
+        else:
+            meta["tags"] = raw_tags if isinstance(raw_tags, list) else []
+        meta["group"] = rd.get("group_name", "") or ""
+        return meta
+
     def delete(self, name: str) -> bool:
         """Delete a connection and its associated credential. Returns True if deleted."""
         row = self._find_row(name)
