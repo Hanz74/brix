@@ -246,6 +246,27 @@ async def _handle_get_pipeline(arguments: dict) -> dict:
         result["created_at"] = data["created_at"]
     if data.get("updated_at"):
         result["updated_at"] = data["updated_at"]
+
+    # Add org fields from DB (T-BRIX-ORG-01)
+    try:
+        from brix.db import BrixDB as _OrgDB
+        _odb = _OrgDB()
+        _oconn = _odb._connect()
+        _orow = _oconn.execute(
+            "SELECT project, tags, group_name FROM pipelines WHERE name = ?", (name,)
+        ).fetchone()
+        if _orow:
+            result["project"] = _orow[0] or ""
+            import json as _json
+            try:
+                result["tags"] = _json.loads(_orow[1]) if _orow[1] else []
+            except (ValueError, TypeError):
+                result["tags"] = []
+            result["group"] = _orow[2] or ""
+        _oconn.close()
+    except Exception:
+        pass
+
     return result
 
 
