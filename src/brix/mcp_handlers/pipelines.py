@@ -431,6 +431,16 @@ async def _handle_delete_pipeline(arguments: dict) -> dict:
 
     deleted = store.delete(name)
     if deleted:
+        # Cleanup referential data
+        try:
+            from brix.db import BrixDB as _CleanDB
+            _cdb = _CleanDB()
+            _cconn = _cdb._connect()
+            _cconn.execute("DELETE FROM deprecated_usage WHERE pipeline_name = ?", (name,))
+            _cconn.commit()
+            _cconn.close()
+        except Exception:
+            pass
         _audit_db.write_audit_entry(
             tool="brix__delete_pipeline",
             source=source,

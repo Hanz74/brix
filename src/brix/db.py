@@ -2774,6 +2774,11 @@ class BrixDB:
             )
             app_log_deleted = cursor2.rowcount
 
+            # Cleanup orphaned deprecated_usage entries
+            conn.execute(
+                "DELETE FROM deprecated_usage WHERE pipeline_name NOT IN (SELECT name FROM pipelines)"
+            )
+
         # Pass 2: size-based FIFO deletion
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
         db_size_mb = db_size_bytes / (1024 * 1024)
