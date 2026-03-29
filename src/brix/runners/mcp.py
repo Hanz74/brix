@@ -165,6 +165,16 @@ class McpRunner(BaseRunner):
         params = getattr(step, "params", {}) or {}
         arguments = {k: v for k, v in params.items() if not k.startswith("_")}
 
+        # Re-serialize dict/list values back to JSON strings.
+        # Many MCP servers (e.g. Cody) expect a JSON-encoded string for
+        # their ``params`` argument, but Brix's Jinja2 renderer auto-parses
+        # JSON strings into dicts.  Converting them back here keeps both
+        # worlds happy: pipeline authors can use Jinja2 to build dicts,
+        # and the MCP call receives the string the server expects.
+        for k, v in list(arguments.items()):
+            if isinstance(v, (dict, list)):
+                arguments[k] = json.dumps(v, ensure_ascii=False)
+
         self.report_progress(0.0, f"Calling {server_name}/{tool_name}")
 
         # Timeout
