@@ -180,7 +180,13 @@ def _find_step_recursive(steps: list, step_id: str) -> "dict | None":
 
 
 def _make_helper_dict(entry) -> dict:
-    """Serialise a HelperEntry to a plain dict for MCP responses."""
+    """Serialise a HelperEntry to a plain dict for MCP responses.
+
+    Enriches the response with project/tags/group_name from the DB
+    so that get_helper and list_helpers always return org fields.
+    """
+    import json as _json
+
     d: dict = {
         "name": entry.name,
         "script": entry.script,
@@ -195,6 +201,31 @@ def _make_helper_dict(entry) -> dict:
         d["created_at"] = entry.created_at
     if entry.updated_at is not None:
         d["updated_at"] = entry.updated_at
+
+    # T-BRIX-ORG-01: enrich with project/tags/group from DB
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _db = _BrixDB()
+        db_row = _db.get_helper(entry.name)
+        if db_row:
+            d["project"] = db_row.get("project", "") or ""
+            raw_tags = db_row.get("tags", "[]")
+            if isinstance(raw_tags, str):
+                try:
+                    d["tags"] = _json.loads(raw_tags)
+                except (ValueError, TypeError):
+                    d["tags"] = []
+            else:
+                d["tags"] = raw_tags if isinstance(raw_tags, list) else []
+            d["group"] = db_row.get("group_name", "") or ""
+        else:
+            d["project"] = ""
+            d["tags"] = []
+            d["group"] = ""
+    except Exception:
+        d["project"] = ""
+        d["tags"] = []
+        d["group"] = ""
     return d
 
 

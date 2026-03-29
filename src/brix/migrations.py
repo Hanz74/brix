@@ -122,6 +122,57 @@ MIGRATIONS: list[dict] = [
         "up": "ALTER TABLE brick_definitions ADD COLUMN org_tags TEXT DEFAULT '[]'",
         "down": "",
     },
+    # T-BRIX-ORG-01: project + group_name for brick_definitions
+    {
+        "version": 16,
+        "name": "add_project_to_brick_definitions",
+        "up": "ALTER TABLE brick_definitions ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 17,
+        "name": "add_group_name_to_brick_definitions",
+        "up": "ALTER TABLE brick_definitions ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    # T-BRIX-ORG-01: project/tags/group for connections
+    {
+        "version": 18,
+        "name": "add_project_to_connections",
+        "up": "ALTER TABLE connections ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 19,
+        "name": "add_tags_to_connections",
+        "up": "ALTER TABLE connections ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 20,
+        "name": "add_group_name_to_connections",
+        "up": "ALTER TABLE connections ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    # T-BRIX-ORG-01: project/tags/group for profiles
+    {
+        "version": 21,
+        "name": "add_project_to_profiles",
+        "up": "ALTER TABLE profiles ADD COLUMN project TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 22,
+        "name": "add_tags_to_profiles",
+        "up": "ALTER TABLE profiles ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 23,
+        "name": "add_group_name_to_profiles",
+        "up": "ALTER TABLE profiles ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
 ]
 
 

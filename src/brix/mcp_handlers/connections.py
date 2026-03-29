@@ -15,6 +15,11 @@ async def _handle_connection_add(arguments: dict) -> dict:
     description = arguments.get("description", "")
     env_var = arguments.get("env_var") or None
 
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
     if not dsn:
@@ -28,12 +33,30 @@ async def _handle_connection_add(arguments: dict) -> dict:
     try:
         db = BrixDB()
         manager = ConnectionManager(db)
-        meta = manager.register(name, dsn, driver=driver, description=description, env_var=env_var)
-        return {
+        meta = manager.register(
+            name, dsn, driver=driver, description=description, env_var=env_var,
+            project=org_project, tags=org_tags, group_name=org_group,
+        )
+
+        # Org enforcement warnings
+        warnings: list[str] = []
+        if org_project is None:
+            warnings.append(
+                "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+            )
+        if org_tags is None:
+            warnings.append(
+                "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['database', 'postgres'])."
+            )
+
+        result: dict = {
             "success": True,
             **meta,
             "note": "DSN is encrypted and stored in CredentialStore. It will NOT be shown.",
         }
+        if warnings:
+            result["warnings"] = warnings
+        return result
     except _sqlite3.IntegrityError:
         return {
             "success": False,

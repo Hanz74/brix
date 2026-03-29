@@ -25,10 +25,33 @@ async def _handle_create_profile(arguments: dict) -> dict:
 
     description = arguments.get("description", "")
 
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+
     try:
         db = BrixDB()
-        profile = db.profile_set(name, config, description)
-        return {"success": True, **profile}
+        profile = db.profile_set(
+            name, config, description,
+            project=org_project, tags=org_tags, group_name=org_group,
+        )
+
+        # Org enforcement warnings
+        warnings: list[str] = []
+        if org_project is None:
+            warnings.append(
+                "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+            )
+        if org_tags is None:
+            warnings.append(
+                "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['config', 'defaults'])."
+            )
+
+        result: dict = {"success": True, **profile}
+        if warnings:
+            result["warnings"] = warnings
+        return result
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
@@ -64,12 +87,17 @@ async def _handle_list_profiles(arguments: dict) -> dict:
 
 
 async def _handle_update_profile(arguments: dict) -> dict:
-    """Update an existing profile's config and/or description."""
+    """Update an existing profile's config, description, and/or org fields."""
     from brix.db import BrixDB
 
     name = arguments.get("name", "").strip()
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
+
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
 
     try:
         db = BrixDB()
@@ -85,7 +113,10 @@ async def _handle_update_profile(arguments: dict) -> dict:
                 return {"success": False, "error": f"Invalid JSON in 'config': {exc}"}
 
         description = arguments.get("description", existing.get("description", ""))
-        profile = db.profile_set(name, config, description)
+        profile = db.profile_set(
+            name, config, description,
+            project=org_project, tags=org_tags, group_name=org_group,
+        )
         return {"success": True, **profile}
     except Exception as exc:
         return {"success": False, "error": str(exc)}

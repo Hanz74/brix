@@ -126,6 +126,9 @@ async def _handle_create_brick(arguments: dict) -> dict:
             "error": f"Brick '{name}' already exists. Use brix__update_brick to modify it.",
         }
 
+    # T-BRIX-ORG-01: tags support
+    org_tags = arguments.get("tags") or None
+
     # Build record
     record = {
         "name": name,
@@ -143,6 +146,8 @@ async def _handle_create_brick(arguments: dict) -> dict:
         "related_connector": "",
         "system": False,
     }
+    if org_tags is not None:
+        record["org_tags"] = org_tags if isinstance(org_tags, list) else []
 
     db.brick_definitions_upsert(record)
 
@@ -162,7 +167,18 @@ async def _handle_create_brick(arguments: dict) -> dict:
         arguments_summary=_source_summary(source, brick=name),
     )
 
-    return {
+    # Org enforcement warnings
+    warnings: list[str] = []
+    if not namespace:
+        warnings.append(
+            "MISSING PROJECT: Bitte 'namespace' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+    if org_tags is None:
+        warnings.append(
+            "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['email', 'transform'])."
+        )
+
+    result: dict = {
         "success": True,
         "created_brick": name,
         "runner": runner,
@@ -170,6 +186,11 @@ async def _handle_create_brick(arguments: dict) -> dict:
         "category": category,
         "note": "Custom brick created and registered in BrickRegistry.",
     }
+    if org_tags is not None:
+        result["tags"] = org_tags
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _handle_update_brick(arguments: dict) -> dict:
@@ -204,6 +225,9 @@ async def _handle_update_brick(arguments: dict) -> dict:
                 "error": f"Unknown runner '{runner}'. Valid runners: {sorted(valid_runners)}",
             }
 
+    # T-BRIX-ORG-01: tags support
+    org_tags = arguments.get("tags") or None
+
     # Merge updates into existing record
     aliases_raw = existing.get("aliases", "[]")
     if isinstance(aliases_raw, str):
@@ -229,6 +253,8 @@ async def _handle_update_brick(arguments: dict) -> dict:
         "related_connector": existing.get("related_connector", ""),
         "system": False,
     }
+    if org_tags is not None:
+        record["org_tags"] = org_tags if isinstance(org_tags, list) else []
 
     db.brick_definitions_upsert(record)
 
@@ -248,11 +274,14 @@ async def _handle_update_brick(arguments: dict) -> dict:
         arguments_summary=_source_summary(source, brick=name),
     )
 
-    return {
+    result_upd: dict = {
         "success": True,
         "updated_brick": name,
         "note": "Custom brick updated in DB and BrickRegistry refreshed.",
     }
+    if org_tags is not None:
+        result_upd["tags"] = org_tags
+    return result_upd
 
 
 async def _handle_delete_brick(arguments: dict) -> dict:

@@ -154,6 +154,9 @@ class ConnectionManager:
         driver: str = DEFAULT_DRIVER,
         description: str = "",
         env_var: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> dict:
         """Register a named connection. DSN is encrypted via CredentialStore.
 
@@ -186,18 +189,37 @@ class ConnectionManager:
             dsn_cred_id = self._cred_store.add(cred_name, "api-key", dsn)
 
         with self._db._connect() as conn:
+            # T-BRIX-ORG-01: include org fields if columns exist
+            cols = ["id", "name", "driver", "dsn_credential_id", "env_var", "description", "created_at", "updated_at"]
+            vals = [conn_id, name, driver, dsn_cred_id, env_var, description, now, now]
+
+            if project is not None and self._db._column_exists(conn, "connections", "project"):
+                cols.append("project")
+                vals.append(project)
+            if tags is not None and self._db._column_exists(conn, "connections", "tags"):
+                import json as _json
+                cols.append("tags")
+                vals.append(_json.dumps(tags))
+            if group_name is not None and self._db._column_exists(conn, "connections", "group_name"):
+                cols.append("group_name")
+                vals.append(group_name)
+
+            placeholders = ",".join("?" * len(cols))
             conn.execute(
-                """
-                INSERT INTO connections
-                    (id, name, driver, dsn_credential_id, env_var, description, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (conn_id, name, driver, dsn_cred_id, env_var, description, now, now),
+                f"INSERT INTO connections ({','.join(cols)}) VALUES ({placeholders})",
+                vals,
             )
 
-        return self._row_to_meta(
+        meta = self._row_to_meta(
             conn_id, name, driver, dsn_cred_id, env_var, description, now, now
         )
+        if project is not None:
+            meta["project"] = project
+        if tags is not None:
+            meta["tags"] = tags
+        if group_name is not None:
+            meta["group"] = group_name
+        return meta
 
     def get(self, name: str) -> Connection:
         """Resolve a connection by name. Returns a Connection with decrypted DSN.
@@ -244,19 +266,32 @@ class ConnectionManager:
 
     def list(self) -> list[dict]:
         """List all registered connections (metadata only — no DSN)."""
+        import json as _json
         with self._db._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT id, name, driver, dsn_credential_id, env_var, description, "
-                "created_at, updated_at FROM connections ORDER BY name"
+                "SELECT * FROM connections ORDER BY name"
             ).fetchall()
-        return [
-            self._row_to_meta(
+        result = []
+        for r in rows:
+            d = self._row_to_meta(
                 r["id"], r["name"], r["driver"], r["dsn_credential_id"],
                 r["env_var"], r["description"], r["created_at"], r["updated_at"]
             )
-            for r in rows
-        ]
+            # T-BRIX-ORG-01: enrich with org fields
+            rd = dict(r)
+            d["project"] = rd.get("project", "") or ""
+            raw_tags = rd.get("tags", "[]")
+            if isinstance(raw_tags, str):
+                try:
+                    d["tags"] = _json.loads(raw_tags)
+                except (ValueError, TypeError):
+                    d["tags"] = []
+            else:
+                d["tags"] = raw_tags if isinstance(raw_tags, list) else []
+            d["group"] = rd.get("group_name", "") or ""
+            result.append(d)
+        return result
 
     def delete(self, name: str) -> bool:
         """Delete a connection and its associated credential. Returns True if deleted."""

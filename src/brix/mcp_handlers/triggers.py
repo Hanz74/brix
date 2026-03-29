@@ -23,6 +23,11 @@ async def _handle_trigger_add(arguments: dict) -> dict:
     config = arguments.get("config") or {}
     enabled = arguments.get("enabled", True)
 
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+
     store = TriggerStore()
     try:
         trigger = store.add(
@@ -31,11 +36,28 @@ async def _handle_trigger_add(arguments: dict) -> dict:
             pipeline=pipeline,
             config=config,
             enabled=bool(enabled),
+            project=org_project,
+            tags=org_tags,
+            group_name=org_group,
         )
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
 
-    return {"success": True, "trigger": trigger}
+    # Org enforcement warnings
+    warnings: list[str] = []
+    if org_project is None:
+        warnings.append(
+            "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+    if org_tags is None:
+        warnings.append(
+            "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['email', 'trigger'])."
+        )
+
+    result: dict = {"success": True, "trigger": trigger}
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _handle_trigger_list(arguments: dict) -> dict:
@@ -61,11 +83,16 @@ async def _handle_trigger_get(arguments: dict) -> dict:
 
 
 async def _handle_trigger_update(arguments: dict) -> dict:
-    """Update a trigger's config, enabled state, or pipeline."""
+    """Update a trigger's config, enabled state, pipeline, or org fields."""
     from brix.triggers.store import TriggerStore
     name = arguments.get("name", "").strip()
     if not name:
         return {"success": False, "error": "Parameter 'name' is required."}
+
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
 
     store = TriggerStore()
     updated = store.update(
@@ -73,6 +100,9 @@ async def _handle_trigger_update(arguments: dict) -> dict:
         config=arguments.get("config"),
         enabled=arguments.get("enabled"),
         pipeline=arguments.get("pipeline"),
+        project=org_project,
+        tags=org_tags,
+        group_name=org_group,
     )
     if updated is None:
         return {"success": False, "error": f"Trigger '{name}' not found."}

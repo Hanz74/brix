@@ -20,9 +20,38 @@ async def _handle_set_variable(arguments: dict) -> dict:
     description = arguments.get("description", "")
     secret = bool(arguments.get("secret", False))
 
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+
     db = BrixDB()
-    db.variable_set(name, value, description, secret=secret)
-    return {"set": True, "name": name, "secret": secret}
+    db.variable_set(
+        name, value, description, secret=secret,
+        project=org_project, tags=org_tags, group_name=org_group,
+    )
+
+    result: dict = {"set": True, "name": name, "secret": secret}
+    if org_project is not None:
+        result["project"] = org_project
+    if org_tags is not None:
+        result["tags"] = org_tags
+    if org_group is not None:
+        result["group"] = org_group
+
+    # Org enforcement warnings
+    warnings: list[str] = []
+    if org_project is None:
+        warnings.append(
+            "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+    if org_tags is None:
+        warnings.append(
+            "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['config', 'secret'])."
+        )
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _handle_get_variable(arguments: dict) -> dict:
@@ -38,6 +67,14 @@ async def _handle_get_variable(arguments: dict) -> dict:
     raw = db.variable_get_raw(name)
     if raw is None:
         return {"found": False, "name": name, "value": ""}
+
+    # T-BRIX-ORG-01: include org fields
+    org_fields = {
+        "project": raw.get("project", "") or "",
+        "tags": raw.get("tags", []),
+        "group": raw.get("group_name", "") or "",
+    }
+
     if raw.get("secret"):
         # Do not expose the plaintext value via MCP
         return {
@@ -46,15 +83,41 @@ async def _handle_get_variable(arguments: dict) -> dict:
             "value": "",
             "secret": True,
             "note": "Secret variable — value not returned via MCP for security.",
+            **org_fields,
         }
-    return {"found": True, "name": name, "value": raw["value"], "secret": False}
+    return {"found": True, "name": name, "value": raw["value"], "secret": False, **org_fields}
 
 
 async def _handle_list_variables(arguments: dict) -> dict:
-    """List all managed variables. Secret values shown as '***SECRET***'."""
+    """List all managed variables. Secret values shown as '***SECRET***'.
+
+    Supports optional project/tags/group filter.
+    """
+    # T-BRIX-ORG-01: project/tags/group filter
+    filter_project = arguments.get("project") or None
+    filter_tags = arguments.get("tags") or None
+    filter_group = arguments.get("group") or None
+
     db = BrixDB()
-    variables = db.variable_list()
-    return {"variables": variables, "count": len(variables)}
+    variables = db.variable_list(
+        project=filter_project,
+        group_name=filter_group,
+        tags=filter_tags,
+    )
+    # Normalize org fields in response
+    for v in variables:
+        v.setdefault("project", "")
+        v.setdefault("group", v.pop("group_name", "") or "")
+        if "group_name" in v:
+            v["group"] = v.pop("group_name")
+    result: dict = {"variables": variables, "count": len(variables)}
+    if filter_project or filter_tags or filter_group:
+        result["filter"] = {
+            "project": filter_project,
+            "tags": filter_tags,
+            "group": filter_group,
+        }
+    return result
 
 
 async def _handle_delete_variable(arguments: dict) -> dict:

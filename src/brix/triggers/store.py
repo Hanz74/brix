@@ -47,6 +47,9 @@ class TriggerStore:
         config: dict,
         pipeline: str,
         enabled: bool = True,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> dict:
         """Add a new trigger. Raises ValueError on invalid type or duplicate name."""
         if type not in _VALID_TYPES:
@@ -59,6 +62,9 @@ class TriggerStore:
             config=config,
             pipeline=pipeline,
             enabled=enabled,
+            project=project,
+            tags=tags,
+            group_name=group_name,
         )
 
     def list_all(self) -> list[dict]:
@@ -75,6 +81,9 @@ class TriggerStore:
         config: Optional[dict] = None,
         enabled: Optional[bool] = None,
         pipeline: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> Optional[dict]:
         """Partially update a trigger. Returns updated dict or None if not found."""
         return self._db.trigger_update(
@@ -82,6 +91,9 @@ class TriggerStore:
             config=config,
             enabled=enabled,
             pipeline=pipeline,
+            project=project,
+            tags=tags,
+            group_name=group_name,
         )
 
     def delete(self, name: str) -> bool:

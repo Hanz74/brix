@@ -3135,17 +3135,36 @@ class BrixDB:
         pipeline: str,
         enabled: bool = True,
         trigger_id: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> dict:
         """Insert a new trigger. Returns the row as dict."""
         tid = trigger_id or str(uuid4())
         now = _now_iso()
         with self._connect() as conn:
+            has_project = self._column_exists(conn, "triggers", "project")
+            has_tags = self._column_exists(conn, "triggers", "tags")
+            has_group = self._column_exists(conn, "triggers", "group_name")
+
+            cols = ["id", "name", "type", "config_json", "pipeline", "enabled", "created_at", "updated_at"]
+            vals: list = [tid, name, type, json.dumps(config), pipeline, int(enabled), now, now]
+
+            if has_project and project is not None:
+                cols.append("project")
+                vals.append(project)
+            if has_tags and tags is not None:
+                cols.append("tags")
+                vals.append(json.dumps(tags))
+            if has_group and group_name is not None:
+                cols.append("group_name")
+                vals.append(group_name)
+
+            placeholders = ",".join("?" * len(cols))
             try:
                 conn.execute(
-                    """INSERT INTO triggers
-                       (id, name, type, config_json, pipeline, enabled, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?)""",
-                    (tid, name, type, json.dumps(config), pipeline, int(enabled), now, now),
+                    f"INSERT INTO triggers ({','.join(cols)}) VALUES ({placeholders})",
+                    vals,
                 )
             except sqlite3.IntegrityError:
                 raise ValueError(f"Trigger with name '{name}' already exists.")
@@ -3179,6 +3198,9 @@ class BrixDB:
         config: Optional[dict] = None,
         enabled: Optional[bool] = None,
         pipeline: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> Optional[dict]:
         """Partially update a trigger. Returns updated dict or None if not found."""
         existing = self.trigger_get(name)
@@ -3191,9 +3213,17 @@ class BrixDB:
             updates["enabled"] = int(enabled)
         if pipeline is not None:
             updates["pipeline"] = pipeline
-        set_clause = ", ".join(f"{k}=?" for k in updates)
-        values = list(updates.values()) + [existing["id"]]
+
         with self._connect() as conn:
+            if project is not None and self._column_exists(conn, "triggers", "project"):
+                updates["project"] = project
+            if tags is not None and self._column_exists(conn, "triggers", "tags"):
+                updates["tags"] = json.dumps(tags)
+            if group_name is not None and self._column_exists(conn, "triggers", "group_name"):
+                updates["group_name"] = group_name
+
+            set_clause = ", ".join(f"{k}=?" for k in updates)
+            values = list(updates.values()) + [existing["id"]]
             conn.execute(
                 f"UPDATE triggers SET {set_clause} WHERE id=?", values
             )
@@ -3232,6 +3262,15 @@ class BrixDB:
     def _trigger_row_to_dict(row: dict) -> dict:
         row["config"] = json.loads(row.pop("config_json", "{}") or "{}")
         row["enabled"] = bool(row["enabled"])
+        # T-BRIX-ORG-01: ensure org fields
+        row.setdefault("project", "")
+        raw_tags = row.get("tags", "[]")
+        if isinstance(raw_tags, str):
+            try:
+                row["tags"] = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                row["tags"] = []
+        row.setdefault("group_name", "")
         return row
 
     # ------------------------------------------------------------------
@@ -3535,11 +3574,27 @@ class BrixDB:
             row = conn.execute("SELECT COUNT(*) FROM brick_definitions").fetchone()
         return row[0] if row else 0
 
+    @staticmethod
+    def _brick_row_enrich_org(d: dict) -> dict:
+        """Enrich a brick_definitions row dict with parsed org fields."""
+        # org_tags
+        raw_tags = d.get("org_tags", "[]")
+        if isinstance(raw_tags, str):
+            try:
+                d["org_tags"] = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                d["org_tags"] = []
+        d.setdefault("org_tags", [])
+        # project & group_name
+        d.setdefault("project", "")
+        d.setdefault("group_name", "")
+        return d
+
     def brick_definitions_list(self) -> list[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM brick_definitions ORDER BY name").fetchall()
-        return [dict(r) for r in rows]
+        return [self._brick_row_enrich_org(dict(r)) for r in rows]
 
     def brick_definitions_get(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
@@ -3547,50 +3602,78 @@ class BrixDB:
             row = conn.execute(
                 "SELECT * FROM brick_definitions WHERE name = ?", (name,)
             ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        return self._brick_row_enrich_org(dict(row))
 
     def brick_definitions_upsert(self, record: dict) -> None:
         now = _now_iso()
         with self._connect() as conn:
+            has_org_tags = self._column_exists(conn, "brick_definitions", "org_tags")
+
+            cols = [
+                "name", "runner", "namespace", "category", "description", "when_to_use",
+                "when_NOT_to_use", "aliases", "input_type", "output_type", "config_schema",
+                "examples", "related_connector", "system", "created_at", "updated_at",
+            ]
+            vals: list = [
+                record["name"],
+                record.get("runner", ""),
+                record.get("namespace", ""),
+                record.get("category", ""),
+                record.get("description", ""),
+                record.get("when_to_use", ""),
+                record.get("when_NOT_to_use", ""),
+                json.dumps(record.get("aliases", [])),
+                record.get("input_type", "*"),
+                record.get("output_type", "*"),
+                json.dumps(record.get("config_schema", {})),
+                json.dumps(record.get("examples", [])),
+                record.get("related_connector", ""),
+                int(bool(record.get("system", False))),
+                now,
+                now,
+            ]
+            updates = [
+                "runner=excluded.runner",
+                "namespace=excluded.namespace",
+                "category=excluded.category",
+                "description=excluded.description",
+                "when_to_use=excluded.when_to_use",
+                "when_NOT_to_use=excluded.when_NOT_to_use",
+                "aliases=excluded.aliases",
+                "input_type=excluded.input_type",
+                "output_type=excluded.output_type",
+                "config_schema=excluded.config_schema",
+                "examples=excluded.examples",
+                "related_connector=excluded.related_connector",
+                "system=excluded.system",
+                "updated_at=excluded.updated_at",
+            ]
+
+            if has_org_tags and record.get("org_tags") is not None:
+                cols.append("org_tags")
+                vals.append(json.dumps(record["org_tags"]))
+                updates.append("org_tags=excluded.org_tags")
+
+            has_project = self._column_exists(conn, "brick_definitions", "project")
+            has_group = self._column_exists(conn, "brick_definitions", "group_name")
+            if has_project and record.get("project") is not None:
+                cols.append("project")
+                vals.append(record["project"])
+                updates.append("project=excluded.project")
+            if has_group and record.get("group_name") is not None:
+                cols.append("group_name")
+                vals.append(record["group_name"])
+                updates.append("group_name=excluded.group_name")
+
+            placeholders = ",".join("?" * len(cols))
+            update_str = ",".join(updates)
             conn.execute(
-                """INSERT INTO brick_definitions
-                   (name, runner, namespace, category, description, when_to_use,
-                    when_NOT_to_use, aliases, input_type, output_type, config_schema,
-                    examples, related_connector, system, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                   ON CONFLICT(name) DO UPDATE SET
-                       runner=excluded.runner,
-                       namespace=excluded.namespace,
-                       category=excluded.category,
-                       description=excluded.description,
-                       when_to_use=excluded.when_to_use,
-                       when_NOT_to_use=excluded.when_NOT_to_use,
-                       aliases=excluded.aliases,
-                       input_type=excluded.input_type,
-                       output_type=excluded.output_type,
-                       config_schema=excluded.config_schema,
-                       examples=excluded.examples,
-                       related_connector=excluded.related_connector,
-                       system=excluded.system,
-                       updated_at=excluded.updated_at""",
-                (
-                    record["name"],
-                    record.get("runner", ""),
-                    record.get("namespace", ""),
-                    record.get("category", ""),
-                    record.get("description", ""),
-                    record.get("when_to_use", ""),
-                    record.get("when_NOT_to_use", ""),
-                    json.dumps(record.get("aliases", [])),
-                    record.get("input_type", "*"),
-                    record.get("output_type", "*"),
-                    json.dumps(record.get("config_schema", {})),
-                    json.dumps(record.get("examples", [])),
-                    record.get("related_connector", ""),
-                    int(bool(record.get("system", False))),
-                    now,
-                    now,
-                ),
+                f"""INSERT INTO brick_definitions ({','.join(cols)})
+                   VALUES ({placeholders})
+                   ON CONFLICT(name) DO UPDATE SET {update_str}""",
+                vals,
             )
 
     def brick_definitions_delete(self, name: str) -> bool:
@@ -3828,7 +3911,16 @@ class BrixDB:
     # Managed Variables (T-BRIX-DB-13)
     # ------------------------------------------------------------------
 
-    def variable_set(self, name: str, value: str, description: str = "", secret: bool = False) -> None:
+    def variable_set(
+        self,
+        name: str,
+        value: str,
+        description: str = "",
+        secret: bool = False,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
+    ) -> None:
         """Create or update a managed variable (upsert).
 
         When secret=True the value is Fernet-encrypted before storage.
@@ -3837,20 +3929,46 @@ class BrixDB:
         stored_value = _encrypt(value) if secret else value
         now = _now_iso()
         with self._connect() as conn:
+            has_project = self._column_exists(conn, "variables", "project")
+            has_tags = self._column_exists(conn, "variables", "tags")
+            has_group = self._column_exists(conn, "variables", "group_name")
+
             existing = conn.execute(
                 "SELECT created_at FROM variables WHERE name=?", (name,)
             ).fetchone()
             if existing:
+                sets = ["value=?", "description=?", "updated_at=?", "secret=?"]
+                vals: list = [stored_value, description, now, 1 if secret else 0]
+                if has_project and project is not None:
+                    sets.append("project=?")
+                    vals.append(project)
+                if has_tags and tags is not None:
+                    sets.append("tags=?")
+                    vals.append(json.dumps(tags))
+                if has_group and group_name is not None:
+                    sets.append("group_name=?")
+                    vals.append(group_name)
+                vals.append(name)
                 conn.execute(
-                    """UPDATE variables SET value=?, description=?, updated_at=?, secret=?
-                       WHERE name=?""",
-                    (stored_value, description, now, 1 if secret else 0, name),
+                    f"UPDATE variables SET {', '.join(sets)} WHERE name=?",
+                    vals,
                 )
             else:
+                cols = ["name", "value", "description", "created_at", "updated_at", "secret"]
+                vals2: list = [name, stored_value, description, now, now, 1 if secret else 0]
+                if has_project and project is not None:
+                    cols.append("project")
+                    vals2.append(project)
+                if has_tags and tags is not None:
+                    cols.append("tags")
+                    vals2.append(json.dumps(tags))
+                if has_group and group_name is not None:
+                    cols.append("group_name")
+                    vals2.append(group_name)
+                placeholders = ",".join("?" * len(cols))
                 conn.execute(
-                    """INSERT INTO variables (name, value, description, created_at, updated_at, secret)
-                       VALUES (?,?,?,?,?,?)""",
-                    (name, stored_value, description, now, now, 1 if secret else 0),
+                    f"INSERT INTO variables ({','.join(cols)}) VALUES ({placeholders})",
+                    vals2,
                 )
 
     def variable_get(self, name: str) -> Optional[str]:
@@ -3875,30 +3993,63 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT name, value, description, created_at, updated_at, secret "
-                "FROM variables WHERE name=?", (name,)
+                "SELECT * FROM variables WHERE name=?", (name,)
             ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        d = dict(row)
+        # Ensure org fields are always present
+        d.setdefault("project", "")
+        raw_tags = d.get("tags", "[]")
+        if isinstance(raw_tags, str):
+            try:
+                d["tags"] = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                d["tags"] = []
+        d.setdefault("group_name", "")
+        return d
 
-    def variable_list(self) -> list[dict]:
+    def variable_list(
+        self,
+        project: Optional[str] = None,
+        group_name: Optional[str] = None,
+        tags: Optional[list] = None,
+    ) -> list[dict]:
         """Return all managed variables as list of dicts.
 
         For secret variables the 'value' field is returned as '***SECRET***'.
         The 'secret' field (bool) indicates whether the variable is encrypted.
+        Optionally filtered by project, group_name, or tags.
         """
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT name, value, description, created_at, updated_at, "
-                "COALESCE(secret, 0) as secret "
-                "FROM variables ORDER BY name"
+                "SELECT * FROM variables ORDER BY name"
             ).fetchall()
         result = []
         for r in rows:
             row_dict = dict(r)
-            row_dict["secret"] = bool(row_dict["secret"])
+            row_dict["secret"] = bool(row_dict.get("secret", 0))
             if row_dict["secret"]:
                 row_dict["value"] = "***SECRET***"
+            # Ensure org fields
+            row_dict.setdefault("project", "")
+            raw_tags = row_dict.get("tags", "[]")
+            if isinstance(raw_tags, str):
+                try:
+                    row_dict["tags"] = json.loads(raw_tags)
+                except (json.JSONDecodeError, TypeError):
+                    row_dict["tags"] = []
+            row_dict.setdefault("group_name", "")
+            # Apply filters
+            if project is not None and row_dict.get("project", "") != project:
+                continue
+            if group_name is not None and row_dict.get("group_name", "") != group_name:
+                continue
+            if tags is not None:
+                var_tags = row_dict.get("tags", [])
+                if not any(t in var_tags for t in tags):
+                    continue
             result.append(row_dict)
         return result
 
@@ -4082,21 +4233,70 @@ class BrixDB:
     # Profiles / Mixins (T-BRIX-DB-23)
     # ------------------------------------------------------------------
 
-    def profile_set(self, name: str, config: dict, description: str = "") -> dict:
+    def profile_set(
+        self,
+        name: str,
+        config: dict,
+        description: str = "",
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
+    ) -> dict:
         """Create or update a profile. Returns the stored profile dict."""
         now = _now_iso()
         config_json = json.dumps(config)
         with self._connect() as conn:
+            has_project = self._column_exists(conn, "profiles", "project")
+            has_tags = self._column_exists(conn, "profiles", "tags")
+            has_group = self._column_exists(conn, "profiles", "group_name")
+
+            cols = ["name", "config", "description", "created_at", "updated_at"]
+            vals: list = [name, config_json, description, now, now]
+            updates = [
+                "config=excluded.config",
+                "description=excluded.description",
+                "updated_at=excluded.updated_at",
+            ]
+
+            if has_project and project is not None:
+                cols.append("project")
+                vals.append(project)
+                updates.append("project=excluded.project")
+            if has_tags and tags is not None:
+                cols.append("tags")
+                vals.append(json.dumps(tags))
+                updates.append("tags=excluded.tags")
+            if has_group and group_name is not None:
+                cols.append("group_name")
+                vals.append(group_name)
+                updates.append("group_name=excluded.group_name")
+
+            placeholders = ",".join("?" * len(cols))
+            update_str = ",".join(updates)
             conn.execute(
-                """INSERT INTO profiles (name, config, description, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(name) DO UPDATE SET
-                       config=excluded.config,
-                       description=excluded.description,
-                       updated_at=excluded.updated_at""",
-                (name, config_json, description, now, now),
+                f"""INSERT INTO profiles ({','.join(cols)})
+                   VALUES ({placeholders})
+                   ON CONFLICT(name) DO UPDATE SET {update_str}""",
+                vals,
             )
         return self.profile_get(name)
+
+    @staticmethod
+    def _profile_enrich_org(d: dict) -> dict:
+        """Enrich a profile dict with parsed org fields."""
+        try:
+            d["config"] = json.loads(d["config"])
+        except (json.JSONDecodeError, TypeError):
+            d["config"] = {}
+        d.setdefault("project", "")
+        raw_tags = d.get("tags", "[]")
+        if isinstance(raw_tags, str):
+            try:
+                d["tags"] = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                d["tags"] = []
+        d.setdefault("group_name", "")
+        return d
 
     def profile_get(self, name: str) -> Optional[dict]:
         """Return a profile by name, or None if not found."""
@@ -4107,12 +4307,7 @@ class BrixDB:
             ).fetchone()
         if not row:
             return None
-        result = dict(row)
-        try:
-            result["config"] = json.loads(result["config"])
-        except (json.JSONDecodeError, TypeError):
-            result["config"] = {}
-        return result
+        return self._profile_enrich_org(dict(row))
 
     def profile_list(self) -> list[dict]:
         """Return all profiles ordered by name."""
@@ -4121,15 +4316,7 @@ class BrixDB:
             rows = conn.execute(
                 "SELECT * FROM profiles ORDER BY name"
             ).fetchall()
-        out = []
-        for row in rows:
-            d = dict(row)
-            try:
-                d["config"] = json.loads(d["config"])
-            except (json.JSONDecodeError, TypeError):
-                d["config"] = {}
-            out.append(d)
-        return out
+        return [self._profile_enrich_org(dict(row)) for row in rows]
 
     def profile_delete(self, name: str) -> bool:
         """Delete a profile by name. Returns True if found and deleted."""
