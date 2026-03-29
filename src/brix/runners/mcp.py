@@ -28,6 +28,31 @@ except ImportError:
 # Default path for servers.yaml
 SERVERS_CONFIG_PATH = Path.home() / ".brix" / "servers.yaml"
 
+
+def _unwrap_json_strings(obj: Any, max_depth: int = 3) -> Any:
+    """Recursively unwrap JSON-encoded string values in a dict.
+
+    Used when a server is configured with ``unwrap_json: true`` to
+    automatically resolve double-wrapped responses such as those returned
+    by Cody: ``{"result": "{\"result\": {...}}"}`` becomes the inner dict.
+    """
+    if max_depth <= 0 or not isinstance(obj, dict):
+        return obj
+    result: dict = {}
+    for k, v in obj.items():
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    v = _unwrap_json_strings(parsed, max_depth - 1)
+                elif isinstance(parsed, list):
+                    v = parsed
+                # Non-container JSON scalars (int, bool, None) stay as-is
+            except (json.JSONDecodeError, ValueError):
+                pass
+        result[k] = v
+    return result
+
 # Forward-declare to avoid circular import; the real type is checked at runtime.
 _McpConnectionPool = None
 
@@ -288,6 +313,10 @@ class McpRunner(BaseRunner):
                 data: Any = json.loads(combined)
             except (json.JSONDecodeError, ValueError):
                 data = combined
+
+            # Auto-unwrap nested JSON strings (e.g. Cody returns {"result": "{\"result\": {...)}"})
+            if server_config.unwrap_json and isinstance(data, dict):
+                data = _unwrap_json_strings(data)
 
             out = {"success": True, "data": data, "duration": duration}
             out["mcp_trace"] = self._build_trace(

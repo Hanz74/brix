@@ -531,3 +531,4 @@ class ServerConfig(BaseModel):
     tools_prefix: Optional[str] = None
     transport: str = "stdio"  # "stdio" or "sse"
     url: str = ""  # SSE endpoint URL (used when transport="sse")
+    unwrap_json: bool = False  # Auto-unwrap nested JSON strings in responses (e.g. Cody)
