@@ -181,6 +181,11 @@ async def _handle_add_step(arguments: dict) -> dict:
 
     data["steps"] = steps
 
+    # Auto-bump version (minor for structural change)
+    from brix.mcp_handlers.pipelines import _bump_version
+    old_version = data.get("version", "1.0.0")
+    data["version"] = _bump_version(old_version, "minor")
+
     # Validate and save
     validation = _validate_pipeline_dict(data)
     _save_pipeline_yaml(name, data)
@@ -319,6 +324,12 @@ async def _handle_remove_step(arguments: dict) -> dict:
         }
 
     data["steps"] = steps
+
+    # Auto-bump version (minor for structural change)
+    from brix.mcp_handlers.pipelines import _bump_version
+    old_version = data.get("version", "1.0.0")
+    data["version"] = _bump_version(old_version, "minor")
+
     _save_pipeline_yaml(name, data)
 
     _audit_db.write_audit_entry(
@@ -360,6 +371,11 @@ async def _handle_update_step(arguments: dict) -> dict:
         if key == "id":
             continue
         target[key] = value
+
+    # Auto-bump version (patch for config change)
+    from brix.mcp_handlers.pipelines import _bump_version
+    old_version = raw.get("version", "1.0.0")
+    raw["version"] = _bump_version(old_version, "patch")
 
     # Save
     store.save(raw, name)

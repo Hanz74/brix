@@ -6,6 +6,21 @@ from pathlib import Path
 
 import yaml
 
+
+def _bump_version(current: str, bump: str = "patch") -> str:
+    """Bump a semver string. bump='patch'|'minor'|'major'."""
+    try:
+        parts = current.split(".")
+        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+    except (IndexError, ValueError):
+        return "1.0.1"
+    if bump == "major":
+        return f"{major + 1}.0.0"
+    elif bump == "minor":
+        return f"{major}.{minor + 1}.0"
+    else:
+        return f"{major}.{minor}.{patch + 1}"
+
 from brix.mcp_handlers._shared import (
     _audit_db,
     _registry,
@@ -346,6 +361,11 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
         }
 
     if changed_fields:
+        # Auto-bump version (patch for config changes, unless version was explicitly set)
+        if "version" not in changed_fields:
+            old_version = raw.get("version", "1.0.0")
+            raw["version"] = _bump_version(old_version, "patch")
+            changed_fields.append("version (auto-bump)")
         store.save(raw, name)
 
     # Update project/tags/group_name in DB (T-BRIX-ORG-01)
@@ -649,6 +669,23 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
         store = PipelineStore(pipelines_dir=_pipeline_dir())
         all_pipelines = store.list_all()
         # Normalise field names to match the explicit-dir branch
+        # Enrich with org fields from DB
+        _org_map: dict = {}
+        try:
+            from brix.db import BrixDB as _ListDB
+            import json as _list_json
+            _ldb = _ListDB()
+            _lconn = _ldb._connect()
+            for row in _lconn.execute("SELECT name, project, tags, group_name FROM pipelines").fetchall():
+                try:
+                    _tags = _list_json.loads(row[1 + 1]) if row[1 + 1] else []
+                except (ValueError, TypeError):
+                    _tags = []
+                _org_map[row[0]] = {"project": row[1] or "", "tags": _tags, "group": row[3] or ""}
+            _lconn.close()
+        except Exception:
+            pass
+
         pipelines = [
             {
                 "name": p["name"],
@@ -656,6 +693,7 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
                 "description": p.get("description", ""),
                 "step_count": p.get("steps", 0),
                 "file": p.get("path", ""),
+                **_org_map.get(p["name"], {"project": "", "tags": [], "group": ""}),
             }
             for p in all_pipelines
         ]
