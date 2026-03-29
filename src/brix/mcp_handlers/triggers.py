@@ -285,6 +285,11 @@ async def _handle_trigger_group_add(arguments: dict) -> dict:
     description = arguments.get("description", "")
     enabled = arguments.get("enabled", True)
 
+    # T-BRIX-ORG-01: project/tags/group support
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+
     store = TriggerGroupStore()
     try:
         group = store.add(
@@ -292,11 +297,32 @@ async def _handle_trigger_group_add(arguments: dict) -> dict:
             triggers=triggers,
             description=description,
             enabled=bool(enabled),
+            project=org_project,
+            tags=org_tags,
+            group_name=org_group,
         )
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
 
-    return {"success": True, "group": group}
+    # Org enforcement warnings
+    warnings: list[str] = []
+    if org_project is None:
+        warnings.append(
+            "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+    if not description:
+        warnings.append(
+            "MISSING DESCRIPTION: Bitte 'description' angeben."
+        )
+    if org_tags is None:
+        warnings.append(
+            "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['trigger', 'group'])."
+        )
+
+    result: dict = {"success": True, "group": group}
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _handle_trigger_group_list(arguments: dict) -> dict:

@@ -43,6 +43,10 @@ async def _handle_create_profile(arguments: dict) -> dict:
             warnings.append(
                 "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
             )
+        if not description:
+            warnings.append(
+                "MISSING DESCRIPTION: Bitte 'description' angeben."
+            )
         if org_tags is None:
             warnings.append(
                 "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['config', 'defaults'])."

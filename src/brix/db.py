@@ -2849,24 +2849,34 @@ class BrixDB:
         tags: Optional[list] = None,
         description: str = "",
         entry_id: Optional[str] = None,
+        project: Optional[str] = None,
+        group_name: Optional[str] = None,
     ) -> str:
         """Add a new entry to a registry. Returns the entry id."""
         table = self._registry_table(registry_type)
         now = _now_iso()
         eid = entry_id or str(uuid4())
         with self._connect() as conn:
+            cols = ["id", "name", "description", "content", "tags", "created_at", "updated_at"]
+            vals: list = [
+                eid,
+                name,
+                description,
+                json.dumps(content) if not isinstance(content, str) else content,
+                json.dumps(tags or []),
+                now,
+                now,
+            ]
+            if project is not None and self._column_exists(conn, table, "project"):
+                cols.append("project")
+                vals.append(project)
+            if group_name is not None and self._column_exists(conn, table, "group_name"):
+                cols.append("group_name")
+                vals.append(group_name)
+            placeholders = ",".join("?" * len(cols))
             conn.execute(
-                f"""INSERT INTO {table} (id, name, description, content, tags, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (
-                    eid,
-                    name,
-                    description,
-                    json.dumps(content) if not isinstance(content, str) else content,
-                    json.dumps(tags or []),
-                    now,
-                    now,
-                ),
+                f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
+                vals,
             )
         return eid
 
@@ -2913,6 +2923,8 @@ class BrixDB:
         content: Any = None,
         tags: Optional[list] = None,
         description: Optional[str] = None,
+        project: Optional[str] = None,
+        group_name: Optional[str] = None,
     ) -> Optional[dict]:
         """Update an existing registry entry. Returns updated entry or None if not found."""
         table = self._registry_table(registry_type)
@@ -2924,11 +2936,18 @@ class BrixDB:
         new_tags = json.dumps(tags) if tags is not None else json.dumps(entry["tags"])
         new_description = description if description is not None else entry["description"]
         with self._connect() as conn:
+            set_parts = ["content=?", "tags=?", "description=?", "updated_at=?"]
+            vals: list = [new_content, new_tags, new_description, now]
+            if project is not None and self._column_exists(conn, table, "project"):
+                set_parts.append("project=?")
+                vals.append(project)
+            if group_name is not None and self._column_exists(conn, table, "group_name"):
+                set_parts.append("group_name=?")
+                vals.append(group_name)
+            vals.append(entry["id"])
             conn.execute(
-                f"""UPDATE {table}
-                   SET content=?, tags=?, description=?, updated_at=?
-                   WHERE id=?""",
-                (new_content, new_tags, new_description, now, entry["id"]),
+                f"UPDATE {table} SET {', '.join(set_parts)} WHERE id=?",
+                vals,
             )
         return self.registry_get(registry_type, entry["id"])
 
@@ -2991,6 +3010,9 @@ class BrixDB:
                     row[col] = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
                     pass  # leave as-is if not valid JSON
+        # T-BRIX-ORG-01: ensure org fields are present
+        row.setdefault("project", "")
+        row.setdefault("group_name", "")
         return row
 
     # ------------------------------------------------------------------
@@ -3005,16 +3027,30 @@ class BrixDB:
         config: Optional[dict] = None,
         rule_id: Optional[str] = None,
         created_at: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> dict:
         """Insert a new alert rule. Returns the row as dict."""
         rid = rule_id or str(uuid4())
         now = created_at or _now_iso()
         cfg_json = json.dumps(config or {})
         with self._connect() as conn:
+            cols = ["id", "name", "condition", "channel", "config", "enabled", "created_at"]
+            vals: list = [rid, name, condition, channel, cfg_json, 1, now]
+            if project is not None and self._column_exists(conn, "alert_rules", "project"):
+                cols.append("project")
+                vals.append(project)
+            if tags is not None and self._column_exists(conn, "alert_rules", "tags"):
+                cols.append("tags")
+                vals.append(json.dumps(tags))
+            if group_name is not None and self._column_exists(conn, "alert_rules", "group_name"):
+                cols.append("group_name")
+                vals.append(group_name)
+            placeholders = ",".join("?" * len(cols))
             conn.execute(
-                """INSERT INTO alert_rules (id, name, condition, channel, config, enabled, created_at)
-                   VALUES (?,?,?,?,?,1,?)""",
-                (rid, name, condition, channel, cfg_json, now),
+                f"INSERT INTO alert_rules ({','.join(cols)}) VALUES ({placeholders})",
+                vals,
             )
         return self.alert_rule_get(rid)  # type: ignore[return-value]
 
@@ -3046,6 +3082,9 @@ class BrixDB:
         channel: Optional[str] = None,
         config: Optional[dict] = None,
         enabled: Optional[bool] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> Optional[dict]:
         """Update fields of an existing alert rule. Returns updated dict or None."""
         existing = self.alert_rule_get(rule_id)
@@ -3062,6 +3101,12 @@ class BrixDB:
             updates["config"] = json.dumps(config)
         if enabled is not None:
             updates["enabled"] = int(enabled)
+        if project is not None:
+            updates["project"] = project
+        if tags is not None:
+            updates["tags"] = json.dumps(tags)
+        if group_name is not None:
+            updates["group_name"] = group_name
         if not updates:
             return existing
         set_clause = ", ".join(f"{k}=?" for k in updates)
@@ -3121,6 +3166,17 @@ class BrixDB:
     def _alert_rule_row_to_dict(row: dict) -> dict:
         row["config"] = json.loads(row.get("config") or "{}")
         row["enabled"] = bool(row.get("enabled", 1))
+        # T-BRIX-ORG-01: deserialize org fields
+        raw_tags = row.get("tags")
+        if isinstance(raw_tags, str):
+            try:
+                row["tags"] = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                row["tags"] = []
+        elif raw_tags is None:
+            row["tags"] = []
+        row.setdefault("project", "")
+        row.setdefault("group_name", "")
         return row
 
     # ------------------------------------------------------------------
@@ -3284,17 +3340,30 @@ class BrixDB:
         description: str = "",
         enabled: bool = True,
         group_id: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> dict:
         """Insert a new trigger group. Returns the row as dict."""
         gid = group_id or str(uuid4())
         now = _now_iso()
         with self._connect() as conn:
+            cols = ["id", "name", "description", "triggers_json", "enabled", "created_at", "updated_at"]
+            vals: list = [gid, name, description, json.dumps(triggers), int(enabled), now, now]
+            if project is not None and self._column_exists(conn, "trigger_groups", "project"):
+                cols.append("project")
+                vals.append(project)
+            if tags is not None and self._column_exists(conn, "trigger_groups", "tags"):
+                cols.append("tags")
+                vals.append(json.dumps(tags))
+            if group_name is not None and self._column_exists(conn, "trigger_groups", "group_name"):
+                cols.append("group_name")
+                vals.append(group_name)
+            placeholders = ",".join("?" * len(cols))
             try:
                 conn.execute(
-                    """INSERT INTO trigger_groups
-                       (id, name, description, triggers_json, enabled, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?)""",
-                    (gid, name, description, json.dumps(triggers), int(enabled), now, now),
+                    f"INSERT INTO trigger_groups ({','.join(cols)}) VALUES ({placeholders})",
+                    vals,
                 )
             except sqlite3.IntegrityError:
                 raise ValueError(f"Trigger group with name '{name}' already exists.")
@@ -3328,6 +3397,9 @@ class BrixDB:
         triggers: Optional[list[str]] = None,
         description: Optional[str] = None,
         enabled: Optional[bool] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> Optional[dict]:
         """Partially update a trigger group. Returns updated dict or None if not found."""
         existing = self.trigger_group_get(name)
@@ -3340,6 +3412,12 @@ class BrixDB:
             updates["description"] = description
         if enabled is not None:
             updates["enabled"] = int(enabled)
+        if project is not None:
+            updates["project"] = project
+        if tags is not None:
+            updates["tags"] = json.dumps(tags)
+        if group_name is not None:
+            updates["group_name"] = group_name
         set_clause = ", ".join(f"{k}=?" for k in updates)
         values = list(updates.values()) + [existing["id"]]
         with self._connect() as conn:
@@ -3363,6 +3441,17 @@ class BrixDB:
     def _trigger_group_row_to_dict(row: dict) -> dict:
         row["triggers"] = json.loads(row.pop("triggers_json", "[]") or "[]")
         row["enabled"] = bool(row["enabled"])
+        # T-BRIX-ORG-01: deserialize org fields
+        raw_tags = row.get("tags")
+        if isinstance(raw_tags, str):
+            try:
+                row["tags"] = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                row["tags"] = []
+        elif raw_tags is None:
+            row["tags"] = []
+        row.setdefault("project", "")
+        row.setdefault("group_name", "")
         return row
 
     # ------------------------------------------------------------------

@@ -28,6 +28,31 @@ async def _handle_list_bricks(arguments: dict) -> dict:
     else:
         bricks = _registry.list_all()
 
+    # T-BRIX-ORG-01: enrich with org fields from DB
+    _org_map: dict = {}
+    try:
+        from brix.db import BrixDB as _BrixDB
+        import json as _list_json
+        _ldb = _BrixDB()
+        _lconn = _ldb._connect()
+        for row in _lconn.execute(
+            "SELECT name, namespace, org_tags, project, group_name FROM brick_definitions"
+        ).fetchall():
+            raw_tags = row[2]
+            try:
+                _tags = _list_json.loads(raw_tags) if raw_tags else []
+            except (ValueError, TypeError):
+                _tags = []
+            _org_map[row[0]] = {
+                "namespace": row[1] or "",
+                "tags": _tags,
+                "project": row[3] or "",
+                "group": row[4] or "",
+            }
+        _lconn.close()
+    except Exception:
+        pass
+
     return {
         "bricks": [
             {
@@ -36,6 +61,7 @@ async def _handle_list_bricks(arguments: dict) -> dict:
                 "description": b.description,
                 "when_to_use": b.when_to_use,
                 "category": b.category,
+                **_org_map.get(b.name, {"namespace": "", "tags": [], "project": "", "group": ""}),
             }
             for b in bricks
         ],

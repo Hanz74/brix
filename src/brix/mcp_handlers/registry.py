@@ -27,6 +27,10 @@ async def _handle_registry_add(arguments: dict) -> dict:
     tags = arguments.get("tags", [])
     description = arguments.get("description", "")
 
+    # T-BRIX-ORG-01: project/group support
+    org_project = arguments.get("project") or None
+    org_group = arguments.get("group") or None
+
     if not registry_type:
         return {"success": False, "error": "Parameter 'registry_type' is required"}
     if not name:
@@ -42,13 +46,38 @@ async def _handle_registry_add(arguments: dict) -> dict:
             content=content,
             tags=tags if isinstance(tags, list) else [],
             description=description,
+            project=org_project,
+            group_name=org_group,
         )
-        return {
+
+        # Org enforcement warnings
+        warnings: list[str] = []
+        if org_project is None:
+            warnings.append(
+                "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+            )
+        if not description:
+            warnings.append(
+                "MISSING DESCRIPTION: Bitte 'description' angeben."
+            )
+        if not tags:
+            warnings.append(
+                "HINT: 'tags' helfen bei der Kategorisierung."
+            )
+
+        result: dict = {
             "success": True,
             "id": entry_id,
             "name": name,
             "registry_type": registry_type,
         }
+        if org_project is not None:
+            result["project"] = org_project
+        if org_group is not None:
+            result["group"] = org_group
+        if warnings:
+            result["warnings"] = warnings
+        return result
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
     except Exception as exc:
@@ -79,6 +108,9 @@ async def _handle_registry_get(arguments: dict) -> dict:
                 "success": False,
                 "error": f"Entry '{name_or_id}' not found in registry '{registry_type}'",
             }
+        # T-BRIX-ORG-01: normalize org field names for response
+        if "group_name" in entry:
+            entry["group"] = entry.pop("group_name")
         return {"success": True, "entry": entry}
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
@@ -97,6 +129,10 @@ async def _handle_registry_list(arguments: dict) -> dict:
     try:
         db = _get_db()
         entries = db.registry_list(registry_type, tag_filter=tag_filter)
+        # T-BRIX-ORG-01: normalize org field names for response
+        for entry in entries:
+            if "group_name" in entry:
+                entry["group"] = entry.pop("group_name")
         return {
             "success": True,
             "registry_type": registry_type,
@@ -118,12 +154,16 @@ async def _handle_registry_update(arguments: dict) -> dict:
     tags = arguments.get("tags")
     description = arguments.get("description")
 
+    # T-BRIX-ORG-01: project/group support
+    org_project = arguments.get("project") or None
+    org_group = arguments.get("group") or None
+
     if not registry_type:
         return {"success": False, "error": "Parameter 'registry_type' is required"}
     if not name_or_id:
         return {"success": False, "error": "Parameter 'name_or_id' is required"}
-    if content is None and tags is None and description is None:
-        return {"success": False, "error": "At least one of 'content', 'tags', or 'description' must be provided"}
+    if content is None and tags is None and description is None and org_project is None and org_group is None:
+        return {"success": False, "error": "At least one of 'content', 'tags', 'description', 'project', or 'group' must be provided"}
 
     try:
         db = _get_db()
@@ -133,12 +173,17 @@ async def _handle_registry_update(arguments: dict) -> dict:
             content=content,
             tags=tags,
             description=description,
+            project=org_project,
+            group_name=org_group,
         )
         if updated is None:
             return {
                 "success": False,
                 "error": f"Entry '{name_or_id}' not found in registry '{registry_type}'",
             }
+        # T-BRIX-ORG-01: normalize org field names for response
+        if "group_name" in updated:
+            updated["group"] = updated.pop("group_name")
         return {"success": True, "entry": updated}
     except ValueError as exc:
         return {"success": False, "error": str(exc)}

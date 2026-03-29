@@ -134,6 +134,9 @@ class TriggerGroupStore:
         triggers: list[str],
         description: str = "",
         enabled: bool = True,
+        project: "Optional[str]" = None,
+        tags: "Optional[list]" = None,
+        group_name: "Optional[str]" = None,
     ) -> dict:
         """Add a new trigger group. Raises ValueError on duplicate name."""
         return self._db.trigger_group_add(
@@ -141,6 +144,9 @@ class TriggerGroupStore:
             triggers=triggers,
             description=description,
             enabled=enabled,
+            project=project,
+            tags=tags,
+            group_name=group_name,
         )
 
     def list_all(self) -> list[dict]:
@@ -157,6 +163,9 @@ class TriggerGroupStore:
         triggers: Optional[list[str]] = None,
         description: Optional[str] = None,
         enabled: Optional[bool] = None,
+        project: Optional[str] = None,
+        tags: Optional[list] = None,
+        group_name: Optional[str] = None,
     ) -> Optional[dict]:
         """Partially update a trigger group. Returns updated dict or None if not found."""
         return self._db.trigger_group_update(
@@ -164,6 +173,9 @@ class TriggerGroupStore:
             triggers=triggers,
             description=description,
             enabled=enabled,
+            project=project,
+            tags=tags,
+            group_name=group_name,
         )
 
     def delete(self, name: str) -> bool:

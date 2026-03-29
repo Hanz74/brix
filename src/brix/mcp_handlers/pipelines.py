@@ -213,6 +213,10 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
         pipeline_warnings.append(
             "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
         )
+    if not description:
+        pipeline_warnings.append(
+            "MISSING DESCRIPTION: Bitte 'description' angeben."
+        )
     if org_tags is None:
         pipeline_warnings.append(
             "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['email', 'import'])."
