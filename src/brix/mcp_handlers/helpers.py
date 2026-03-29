@@ -97,6 +97,16 @@ async def _handle_create_helper(arguments: dict) -> dict:
         source=source,
         arguments_summary=_source_summary(source, helper=name),
     )
+    # Org enforcement warnings (project/tags mandatory hints)
+    if org_project is None:
+        warnings.append(
+            "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+    if org_tags is None:
+        warnings.append(
+            "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['email', 'import'])."
+        )
+
     result: dict = {
         "success": True,
         "action": "created",
@@ -186,11 +196,20 @@ async def _handle_list_helpers(arguments: dict) -> dict:
 
     registry = HelperRegistry()
     entries = registry.list_all()
-    return {
+    helpers_list = [_make_helper_dict(e) for e in entries]
+    result_h: dict = {
         "success": True,
-        "helpers": [_make_helper_dict(e) for e in entries],
-        "total": len(entries),
+        "helpers": helpers_list,
+        "total": len(helpers_list),
     }
+    # Hint if any helpers lack a project
+    no_project_count = sum(1 for h in helpers_list if not h.get("project"))
+    if no_project_count > 0:
+        result_h["hint"] = (
+            f"{no_project_count} helper(s) haben kein Projekt. "
+            "Nutze update_helper(project=...) um sie zuzuordnen."
+        )
+    return result_h
 
 
 async def _handle_get_helper(arguments: dict) -> dict:

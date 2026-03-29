@@ -210,6 +210,7 @@ from brix.mcp_handlers.helpers import (
     _handle_delete_helper,
     _handle_rename_helper,
 )
+from brix.mcp_handlers.org import _handle_org
 from brix.mcp_handlers.credentials import (
     _handle_credential_add,
     _handle_credential_list,
@@ -627,6 +628,8 @@ _HANDLERS = {
     "brix__pin_step_data": _handle_pin_step_data,
     "brix__unpin_step_data": _handle_unpin_step_data,
     "brix__list_pins": _handle_list_pins,
+    # Org Registry — project/tag/group definitions (T-BRIX-ORG-02)
+    "brix__org": _handle_org,
 }
 
 

@@ -554,6 +554,18 @@ _DDL = [
         PRIMARY KEY (pipeline_name, step_id)
     )
     """,
+    # T-BRIX-ORG-02: Org Registry — known projects, tags, groups
+    """
+    CREATE TABLE IF NOT EXISTS org_registry (
+        id          TEXT PRIMARY KEY,
+        entry_type  TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        metadata    TEXT DEFAULT '{}',
+        created_at  TEXT NOT NULL,
+        UNIQUE (entry_type, name)
+    )
+    """,
 ]
 
 # Valid registry type names → table names mapping (T-BRIX-V7-10)
@@ -1896,6 +1908,100 @@ class BrixDB:
                     stats[proj]["helpers"] = row[1]
 
         return stats
+
+    # ------------------------------------------------------------------
+    # Org Registry — known projects, tags, groups (T-BRIX-ORG-02)
+    # ------------------------------------------------------------------
+
+    def org_registry_upsert(self, entry_type: str, name: str, description: str = "", metadata: Optional[dict] = None) -> str:
+        """Insert or update an org registry entry. Returns the entry id."""
+        now = _now_iso()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM org_registry WHERE entry_type=? AND name=?",
+                (entry_type, name),
+            ).fetchone()
+            eid = existing[0] if existing else str(uuid4())
+            conn.execute(
+                """
+                INSERT INTO org_registry (id, entry_type, name, description, metadata, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entry_type, name) DO UPDATE SET
+                    description=excluded.description,
+                    metadata=excluded.metadata
+                """,
+                (eid, entry_type, name, description, json.dumps(metadata or {}), now),
+            )
+        return eid
+
+    def org_registry_list(self, entry_type: Optional[str] = None) -> list[dict]:
+        """List org registry entries, optionally filtered by entry_type."""
+        with self._connect() as conn:
+            if entry_type:
+                rows = conn.execute(
+                    "SELECT id, entry_type, name, description, metadata, created_at "
+                    "FROM org_registry WHERE entry_type=? ORDER BY name",
+                    (entry_type,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, entry_type, name, description, metadata, created_at "
+                    "FROM org_registry ORDER BY entry_type, name"
+                ).fetchall()
+        result = []
+        for row in rows:
+            try:
+                meta = json.loads(row[4]) if row[4] else {}
+            except Exception:
+                meta = {}
+            result.append({
+                "id": row[0],
+                "entry_type": row[1],
+                "name": row[2],
+                "description": row[3],
+                "metadata": meta,
+                "created_at": row[5],
+            })
+        return result
+
+    def org_registry_delete(self, entry_type: str, name: str) -> bool:
+        """Delete an org registry entry. Returns True if deleted."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM org_registry WHERE entry_type=? AND name=?",
+                (entry_type, name),
+            )
+        return cur.rowcount > 0
+
+    def org_registry_seed_defaults(self) -> None:
+        """Seed default known projects, tags, and groups if they don't exist yet."""
+        default_projects = [
+            ("buddy", "Dokumenten-Verarbeitung — E-Mail-Intake, OneDrive, Klassifizierung"),
+            ("cody", "Projektmanagement — Tasks, Gatekeeper, Pipelines"),
+            ("utility", "Allgemeine Tools — Konvertierung, Download, Transformation"),
+            ("system", "Brix-interne Pipelines — Wartung, Migrations, Health-Checks"),
+        ]
+        default_tags = [
+            ("intake", "Daten-Eingang / Ingest-Pipelines"),
+            ("extraction", "Daten-Extraktion aus Dokumenten"),
+            ("classification", "Klassifizierung und Kategorisierung"),
+            ("monitoring", "Überwachung und Alerting"),
+            ("scheduled", "Zeitgesteuerte Ausführung"),
+            ("one-shot", "Einmalige / manuelle Ausführung"),
+            ("conversion", "Format-Konvertierung (PDF, DOCX, etc.)"),
+            ("notification", "Benachrichtigungen und Alerts"),
+            ("batch", "Batch-Verarbeitung großer Mengen"),
+        ]
+        default_groups = [
+            ("onedrive-chain", "scan→download→classify→extract — OneDrive-Dokumentenverarbeitung"),
+            ("outlook-intake", "fetch→classify→move→process — Outlook E-Mail-Intake"),
+        ]
+        for name, desc in default_projects:
+            self.org_registry_upsert("project", name, desc)
+        for name, desc in default_tags:
+            self.org_registry_upsert("tag", name, desc)
+        for name, desc in default_groups:
+            self.org_registry_upsert("group", name, desc)
 
     # ------------------------------------------------------------------
     # Helpers CRUD

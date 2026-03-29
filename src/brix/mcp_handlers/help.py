@@ -137,6 +137,54 @@ async def _handle_get_tips(arguments: dict) -> dict:
                 "  Nutze list_pipelines(project=...) oder list_helpers(project=...) zum Filtern."
             )
             project_overview_lines.append("")
+
+        # T-BRIX-ORG-02: Show available project/tag/group definitions
+        try:
+            org_entries = _proj_db.org_registry_list()
+            if org_entries:
+                known_projects = [e for e in org_entries if e["entry_type"] == "project"]
+                known_tags = [e for e in org_entries if e["entry_type"] == "tag"]
+                known_groups = [e for e in org_entries if e["entry_type"] == "group"]
+                if known_projects:
+                    project_overview_lines.append("## BEKANNTE PROJEKTE (für 'project' Parameter)")
+                    for p in known_projects:
+                        project_overview_lines.append(f"  - {p['name']}: {p['description']}")
+                    project_overview_lines.append("")
+                if known_tags:
+                    tag_names = ", ".join(t["name"] for t in known_tags)
+                    project_overview_lines.append(f"## BEKANNTE TAGS: {tag_names}")
+                    project_overview_lines.append("")
+                if known_groups:
+                    project_overview_lines.append("## BEKANNTE GROUPS")
+                    for g in known_groups:
+                        project_overview_lines.append(f"  - {g['name']}: {g['description']}")
+                    project_overview_lines.append("")
+            else:
+                project_overview_lines.append(
+                    "HINT: Nutze brix__org(action='seed') um Standard-Projekte/Tags/Groups zu laden."
+                )
+                project_overview_lines.append("")
+        except Exception:
+            pass
+
+        # Warn about entities without project
+        try:
+            no_proj_p = sum(
+                1 for p, c in proj_stats.items() if not p
+                for _ in range(c.get("pipelines", 0))
+            )
+            no_proj_h = sum(
+                1 for p, c in proj_stats.items() if not p
+                for _ in range(c.get("helpers", 0))
+            )
+            if no_proj_p > 0 or no_proj_h > 0:
+                project_overview_lines.append(
+                    f"⚠ {no_proj_p} Pipeline(s) und {no_proj_h} Helper haben kein Projekt. "
+                    "Nutze update_pipeline/update_helper um project zuzuordnen."
+                )
+                project_overview_lines.append("")
+        except Exception:
+            pass
     except Exception:
         pass  # Never break get_tips
 

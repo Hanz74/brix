@@ -193,6 +193,16 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
         arguments_summary=_source_summary(source, pipeline=name),
     )
 
+    # Org enforcement warnings (project/tags mandatory hints)
+    if org_project is None:
+        pipeline_warnings.append(
+            "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
+        )
+    if org_tags is None:
+        pipeline_warnings.append(
+            "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['email', 'import'])."
+        )
+
     result: dict = {
         "success": True,
         "pipeline_id": name,
@@ -618,12 +628,20 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
             }
             for p in all_pipelines
         ]
-        return {
+        result_list: dict = {
             "success": True,
             "pipelines": pipelines,
             "total": len(pipelines),
             "directory": "multi-path",
         }
+        # Hint if any pipelines lack a project
+        no_project_count = sum(1 for p in pipelines if not p.get("project"))
+        if no_project_count > 0:
+            result_list["hint"] = (
+                f"{no_project_count} pipeline(s) haben kein Projekt. "
+                "Nutze update_pipeline(project=...) um sie zuzuordnen."
+            )
+        return result_list
 
 
 async def _handle_search_pipelines(arguments: dict) -> dict:
