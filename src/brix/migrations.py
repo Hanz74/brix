@@ -173,6 +173,25 @@ MIGRATIONS: list[dict] = [
         "up": "ALTER TABLE profiles ADD COLUMN group_name TEXT DEFAULT ''",
         "down": "",
     },
+    # Missing org fields: description on pipelines/triggers, tags on brick_definitions
+    {
+        "version": 24,
+        "name": "add_description_to_pipelines",
+        "up": "ALTER TABLE pipelines ADD COLUMN description TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 25,
+        "name": "add_description_to_triggers",
+        "up": "ALTER TABLE triggers ADD COLUMN description TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 26,
+        "name": "add_tags_to_brick_definitions",
+        "up": "ALTER TABLE brick_definitions ADD COLUMN tags TEXT DEFAULT '[]'",
+        "down": "",
+    },
 ]
 
 
@@ -251,7 +270,14 @@ def run_pending_migrations(db: "BrixDB") -> list[dict]:
         try:
             with db._connect() as conn:
                 if up_sql:
-                    conn.execute(up_sql)
+                    try:
+                        conn.execute(up_sql)
+                    except Exception as sql_exc:
+                        # Idempotent: skip "duplicate column" errors from ALTER TABLE
+                        if "duplicate column" in str(sql_exc).lower():
+                            logger.info("Migration v%d: column already exists, skipping", version)
+                        else:
+                            raise
                 from brix.db import _now_iso  # avoid circular at module level
                 applied_at = _now_iso()
                 conn.execute(
