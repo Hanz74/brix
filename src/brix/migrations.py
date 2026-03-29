@@ -192,6 +192,27 @@ MIGRATIONS: list[dict] = [
         "up": "ALTER TABLE brick_definitions ADD COLUMN tags TEXT DEFAULT '[]'",
         "down": "",
     },
+    # Remaining entities: trigger_groups, alert_rules, registry_*
+    {"version": 27, "name": "add_org_to_trigger_groups_project", "up": "ALTER TABLE trigger_groups ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 28, "name": "add_org_to_trigger_groups_tags", "up": "ALTER TABLE trigger_groups ADD COLUMN tags TEXT DEFAULT '[]'", "down": ""},
+    {"version": 29, "name": "add_org_to_trigger_groups_group", "up": "ALTER TABLE trigger_groups ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 30, "name": "add_org_to_alert_rules_project", "up": "ALTER TABLE alert_rules ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 31, "name": "add_org_to_alert_rules_tags", "up": "ALTER TABLE alert_rules ADD COLUMN tags TEXT DEFAULT '[]'", "down": ""},
+    {"version": 32, "name": "add_org_to_alert_rules_group", "up": "ALTER TABLE alert_rules ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 33, "name": "add_org_to_alert_rules_description", "up": "ALTER TABLE alert_rules ADD COLUMN description TEXT DEFAULT ''", "down": ""},
+    {"version": 34, "name": "add_org_to_registry_project", "up": "ALTER TABLE registry_best_practices ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 35, "name": "add_org_to_registry_group", "up": "ALTER TABLE registry_best_practices ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 36, "name": "add_org_to_registry_error_project", "up": "ALTER TABLE registry_error_patterns ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 37, "name": "add_org_to_registry_error_group", "up": "ALTER TABLE registry_error_patterns ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 38, "name": "add_org_to_registry_lessons_project", "up": "ALTER TABLE registry_lessons_learned ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 39, "name": "add_org_to_registry_lessons_group", "up": "ALTER TABLE registry_lessons_learned ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 40, "name": "add_org_to_registry_patterns_project", "up": "ALTER TABLE registry_patterns ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 41, "name": "add_org_to_registry_patterns_group", "up": "ALTER TABLE registry_patterns ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 42, "name": "add_org_to_registry_schemas_project", "up": "ALTER TABLE registry_schemas ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 43, "name": "add_org_to_registry_schemas_group", "up": "ALTER TABLE registry_schemas ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    {"version": 44, "name": "add_org_to_registry_templates_project", "up": "ALTER TABLE registry_templates ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 45, "name": "add_org_to_registry_templates_group", "up": "ALTER TABLE registry_templates ADD COLUMN group_name TEXT DEFAULT ''", "down": "",
+    },
 ]
 
 
