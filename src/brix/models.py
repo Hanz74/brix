@@ -302,6 +302,11 @@ class Step(BaseModel):
     # Full implementation requires asyncio generator support — marked experimental.
     stream: bool = False
 
+    # Per-step unwrap_json override (T-BRIX-IMP-01).
+    # When set to True or False, overrides the server-level unwrap_json config.
+    # When None (default), falls back to the ServerConfig.unwrap_json setting.
+    unwrap_json: Optional[bool] = None
+
     @field_validator("concurrency")
     @classmethod
     def concurrency_must_be_positive(cls, v: int) -> int:

@@ -315,7 +315,10 @@ class McpRunner(BaseRunner):
                 data = combined
 
             # Auto-unwrap nested JSON strings (e.g. Cody returns {"result": "{\"result\": {...)}"})
-            if server_config.unwrap_json and isinstance(data, dict):
+            # Step-level unwrap_json (T-BRIX-IMP-01) overrides server config when set.
+            step_unwrap = getattr(step, "unwrap_json", None)
+            effective_unwrap = step_unwrap if step_unwrap is not None else server_config.unwrap_json
+            if effective_unwrap and isinstance(data, dict):
                 data = _unwrap_json_strings(data)
 
             out = {"success": True, "data": data, "duration": duration}
