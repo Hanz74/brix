@@ -299,6 +299,53 @@ class PipelineEngine:
             logger.warning("Profile merge failed for step '%s': %s", step.id, _profile_err)
             return step
 
+    def _apply_brick_defaults(self, step: "Step") -> "Step":
+        """Merge config_defaults from a custom brick into step.params (T-BRIX-IMP-02).
+
+        When a step type is a custom brick registered in the DB, the brick may
+        declare ``config_defaults`` (stored as ``config_schema`` in the DB row as
+        a flat key→value JSON object).  These defaults act as a baseline for
+        ``step.params``: the step's own params always win, but any key present in
+        the brick's defaults that is absent from step.params is filled in.
+
+        Returns a new Step instance with the merged params, or the original step
+        if the brick has no defaults or cannot be loaded.
+        """
+        # Only relevant for dot-notation custom brick types
+        if "." not in step.type:
+            return step
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _db = _BrixDB()
+            row = _db.brick_definitions_get(step.type)
+            if not row:
+                return step
+            raw_schema = row.get("config_schema", "{}")
+            if isinstance(raw_schema, str):
+                import json as _json
+                try:
+                    brick_defaults: dict = _json.loads(raw_schema)
+                except Exception:
+                    return step
+            elif isinstance(raw_schema, dict):
+                brick_defaults = raw_schema
+            else:
+                return step
+            if not brick_defaults:
+                return step
+            # Merge: brick defaults as base, step.params override
+            merged_params = {**brick_defaults, **(step.params or {})}
+            if merged_params == (step.params or {}):
+                return step  # Nothing new to add
+            # Use model_construct to bypass Literal validation so custom brick
+            # types (e.g. "cody.call") that are not in the Literal enum work.
+            step_dict = step.__dict__.copy()
+            step_dict["params"] = merged_params
+            return step.model_copy(update={"params": merged_params})
+        except Exception as _brick_err:
+            logger.warning("Brick defaults merge failed for step '%s': %s", step.id, _brick_err)
+            return step
+
     def _resolve_runner(self, step_type: str, jinja_ctx: "dict | None" = None) -> "BaseRunner | None":
         """Resolve a runner for a given step type using the Brick-First lookup chain.
 
@@ -500,6 +547,20 @@ class PipelineEngine:
                 )
             except Exception:
                 pass  # Never crash pipeline over persistence
+
+            # --- Auto-Annotation: project from pipeline metadata (T-BRIX-IMP-04) ---
+            try:
+                _pipeline_row = history._db.get_pipeline(pipeline.name)
+                if _pipeline_row:
+                    _pipeline_project = _pipeline_row.get("project", "")
+                    if _pipeline_project:
+                        import json as _json_ann
+                        history._db.annotate_run(
+                            context.run_id,
+                            _json_ann.dumps({"project": _pipeline_project}),
+                        )
+            except Exception:
+                pass  # Never crash pipeline over annotation
 
             # --- Helper registry resolution (T-BRIX-V4-BUG-12) ---
             # Resolve step.helper → step.script using the HelperRegistry and
@@ -716,6 +777,9 @@ class PipelineEngine:
 
                         # --- Profile / Mixin (T-BRIX-DB-23) ---
                         step = self._apply_profile(step)
+
+                        # --- Brick config_defaults merge (T-BRIX-IMP-02) ---
+                        step = self._apply_brick_defaults(step)
 
                         # Build an early jinja context for dynamic dispatch type rendering
                         _early_jinja_ctx = context.to_jinja_context() if "{{" in step.type else None
@@ -1992,6 +2056,9 @@ class PipelineEngine:
 
             # --- Profile / Mixin (T-BRIX-DB-23) ---
             step = self._apply_profile(step)
+
+            # --- Brick config_defaults merge (T-BRIX-IMP-02) ---
+            step = self._apply_brick_defaults(step)
 
             # Build an early jinja context for dynamic dispatch type rendering
             _early_jinja_ctx_dag = context.to_jinja_context() if "{{" in step.type else None
