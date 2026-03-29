@@ -8,6 +8,7 @@ HTTP_GET = BrickSchema(
     description="Make an HTTP GET request to a URL and return the response.",
     when_to_use="Fetching data from REST APIs, downloading JSON, polling status endpoints.",
     category="http",
+    system=True,
     config_schema={
         "url": BrickParam(type="string", description="The URL to request", required=True),
         "headers": BrickParam(type="object", description="HTTP headers as key-value pairs"),
@@ -23,6 +24,7 @@ HTTP_POST = BrickSchema(
     description="Make an HTTP POST request with a JSON or text body.",
     when_to_use="Sending data to REST APIs, triggering webhooks, uploading content.",
     category="http",
+    system=True,
     config_schema={
         "url": BrickParam(type="string", description="The URL to request", required=True),
         "headers": BrickParam(type="object", description="HTTP headers"),
@@ -37,6 +39,7 @@ RUN_CLI = BrickSchema(
     description="Execute a shell command and return stdout. Always uses argument list (shell=False) for security.",
     when_to_use="Running system commands: ffmpeg, pandoc, docker exec, any CLI tool.",
     category="cli",
+    system=True,
     config_schema={
         "args": BrickParam(
             type="array",
@@ -55,6 +58,7 @@ PYTHON_SCRIPT = BrickSchema(
     description="Run a Python script file. Script reads JSON from argv[1] or stdin, writes JSON to stdout.",
     when_to_use="Data transformation, filtering, file processing — anything that needs Python logic.",
     category="python",
+    system=True,
     config_schema={
         "script": BrickParam(type="string", description="Path to Python script file", required=True),
         "params": BrickParam(type="object", description="Parameters passed as JSON to the script"),
@@ -68,6 +72,7 @@ FILE_READ = BrickSchema(
     description="Read a file and return its content.",
     when_to_use="Loading configuration files, reading input data, accessing local files.",
     category="file",
+    system=True,
     config_schema={
         "path": BrickParam(type="string", description="File path to read", required=True),
         "encoding": BrickParam(type="string", description="Text encoding", default="utf-8"),
@@ -81,6 +86,7 @@ FILE_WRITE = BrickSchema(
     description="Write content to a file.",
     when_to_use="Saving results, exporting data, creating output files.",
     category="file",
+    system=True,
     config_schema={
         "path": BrickParam(type="string", description="File path to write", required=True),
         "content": BrickParam(type="string", description="Content to write", required=True),
@@ -94,6 +100,7 @@ MCP_CALL = BrickSchema(
     description="Call a tool on a registered MCP server via stdio protocol.",
     when_to_use="Interacting with M365, Docker, n8n, or any MCP-compatible service.",
     category="mcp",
+    system=True,
     config_schema={
         "server": BrickParam(type="string", description="MCP server name from servers.yaml", required=True),
         "tool": BrickParam(type="string", description="Tool name to call", required=True),
@@ -108,6 +115,7 @@ FILTER = BrickSchema(
     description="Filter a list using a Jinja2 boolean expression. No Python script needed.",
     when_to_use="Filtering lists by condition: only PDFs, only items matching a keyword, removing empty entries.",
     category="transform",
+    system=True,
     config_schema={
         "input": BrickParam(type="array", description="List to filter", required=True),
         "where": BrickParam(
@@ -126,6 +134,7 @@ TRANSFORM = BrickSchema(
     description="Transform data using a Jinja2 expression. Maps, renames, restructures.",
     when_to_use="Renaming fields, extracting nested values, reshaping data between steps.",
     category="transform",
+    system=True,
     config_schema={
         "input": BrickParam(type="object", description="Data to transform"),
         "expression": BrickParam(type="string", description="Jinja2 expression for transformation", required=True),
@@ -138,6 +147,7 @@ SUB_PIPELINE = BrickSchema(
     description="Run another saved pipeline as a sub-step.",
     when_to_use="Composing complex workflows from reusable pipeline building blocks.",
     category="pipeline",
+    system=True,
     config_schema={
         "pipeline": BrickParam(type="string", description="Pipeline name or path", required=True),
         "params": BrickParam(type="object", description="Input parameters for the sub-pipeline"),
@@ -159,6 +169,7 @@ SPECIALIST = BrickSchema(
         "declarative field extraction + validation pipeline step."
     ),
     category="transform",
+    system=True,
     config_schema={
         "input_field": BrickParam(
             type="string",
@@ -218,6 +229,7 @@ SOURCE_FETCH_EMAILS = BrickSchema(
         "When the pipeline receives emails via webhook/trigger."
     ),
     category="source",
+    system=True,
     aliases=[
         "get emails", "read inbox", "fetch mail", "mails abrufen", "postfach lesen",
         "outlook mails", "gmail fetch", "e-mails holen", "posteingang", "inbox lesen",
@@ -276,6 +288,7 @@ SOURCE_FETCH_FILES = BrickSchema(
         "When the source is an email attachment (use source.fetch_emails + attachment download instead)."
     ),
     category="source",
+    system=True,
     aliases=[
         "list files", "scan folder", "dateien abrufen", "dateien holen", "dateien auflisten",
         "onedrive files", "local files", "ordner scannen", "verzeichnis lesen",
@@ -335,6 +348,7 @@ SOURCE_HTTP_FETCH = BrickSchema(
         "When the API requires OAuth2 flows that are already wrapped in an MCP connector."
     ),
     category="source",
+    system=True,
     aliases=[
         "http get", "api call", "rest api", "fetch url", "http request", "api anfrage",
         "webhook", "json api", "endpoint", "http fetch", "url abrufen", "api abrufen",
@@ -398,6 +412,7 @@ CONVERT_TO_MARKDOWN = BrickSchema(
         "When the document is an image and you need OCR with spatial layout (use convert.extract_text with method=ocr)."
     ),
     category="convert",
+    system=True,
     aliases=[
         "pdf to markdown", "docx to markdown", "to markdown", "dokument konvertieren",
         "markitdown", "pdf text", "dokument zu text", "convert document", "pdf lesen",
@@ -437,6 +452,7 @@ CONVERT_TO_JSON = BrickSchema(
         "When you need only selected columns from a large CSV (write a Python helper instead)."
     ),
     category="convert",
+    system=True,
     aliases=[
         "csv to json", "xml to json", "yaml to json", "parse csv", "csv parsen",
         "structured data", "csv lesen", "xml parsen", "config laden", "datei parsen",
@@ -495,6 +511,7 @@ CONVERT_EXTRACT_TEXT = BrickSchema(
         "When you need to process Excel sheets (use convert.to_json with input_format=csv after export)."
     ),
     category="convert",
+    system=True,
     aliases=[
         "extract text", "text extrahieren", "ocr", "pdf text extrahieren", "text aus pdf",
         "text aus bild", "image ocr", "bild zu text", "docx text", "text lesen",
@@ -553,6 +570,7 @@ LLM_EXTRACT = BrickSchema(
         "When the text is too long for a single LLM context window without chunking."
     ),
     category="llm",
+    system=True,
     aliases=[
         "llm extraction", "ki extraktion", "daten extrahieren", "felder extrahieren",
         "structured extraction", "field extraction", "extract fields", "llm parsen",
@@ -618,6 +636,7 @@ LLM_CLASSIFY = BrickSchema(
         "When you have a training dataset — consider a fine-tuned classifier instead."
     ),
     category="llm",
+    system=True,
     aliases=[
         "classify", "kategorisieren", "klassifizieren", "einordnen", "document classification",
         "email classification", "intent detection", "tagging", "kategorien", "klasse bestimmen",
@@ -673,6 +692,7 @@ DB_INGEST = BrickSchema(
         "When writing to external SaaS databases via API — use mcp_call for that."
     ),
     category="db",
+    system=True,
     aliases=[
         "datenbank schreiben", "db insert", "db upsert", "in datenbank speichern",
         "datensatz speichern", "record speichern", "insert", "upsert", "ingest",
@@ -849,6 +869,7 @@ ACTION_MOVE_FILE = BrickSchema(
         "When bulk moving thousands of files — write a Python helper with shutil.copytree instead."
     ),
     category="action",
+    system=True,
     aliases=[
         "datei verschieben", "datei kopieren", "move file", "copy file", "archivieren",
         "file move", "file copy", "verschieben", "kopieren", "umbenennen",

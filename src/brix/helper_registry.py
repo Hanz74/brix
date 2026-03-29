@@ -213,43 +213,20 @@ class HelperRegistry:
     def get(self, name: str) -> Optional[HelperEntry]:
         """Retrieve a helper entry by name or UUID, or ``None`` if not found.
 
-        DB-first, with YAML registry as fallback.
+        DB only — no YAML fallback.
         """
-        # Try DB first
         db_row = self._db.get_helper(name)
         if db_row is not None:
             return self._db_helper_to_entry(db_row)
-
-        # Fallback: YAML registry
-        data = self._load()
-        raw = data.get(name)
-        if raw is not None:
-            return HelperEntry.from_dict(raw)
-        # UUID fallback in YAML
-        for entry_data in data.values():
-            if isinstance(entry_data, dict) and entry_data.get("id") == name:
-                return HelperEntry.from_dict(entry_data)
         return None
 
     def list_all(self) -> list[HelperEntry]:
-        """Return all registered helpers sorted by name. DB-first."""
-        # Try DB first
+        """Return all registered helpers sorted by name. DB only."""
         db_helpers = self._db.list_helpers()
-        if db_helpers:
-            entries = []
-            for row in db_helpers:
-                try:
-                    entries.append(self._db_helper_to_entry(row))
-                except (KeyError, TypeError):
-                    continue
-            return sorted(entries, key=lambda e: e.name)
-
-        # Fallback: YAML
-        data = self._load()
         entries = []
-        for raw in data.values():
+        for row in db_helpers:
             try:
-                entries.append(HelperEntry.from_dict(raw))
+                entries.append(self._db_helper_to_entry(row))
             except (KeyError, TypeError):
                 continue
         return sorted(entries, key=lambda e: e.name)

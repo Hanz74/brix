@@ -124,48 +124,27 @@ class PipelineStore:
         return path
 
     def load(self, name: str) -> Pipeline:
-        """Load a pipeline by name.
+        """Load a pipeline by name — DB only.
 
-        Filesystem-first when file exists (ensures fresh writes are picked up),
-        then falls back to DB content for pipelines not on disk.
+        Reads exclusively from the DB (yaml_content column).  Filesystem is no
+        longer consulted so that every write that goes through save() (which
+        persists to DB) is immediately visible without directory scanning.
         """
-        # Try filesystem first
-        for search_dir in self.search_paths:
-            for ext in [".yaml", ".yml"]:
-                path = Path(search_dir) / f"{name}{ext}"
-                if path.exists():
-                    return self.loader.load(str(path))
-
-        # Fallback: DB
         yaml_content = self._db.get_pipeline_yaml_content(name)
         if yaml_content:
             return self.loader.load_from_string(yaml_content)
 
         raise FileNotFoundError(
-            f"Pipeline '{name}' not found in filesystem or DB: {[str(p) for p in self.search_paths]}"
+            f"Pipeline '{name}' not found in DB"
         )
 
     def load_raw(self, name: str) -> dict:
-        """Load pipeline as raw dict (for inspection/modification).
-
-        Filesystem-first for load_raw to ensure freshly written files
-        are picked up immediately (important for MCP handlers that write
-        directly to filesystem). Falls back to DB if not on filesystem.
-        """
-        # Try filesystem first (ensures fresh writes are picked up)
-        for search_dir in self.search_paths:
-            for ext in [".yaml", ".yml"]:
-                path = Path(search_dir) / f"{name}{ext}"
-                if path.exists():
-                    with open(path) as f:
-                        return yaml.safe_load(f) or {}
-
-        # Fallback: DB
+        """Load pipeline as raw dict (for inspection/modification) — DB only."""
         yaml_content = self._db.get_pipeline_yaml_content(name)
         if yaml_content:
             return yaml.safe_load(yaml_content) or {}
 
-        raise FileNotFoundError(f"Pipeline '{name}' not found")
+        raise FileNotFoundError(f"Pipeline '{name}' not found in DB")
 
     def exists(self, name: str) -> bool:
         """Check if a pipeline exists in DB or any search path."""
@@ -182,49 +161,16 @@ class PipelineStore:
         return False
 
     def list_all(self) -> list[dict]:
-        """List pipelines from filesystem first, then DB for any not found on disk.
+        """List all pipelines from DB only.
 
-        Filesystem takes precedence (fresh writes), DB provides additional pipelines
-        that don't have corresponding files.
+        The filesystem is no longer scanned; all pipelines are read from the
+        DB (yaml_content column).  This ensures a single authoritative source
+        and avoids returning test-only files that live in mounted directories.
         """
-        seen: set[str] = set()
         results = []
-
-        # Primary: scan filesystem (search_paths)
-        for search_dir in self.search_paths:
-            search_dir = Path(search_dir)
-            if not search_dir.exists():
-                continue
-            files = sorted(search_dir.glob("*.yaml")) + sorted(search_dir.glob("*.yml"))
-            for f in files:
-                if f.stem in seen:
-                    continue
-                seen.add(f.stem)
-                try:
-                    pipeline = self.loader.load(str(f))
-                    results.append({
-                        "name": pipeline.name,
-                        "version": pipeline.version,
-                        "description": pipeline.description or "",
-                        "steps": len(pipeline.steps),
-                        "path": str(f),
-                    })
-                except Exception as e:
-                    results.append({
-                        "name": f.stem,
-                        "version": "?",
-                        "description": f"Error: {e}",
-                        "steps": 0,
-                        "path": str(f),
-                    })
-
-        # Secondary: DB pipelines not on filesystem (DB-only content)
         db_pipelines = self._db.list_pipelines()
         for p in db_pipelines:
             name = p["name"]
-            if name in seen:
-                continue
-            seen.add(name)
             yaml_content = self._db.get_pipeline_yaml_content(name)
             if yaml_content:
                 try:
@@ -244,6 +190,9 @@ class PipelineStore:
                         "steps": 0,
                         "path": p.get("path", ""),
                     })
+            else:
+                # Pipeline row exists but has no yaml_content — skip (no content to show)
+                pass
 
         return results
 

@@ -89,12 +89,14 @@ class TestPipelineStoreSaveLoad:
         assert pipeline.name == "test-pipeline"  # name from dict content
 
     def test_load_yml_extension(self, tmp_path, isolated_db):
-        """load() also finds .yml files."""
+        """load() finds a pipeline stored in DB (DB-only path, .yml extension no longer needed)."""
         s = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path], db=isolated_db)
-        yml_path = tmp_path / "yml-ext.yml"
-        yml_path.write_text(yaml.dump(MINIMAL_PIPELINE))
+        # Store via save() which persists to DB
+        data = dict(MINIMAL_PIPELINE)
+        data["name"] = "yml-ext"
+        s.save(data)
         pipeline = s.load("yml-ext")
-        assert pipeline.name == "test-pipeline"
+        assert pipeline.name == "yml-ext"
 
 
 class TestPipelineStoreLoadRaw:
@@ -164,10 +166,15 @@ class TestPipelineStoreListAll:
         assert pipeline_entry["steps"] == 1
 
     def test_list_all_broken_pipeline_still_listed(self, tmp_path, isolated_db):
-        """A broken YAML still appears in list_all with error in description."""
+        """A broken YAML stored in DB still appears in list_all with error in description."""
         s = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path], db=isolated_db)
-        # Write invalid YAML
-        (tmp_path / "broken.yaml").write_text("name: broken\nsteps: not-a-list\n")
+        # Store invalid YAML directly in DB
+        isolated_db.upsert_pipeline(
+            name="broken",
+            path="",
+            requirements=[],
+            yaml_content="name: broken\nsteps: not-a-list\n",
+        )
 
         results = s.list_all()
         assert len(results) == 1

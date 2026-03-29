@@ -149,7 +149,32 @@ class BrickRegistry:
             return brick
 
     def list_all(self) -> list[BrickSchema]:
-        """List all registered bricks."""
+        """List all registered bricks.
+
+        System bricks are served from the startup cache (they never change).
+        Custom bricks (system=False) are re-read from the DB on every call so
+        that newly created bricks are visible without a registry restart.
+        """
+        if self._db is not None:
+            try:
+                rows = self._db.brick_definitions_list()
+                for row in rows:
+                    if row.get("system", 1):
+                        # System brick — already in cache, skip re-parse
+                        continue
+                    # Custom brick — update in-memory cache with fresh DB data
+                    try:
+                        brick = _row_to_brick(row)
+                        self._bricks[brick.name] = brick
+                    except Exception as e:
+                        logger.warning(
+                            "Could not reload custom brick '%s' from DB: %s",
+                            row.get("name"),
+                            e,
+                        )
+            except Exception as e:
+                logger.warning("Could not reload custom bricks from DB: %s", e)
+
         return list(self._bricks.values())
 
     def list_by_category(self, category: str) -> list[BrickSchema]:

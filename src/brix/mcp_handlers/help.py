@@ -33,20 +33,15 @@ def _get_help_topics() -> tuple[dict[str, str], dict[str, str]]:
 
 
 def _recent_and_custom_bricks(all_bricks: list) -> list[str]:
-    """Highlight custom bricks and recently added bricks in get_tips."""
+    """Highlight custom bricks and recently added bricks in get_tips.
+
+    Fix 4: list_all() now reloads custom bricks from DB on every call (Fix 1),
+    so we derive custom bricks directly from the already-fresh all_bricks list
+    instead of a separate raw DB query.
+    """
     lines: list[str] = []
-    # Read custom bricks directly from DB (registry cache may not include recently added ones)
-    custom_from_db: list[dict] = []
-    try:
-        from brix.db import BrixDB as _CustDB
-        _cdb = _CustDB()
-        conn = _cdb._connect()
-        rows = conn.execute("SELECT name, namespace, description FROM brick_definitions WHERE system = 0").fetchall()
-        custom_from_db = [{"name": r[0], "namespace": r[1] or "", "description": r[2] or ""} for r in rows]
-        conn.close()
-    except Exception:
-        pass
-    custom = custom_from_db
+    # Custom bricks: system=False in the already-refreshed all_bricks list
+    custom = [b for b in all_bricks if not getattr(b, "system", True)]
     if custom:
         lines.append("## CUSTOM BRICKS (vom User/LLM erstellt)")
         for b in custom:

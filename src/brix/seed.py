@@ -22,20 +22,21 @@ _SEED_FILE = Path(__file__).parent.parent.parent / "seed-data.json"
 def seed_if_empty(db: BrixDB) -> dict[str, int]:
     """Seed all DB-First tables if they are empty.
 
-    Reads from seed-data.json when available; falls back to code imports
-    (legacy path) for the transition period.
+    Reads exclusively from seed-data.json. Raises FileNotFoundError when the
+    seed file is missing — no silent fallback to code imports.
 
     Returns a dict with the count of rows seeded per table.
     Skips any table that already has data (idempotent).
     """
-    if _SEED_FILE.exists():
-        logger.debug("seed_if_empty: reading from %s", _SEED_FILE)
-        counts = _seed_from_file(db, _SEED_FILE)
-    else:
-        logger.warning(
-            "seed-data.json not found at %s — falling back to code imports", _SEED_FILE
+    if not _SEED_FILE.exists():
+        raise FileNotFoundError(
+            f"seed-data.json not found at {_SEED_FILE}. "
+            "Cannot seed the database without the seed file. "
+            "Run 'python -m brix.export_seed_data' to regenerate it."
         )
-        counts = _seed_from_code(db)
+
+    logger.debug("seed_if_empty: reading from %s", _SEED_FILE)
+    counts = _seed_from_file(db, _SEED_FILE)
 
     counts["system_pipelines"] = _seed_system_pipelines()
 
@@ -377,11 +378,26 @@ _HELPER_SEARCH_PATHS = [
 ]
 
 
+# Pipeline name prefixes that indicate test/development artifacts — never import these.
+_TEST_PIPELINE_PREFIXES = (
+    "test", "xtest", "pipe_", "uuid_", "assert", "mock", "fail", "compat",
+    "desc_", "listed_", "exposed", "my_", "no_", "same_", "tracked", "upd_",
+    "update_", "rmstep", "step_", "to_delete",
+)
+
+
+def _is_test_pipeline(name: str) -> bool:
+    """Return True if a pipeline name looks like a test/development artifact."""
+    name_lower = name.lower()
+    return any(name_lower.startswith(prefix) for prefix in _TEST_PIPELINE_PREFIXES)
+
+
 def import_pipeline_content(db: BrixDB) -> int:
     """Import pipeline YAML content from filesystem into DB.
 
     Only imports if the DB has pipelines without yaml_content.
     Idempotent: skips pipelines that already have content.
+    Test-pipeline names (see _TEST_PIPELINE_PREFIXES) are never imported.
     """
     import yaml as _yaml
 
@@ -401,6 +417,9 @@ def import_pipeline_content(db: BrixDB) -> int:
                 if name in seen:
                     continue
                 seen.add(name)
+                if _is_test_pipeline(name):
+                    logger.debug("Skipping test pipeline '%s' during seed import", name)
+                    continue
                 try:
                     content = f.read_text(encoding="utf-8")
                     data = _yaml.safe_load(content) or {}
