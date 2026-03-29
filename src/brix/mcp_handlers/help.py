@@ -32,6 +32,60 @@ def _get_help_topics() -> tuple[dict[str, str], dict[str, str]]:
     return topics, descriptions
 
 
+def _recent_and_custom_bricks(all_bricks: list) -> list[str]:
+    """Highlight custom bricks and recently added bricks in get_tips."""
+    lines: list[str] = []
+    # Read custom bricks directly from DB (registry cache may not include recently added ones)
+    custom_from_db: list[dict] = []
+    try:
+        from brix.db import BrixDB as _CustDB
+        _cdb = _CustDB()
+        conn = _cdb._connect()
+        rows = conn.execute("SELECT name, namespace, description FROM brick_definitions WHERE system = 0").fetchall()
+        custom_from_db = [{"name": r[0], "namespace": r[1] or "", "description": r[2] or ""} for r in rows]
+        conn.close()
+    except Exception:
+        pass
+    custom = custom_from_db
+    if custom:
+        lines.append("## CUSTOM BRICKS (vom User/LLM erstellt)")
+        for b in custom:
+            ns = b.get("namespace", "") if isinstance(b, dict) else getattr(b, "namespace", "")
+            desc = (b.get("description", "") if isinstance(b, dict) else getattr(b, "description", ""))[:60]
+            name = b.get("name", "") if isinstance(b, dict) else b.name
+            lines.append(f"  - {name} [{ns}] — {desc}")
+        lines.append(f"  Nutze diese BEVOR du einen neuen Helper schreibst!")
+        lines.append("")
+
+    # Recently added (last 7 days) — check created_at if available
+    try:
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        recent = []
+        for b in all_bricks:
+            created = getattr(b, "created_at", None)
+            if created:
+                try:
+                    if isinstance(created, str):
+                        # Parse ISO format
+                        dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    else:
+                        dt = created
+                    if dt > cutoff:
+                        recent.append(b)
+                except (ValueError, TypeError):
+                    pass
+        if recent:
+            lines.append("## NEU HINZUGEFÜGT (letzte 7 Tage)")
+            for b in recent:
+                lines.append(f"  - {b.name} — {getattr(b, 'description', '')[:60]}")
+            lines.append("")
+    except Exception:
+        pass
+
+    return lines
+
+
 async def _handle_get_tips(arguments: dict) -> dict:
     """Return usage tips and best practices for Brix."""
     # Gather brick categories
@@ -161,6 +215,8 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "## VERFÜGBARE BRICK-KATEGORIEN",
         *category_lines,
         f"  Total bricks: {len(all_bricks)}",
+        "",
+        *_recent_and_custom_bricks(all_bricks),
         "",
         "## GESPEICHERTE PIPELINES",
         (
