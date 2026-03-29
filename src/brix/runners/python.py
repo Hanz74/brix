@@ -51,9 +51,21 @@ class PythonRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
-        script = getattr(step, 'script', None)
+        script = getattr(step, 'script', None) or getattr(step, 'helper', None)
         if not script:
-            return {"success": False, "error": "Python step needs 'script' field", "duration": 0.0}
+            return {"success": False, "error": "Python step needs 'script' or 'helper' field", "duration": 0.0}
+
+        # Resolve helper name to path via DB (helper_registry)
+        # If script doesn't look like a path, try the registry
+        if not script.startswith("/") and not script.startswith("./") and "/" not in script and not script.endswith(".py"):
+            try:
+                from brix.helper_registry import HelperRegistry
+                registry = HelperRegistry()
+                entry = registry.get(script)
+                if entry and entry.get("script"):
+                    script = entry["script"]
+            except Exception:
+                pass  # Fall through to original behavior
 
         # Build the command: python3 <script> <json_params>
         # Params are passed as JSON string in sys.argv[1]
