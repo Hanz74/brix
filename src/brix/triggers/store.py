@@ -84,6 +84,7 @@ class TriggerStore:
         project: Optional[str] = None,
         tags: Optional[list] = None,
         group_name: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> Optional[dict]:
         """Partially update a trigger. Returns updated dict or None if not found."""
         return self._db.trigger_update(
@@ -94,6 +95,7 @@ class TriggerStore:
             project=project,
             tags=tags,
             group_name=group_name,
+            description=description,
         )
 
     def delete(self, name: str) -> bool:

@@ -3257,6 +3257,7 @@ class BrixDB:
         project: Optional[str] = None,
         tags: Optional[list] = None,
         group_name: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> Optional[dict]:
         """Partially update a trigger. Returns updated dict or None if not found."""
         existing = self.trigger_get(name)
@@ -3269,6 +3270,8 @@ class BrixDB:
             updates["enabled"] = int(enabled)
         if pipeline is not None:
             updates["pipeline"] = pipeline
+        if description is not None:
+            updates["description"] = description
 
         with self._connect() as conn:
             if project is not None and self._column_exists(conn, "triggers", "project"):

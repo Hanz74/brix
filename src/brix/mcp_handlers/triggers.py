@@ -103,6 +103,7 @@ async def _handle_trigger_update(arguments: dict) -> dict:
         project=org_project,
         tags=org_tags,
         group_name=org_group,
+        description=arguments.get("description"),
     )
     if updated is None:
         return {"success": False, "error": f"Trigger '{name}' not found."}
