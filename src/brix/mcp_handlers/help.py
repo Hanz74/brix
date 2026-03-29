@@ -188,7 +188,27 @@ async def _handle_get_tips(arguments: dict) -> dict:
     except Exception:
         pass  # Never break get_tips
 
+    # T-BRIX-INT-01: Show integrity issues at the top of tips
+    integrity_alert_lines: list[str] = []
+    try:
+        from brix.db import BrixDB as _BrixDB
+        from brix.integrity import run_integrity_checks as _run_integrity
+        _int_db = _BrixDB()
+        _int_result = _run_integrity(_int_db)
+        if not _int_result["ok"]:
+            _n_issues = len(_int_result["issues"])
+            integrity_alert_lines.append(
+                f"⚠ INTEGRITY: {_n_issues} Problem(e) gefunden. "
+                "Führe brix__run_integrity_check aus für Details."
+            )
+            for _iss in _int_result["issues"]:
+                integrity_alert_lines.append(f"  - [{_iss['code']}] {_iss['message']}")
+            integrity_alert_lines.append("")
+    except Exception:
+        pass  # Never break get_tips
+
     tips = [
+        *integrity_alert_lines,
         *legacy_alert_lines,
         *project_overview_lines,
         "=== Brix Quick Reference ===",

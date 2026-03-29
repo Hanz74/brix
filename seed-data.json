@@ -15,7 +15,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "action.move_file",
@@ -97,7 +100,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "action.notify",
@@ -171,7 +177,10 @@
       ],
       "related_connector": "mattermost",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "action.respond",
@@ -188,7 +197,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "cody.batch",
@@ -207,7 +219,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "cody.call",
@@ -226,7 +241,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "cody.gatekeeper",
@@ -246,7 +264,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "cody.notify",
@@ -265,7 +286,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "cody.read",
@@ -284,7 +308,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "cody.task_start",
@@ -303,7 +330,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "convert.extract_text",
@@ -375,7 +405,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "convert.to_json",
@@ -455,7 +488,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "convert.to_markdown",
@@ -501,7 +537,10 @@
       ],
       "related_connector": "markitdown",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "db.ingest",
@@ -570,7 +609,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "db.query",
@@ -634,7 +676,10 @@
       ],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "db.upsert",
@@ -651,7 +696,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "extract.specialist",
@@ -668,7 +716,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "file.read_base64",
@@ -692,7 +743,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "file.write_text",
@@ -716,7 +770,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "file_read",
@@ -755,7 +812,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "file_write",
@@ -794,7 +854,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "filter",
@@ -826,7 +889,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.aggregate",
@@ -843,7 +909,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.choose",
@@ -860,7 +929,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.dedup",
@@ -877,7 +949,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.diff",
@@ -894,7 +969,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.error_handler",
@@ -911,7 +989,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.filter",
@@ -928,7 +1009,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.flatten",
@@ -945,7 +1029,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.merge",
@@ -962,7 +1049,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.parallel",
@@ -979,7 +1069,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.pipeline",
@@ -996,7 +1089,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.pipeline_group",
@@ -1013,7 +1109,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.repeat",
@@ -1030,7 +1129,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.set",
@@ -1047,7 +1149,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.switch",
@@ -1064,7 +1169,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.transform",
@@ -1081,7 +1189,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.validate",
@@ -1098,7 +1209,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "flow.wait",
@@ -1115,7 +1229,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "http.request",
@@ -1132,7 +1249,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "http_get",
@@ -1171,7 +1291,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "http_post",
@@ -1217,7 +1340,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "llm.batch",
@@ -1234,7 +1360,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "llm.classify",
@@ -1307,7 +1436,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "llm.extract",
@@ -1394,7 +1526,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "markitdown.convert",
@@ -1411,7 +1546,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "mcp.call",
@@ -1428,7 +1566,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "mcp_call",
@@ -1474,7 +1615,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "python_script",
@@ -1513,7 +1657,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "run_cli",
@@ -1545,7 +1692,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "script.cli",
@@ -1562,7 +1712,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "script.python",
@@ -1579,7 +1732,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "source.fetch",
@@ -1596,7 +1752,10 @@
       "examples": [],
       "related_connector": "",
       "system": 1,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "source.fetch_emails",
@@ -1677,7 +1836,10 @@
       ],
       "related_connector": "outlook",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "source.fetch_files",
@@ -1759,7 +1921,10 @@
       ],
       "related_connector": "onedrive",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "source.http_fetch",
@@ -1849,7 +2014,10 @@
       ],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "specialist",
@@ -1899,7 +2067,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "sub_pipeline",
@@ -1931,7 +2102,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     },
     {
       "name": "transform",
@@ -1963,7 +2137,10 @@
       "examples": [],
       "related_connector": "",
       "system": 0,
-      "org_tags": "[]"
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
     }
   ],
   "connector_definitions": [
@@ -2890,6 +3067,17 @@
               }
             },
             "additionalProperties": true
+          },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung (PFLICHT)."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags (PFLICHT)."
           }
         },
         "required": [
@@ -5227,7 +5415,7 @@
           },
           "description": {
             "type": "string",
-            "description": "Optional human-readable description."
+            "description": "Beschreibung der Variable (PFLICHT)."
           },
           "source": {
             "type": "object",
@@ -5247,6 +5435,17 @@
               }
             },
             "additionalProperties": true
+          },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung (PFLICHT). Bekannte: buddy, cody, utility, system."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags (PFLICHT). Bekannte: intake, extraction, monitoring, scheduled, one-shot, batch."
           }
         },
         "required": [

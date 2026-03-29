@@ -890,6 +890,19 @@ async def run_mcp_server() -> None:
     except Exception as _seed_err:
         logger.warning("DB seeding failed (non-fatal): %s", _seed_err)
 
+    # T-BRIX-INT-01: Run integrity checks after seeding
+    try:
+        from brix.integrity import run_integrity_checks
+        _integrity_db = BrixDB()
+        _integrity_result = run_integrity_checks(_integrity_db)
+        if not _integrity_result["ok"]:
+            _n = len(_integrity_result["issues"])
+            logger.warning(
+                "integrity: %d issue(s) detected at startup (see logs above)", _n
+            )
+    except Exception as _int_err:
+        logger.warning("integrity checks failed (non-fatal): %s", _int_err)
+
     server = create_server()
     # T-BRIX-V6-BUG-01: Auto-start scheduler if enabled triggers exist
     await _auto_start_scheduler_if_needed()
