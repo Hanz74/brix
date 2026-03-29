@@ -145,6 +145,27 @@ async def _handle_register_helper(arguments: dict) -> dict:
         input_schema=arguments.get("input_schema") or {},
         output_schema=arguments.get("output_schema") or {},
     )
+    # T-BRIX-BUG-01: Persist org-fields (project/tags/group) to DB
+    org_project = arguments.get("project") or None
+    org_tags = arguments.get("tags") or None
+    org_group = arguments.get("group") or None
+    if org_project is not None or org_tags is not None or org_group is not None:
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _org_db = _BrixDB()
+            _org_db.upsert_helper(
+                name=name,
+                script_path=script,
+                description=arguments.get("description", ""),
+                requirements=arguments.get("requirements") or [],
+                input_schema=arguments.get("input_schema") or {},
+                output_schema=arguments.get("output_schema") or {},
+                project=org_project,
+                tags=org_tags,
+                group_name=org_group,
+            )
+        except Exception:
+            pass  # Non-fatal: org-fields not saved but helper is registered
     _audit_db.write_audit_entry(
         tool="brix__register_helper",
         source=source,
@@ -338,16 +359,24 @@ async def _handle_update_helper(arguments: dict) -> dict:
             return {"success": False, "error": f"Helper '{name}' not found in registry"}
 
     # Update project/tags/group_name in DB
+    # T-BRIX-BUG-02: Read existing DB row to preserve fields not being updated
     if has_org_update:
         try:
             from brix.db import BrixDB as _BrixDB
             _org_db = _BrixDB()
-            # Get existing script_path if not in update_fields
-            existing = registry.get(name)
-            script_p = update_fields.get("script", str(existing.script) if existing else "")
+            existing_reg = registry.get(name)
+            existing_db = _org_db.get_helper(name) if existing_reg else None
+            script_p = update_fields.get("script", str(existing_reg.script) if existing_reg else "")
             _org_db.upsert_helper(
                 name=name,
                 script_path=script_p,
+                description=update_fields.get(
+                    "description",
+                    existing_db.get("description", "") if existing_db else "",
+                ),
+                requirements=existing_db.get("requirements") if existing_db else [],
+                input_schema=existing_db.get("input_schema") if existing_db else {},
+                output_schema=existing_db.get("output_schema") if existing_db else {},
                 project=org_project,
                 tags=org_tags,
                 group_name=org_group,
