@@ -3072,9 +3072,15 @@
             "description": "Helper name to delete."
           },
           "force": {
-            "type": "boolean",
-            "description": "If true, delete even if pipelines reference this helper (default: false).",
-            "default": false
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "If true, delete even if pipelines reference this helper (default: false)."
           },
           "delete_script": {
             "type": "boolean",
@@ -3117,9 +3123,15 @@
             "description": "Pipeline name to delete."
           },
           "force": {
-            "type": "boolean",
-            "description": "If true, delete even when run history exists (default: false).",
-            "default": false
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "If true, delete even when run history exists (default: false)."
           },
           "source": {
             "type": "object",
