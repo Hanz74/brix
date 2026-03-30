@@ -1466,6 +1466,7 @@ class BrixDB:
         idempotency_key: Optional[str] = None,
         environment: Optional[dict] = None,
         container_id: Optional[str] = None,
+        project: Optional[str] = None,
     ) -> None:
         env_json: Optional[str] = None
         if environment is not None:
@@ -1473,12 +1474,21 @@ class BrixDB:
                 env_json = json.dumps(environment)
             except (TypeError, ValueError):
                 env_json = json.dumps(str(environment))
+        # T-BRIX-SCHEMA-03: resolve project from pipeline if not provided
+        resolved_project = project or ""
+        if not resolved_project:
+            try:
+                p = self.get_pipeline(pipeline)
+                if p:
+                    resolved_project = p.get("project", "")
+            except Exception:
+                pass
         with self._connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO runs
                    (run_id, pipeline, version, started_at, input_data, triggered_by,
-                    idempotency_key, environment_json, container_id)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                    idempotency_key, environment_json, container_id, project)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
                     run_id, pipeline, version,
                     _now_iso(),
@@ -1487,6 +1497,7 @@ class BrixDB:
                     idempotency_key,
                     env_json,
                     container_id,
+                    resolved_project,
                 ),
             )
 
@@ -1606,8 +1617,9 @@ class BrixDB:
         since: Optional[str] = None,
         until: Optional[str] = None,
         limit: int = 50,
+        project: Optional[str] = None,
     ) -> list[dict]:
-        """Filter runs by pipeline name, status, and/or time range.
+        """Filter runs by pipeline name, status, project, and/or time range.
 
         Parameters
         ----------
@@ -1621,6 +1633,8 @@ class BrixDB:
             ISO-8601 timestamp — only runs started before or at this time.
         limit:
             Maximum rows returned (default 50).
+        project:
+            Filter by project name (T-BRIX-SCHEMA-03). Omit for all projects.
         """
         clauses: list[str] = []
         params: list[Any] = []
@@ -1628,6 +1642,10 @@ class BrixDB:
         if pipeline:
             clauses.append("pipeline = ?")
             params.append(pipeline)
+
+        if project is not None:
+            clauses.append("project = ?")
+            params.append(project)
 
         if status == "success":
             clauses.append("success = 1")

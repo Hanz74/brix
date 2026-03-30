@@ -710,11 +710,12 @@ async def _handle_run_annotate(arguments: dict) -> dict:
 
 
 async def _handle_run_search(arguments: dict) -> dict:
-    """Filter run history by pipeline, status, and/or time range."""
+    """Filter run history by pipeline, status, project, and/or time range."""
     pipeline = arguments.get("pipeline") or None
     status = arguments.get("status") or None
     since = arguments.get("since") or None
     until = arguments.get("until") or None
+    project = arguments.get("project") or None
     limit = int(arguments.get("limit", 50))
 
     if status and status not in ("success", "failure", "running"):
@@ -724,13 +725,14 @@ async def _handle_run_search(arguments: dict) -> dict:
         }
 
     history = RunHistory()
-    runs = history.search(pipeline=pipeline, status=status, since=since, until=until, limit=limit)
+    runs = history.search(pipeline=pipeline, status=status, since=since, until=until, limit=limit, project=project)
 
     # Strip heavy fields from search results to keep payload lean
     results = [
         {
             "run_id": r.get("run_id"),
             "pipeline": r.get("pipeline"),
+            "project": r.get("project", ""),
             "version": r.get("version"),
             "started_at": r.get("started_at"),
             "finished_at": r.get("finished_at"),

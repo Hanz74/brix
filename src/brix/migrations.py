@@ -223,6 +223,14 @@ MIGRATIONS: list[dict] = [
     {"version": 51, "name": "add_org_to_connector_definitions_project", "up": "ALTER TABLE connector_definitions ADD COLUMN project TEXT DEFAULT ''", "down": ""},
     {"version": 52, "name": "add_org_to_connector_definitions_tags", "up": "ALTER TABLE connector_definitions ADD COLUMN tags TEXT DEFAULT '[]'", "down": ""},
     {"version": 53, "name": "add_org_to_connector_definitions_group", "up": "ALTER TABLE connector_definitions ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    # T-BRIX-SCHEMA-03: Add project to runs table + backfill from pipelines
+    {"version": 54, "name": "add_project_to_runs", "up": "ALTER TABLE runs ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 55, "name": "idx_runs_project", "up": "CREATE INDEX IF NOT EXISTS idx_runs_project ON runs (project)", "down": "DROP INDEX IF EXISTS idx_runs_project"},
+    {"version": 56, "name": "backfill_runs_project", "up": "UPDATE runs SET project = COALESCE((SELECT p.project FROM pipelines p WHERE p.name = runs.pipeline), '') WHERE project = ''", "down": ""},
+    # T-BRIX-SCHEMA-03: Add org fields to persistent_store
+    {"version": 57, "name": "add_project_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 58, "name": "add_tags_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN tags TEXT DEFAULT '[]'", "down": ""},
+    {"version": 59, "name": "add_group_name_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
 ]
 
 

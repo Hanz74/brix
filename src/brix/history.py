@@ -133,7 +133,7 @@ class RunHistory:
     def record_start(self, run_id: str, pipeline: str, version: str = None,
                      input_data: dict = None, triggered_by: str = "cli",
                      idempotency_key: str = None, environment: dict = None,
-                     container_id: str = None):
+                     container_id: str = None, project: str = None):
         self._db.record_run_start(
             run_id=run_id,
             pipeline=pipeline,
@@ -143,6 +143,7 @@ class RunHistory:
             idempotency_key=idempotency_key,
             environment=environment,
             container_id=container_id,
+            project=project,
         )
 
     def find_by_idempotency_key(self, key: str, within_hours: int = 24) -> Optional[dict]:
@@ -420,8 +421,9 @@ class RunHistory:
         since: Optional[str] = None,
         until: Optional[str] = None,
         limit: int = 50,
+        project: Optional[str] = None,
     ) -> list[dict]:
-        """Filter runs by pipeline, status, and/or time range.
+        """Filter runs by pipeline, status, project, and/or time range.
 
         Parameters
         ----------
@@ -435,6 +437,8 @@ class RunHistory:
             ISO-8601 end timestamp (inclusive).
         limit:
             Maximum rows to return (default 50).
+        project:
+            Filter by project name (T-BRIX-SCHEMA-03). Omit for all projects.
         """
         return self._db.search_runs(
             pipeline=pipeline,
@@ -442,6 +446,7 @@ class RunHistory:
             since=since,
             until=until,
             limit=limit,
+            project=project,
         )
 
     def cleanup(self, older_than_days: int = 30) -> int:
