@@ -2816,6 +2816,21 @@ class BrixDB:
                 if cursor.rowcount == 0:
                     break  # Nothing left to delete
 
+        # Pass 3: Mark stuck/zombie runs as finished (T-BRIX-BUG-03)
+        # Runs with finished_at IS NULL and started_at older than 24h are
+        # either zombies (pipeline deleted) or stuck.  Close them out.
+        zombie_cleaned = 0
+        with self._connect() as conn:
+            cursor_z = conn.execute(
+                """UPDATE runs
+                   SET finished_at = datetime('now'),
+                       success = 0,
+                       notes = COALESCE(notes || ' | ', '') || 'zombie_cleaned by retention'
+                   WHERE finished_at IS NULL
+                     AND started_at < datetime('now', '-1 day')""",
+            )
+            zombie_cleaned = cursor_z.rowcount
+
         # Final size after cleanup
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
         db_size_mb = db_size_bytes / (1024 * 1024)
@@ -2824,6 +2839,7 @@ class BrixDB:
             "runs_deleted_age": runs_deleted_age,
             "runs_deleted_size": runs_deleted_size,
             "app_log_deleted": app_log_deleted,
+            "zombie_cleaned": zombie_cleaned,
             "db_size_mb": round(db_size_mb, 3),
         }
 
