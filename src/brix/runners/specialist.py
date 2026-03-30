@@ -271,6 +271,7 @@ class SpecialistRunner(BaseRunner):
         try:
             cfg = SpecialistConfig.model_validate(raw_config)
         except Exception as exc:
+            self.report_progress(0.0, "error: invalid config")
             return {
                 "success": False,
                 "error": f"Invalid specialist config: {exc}",

@@ -90,14 +90,18 @@ class AggregateRunner(BaseRunner):
         operations = params.get("operations")
 
         if input_data is None:
-            return {"success": False, "error": "Aggregate brick needs 'input' (a list)", "duration": 0.0}
+            self.report_progress(0.0, "error: missing input")
+            return {"success": False, "error": "Aggregate brick needs 'input' (a list)", "duration": time.monotonic() - start}
         if not group_by_expr:
-            return {"success": False, "error": "Aggregate brick needs 'group_by' (Jinja2 expression)", "duration": 0.0}
+            self.report_progress(0.0, "error: missing group_by")
+            return {"success": False, "error": "Aggregate brick needs 'group_by' (Jinja2 expression)", "duration": time.monotonic() - start}
         if not operations or not isinstance(operations, dict):
-            return {"success": False, "error": "Aggregate brick needs 'operations' (dict)", "duration": 0.0}
+            self.report_progress(0.0, "error: missing operations")
+            return {"success": False, "error": "Aggregate brick needs 'operations' (dict)", "duration": time.monotonic() - start}
 
         if not isinstance(input_data, list):
-            return {"success": False, "error": f"Aggregate input must be a list, got {type(input_data).__name__}", "duration": 0.0}
+            self.report_progress(0.0, "error: invalid input type")
+            return {"success": False, "error": f"Aggregate input must be a list, got {type(input_data).__name__}", "duration": time.monotonic() - start}
 
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment()

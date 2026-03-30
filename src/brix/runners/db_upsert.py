@@ -108,12 +108,14 @@ class DbUpsertRunner(BaseRunner):
         table: str = params.get("table") or getattr(step, "table", None)
 
         if not conn_name:
+            self.report_progress(0.0, "error: missing connection")
             return {
                 "success": False,
                 "error": "db_upsert step requires 'connection'",
                 "duration": time.monotonic() - start,
             }
         if not table:
+            self.report_progress(0.0, "error: missing table")
             return {
                 "success": False,
                 "error": "db_upsert step requires 'table'",
@@ -142,6 +144,7 @@ class DbUpsertRunner(BaseRunner):
         elif isinstance(data, list):
             rows = data
         else:
+            self.report_progress(0.0, "error: invalid data type")
             return {
                 "success": False,
                 "error": f"db_upsert 'data' must be a dict or list of dicts, got {type(data).__name__}",
@@ -160,6 +163,7 @@ class DbUpsertRunner(BaseRunner):
         # Validate all rows are dicts
         for i, row in enumerate(rows):
             if not isinstance(row, dict):
+                self.report_progress(0.0, f"error: row {i} is not a dict")
                 return {
                     "success": False,
                     "error": f"db_upsert: row {i} is not a dict (got {type(row).__name__})",
@@ -181,6 +185,7 @@ class DbUpsertRunner(BaseRunner):
         try:
             connection = self._resolve_connection(conn_name)
         except Exception as exc:
+            self.report_progress(0.0, "error: connection failed")
             return {
                 "success": False,
                 "error": f"db_upsert: could not resolve connection '{conn_name}': {exc}",
@@ -200,9 +205,10 @@ class DbUpsertRunner(BaseRunner):
                 set_columns=set_columns,
             )
         except Exception as exc:
+            self.report_progress(0.0, "error: upsert failed")
             return {
                 "success": False,
-                "error": str(exc),
+                "error": f"db_upsert SQL error: {exc}",
                 "duration": time.monotonic() - start,
             }
 

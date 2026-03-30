@@ -147,6 +147,7 @@ class ValidateRunner(BaseRunner):
         data = {"violations": violations, "warnings": warnings}
 
         if should_stop:
+            self.report_progress(100.0, f"failed: {len(violations)} violation(s)")
             return {
                 "success": False,
                 "error": f"Data quality gate failed: {len(violations)} violation(s)",

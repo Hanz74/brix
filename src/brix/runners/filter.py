@@ -69,10 +69,10 @@ class FilterRunner(BaseRunner):
 
         if input_data is None:
             self.report_progress(0.0, "error: missing input")
-            return {"success": False, "error": "Filter brick needs 'input' (a list)", "duration": 0.0}
+            return {"success": False, "error": "Filter brick needs 'input' (a list)", "duration": time.monotonic() - start}
         if not where_expr:
             self.report_progress(0.0, "error: missing where")
-            return {"success": False, "error": "Filter brick needs 'where' (Jinja2 expression)", "duration": 0.0}
+            return {"success": False, "error": "Filter brick needs 'where' (Jinja2 expression)", "duration": time.monotonic() - start}
 
         self.report_progress(0.0, f"Filtering {len(input_data) if isinstance(input_data, list) else '?'} items")
 
@@ -81,10 +81,10 @@ class FilterRunner(BaseRunner):
             try:
                 input_data = json.loads(input_data)
             except (json.JSONDecodeError, ValueError):
-                return {"success": False, "error": f"Filter input is not a list: {type(input_data)}", "duration": 0.0}
+                return {"success": False, "error": f"Filter input is not a list: {type(input_data)}", "duration": time.monotonic() - start}
 
         if not isinstance(input_data, list):
-            return {"success": False, "error": f"Filter input must be a list, got {type(input_data).__name__}", "duration": 0.0}
+            return {"success": False, "error": f"Filter input must be a list, got {type(input_data).__name__}", "duration": time.monotonic() - start}
 
         # Use Jinja2 SandboxedEnvironment for safe expression evaluation
         from jinja2.sandbox import SandboxedEnvironment
@@ -96,6 +96,7 @@ class FilterRunner(BaseRunner):
         env.tests['contains'] = lambda value, substr: substr in str(value)
 
         filtered = []
+        skipped_errors = 0
         for item in input_data:
             try:
                 template = env.from_string(where_expr)
@@ -104,14 +105,21 @@ class FilterRunner(BaseRunner):
                 if result_str.strip().lower() not in ('false', '0', '', 'none'):
                     filtered.append(item)
             except Exception:
-                # On expression error, skip item
+                # On expression error, skip item and count
+                skipped_errors += 1
                 continue
 
         duration = time.monotonic() - start
-        self.report_progress(100.0, f"Processed {len(filtered)}/{len(input_data)} items", done=len(filtered), total=len(input_data))
-        return {
+        msg = f"Processed {len(filtered)}/{len(input_data)} items"
+        if skipped_errors:
+            msg += f" ({skipped_errors} skipped due to expression errors)"
+        self.report_progress(100.0, msg, done=len(filtered), total=len(input_data))
+        result = {
             "success": True,
             "data": filtered,
             "duration": duration,
             "items_count": len(filtered),
         }
+        if skipped_errors:
+            result["skipped_errors"] = skipped_errors
+        return result

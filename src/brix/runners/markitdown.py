@@ -116,6 +116,7 @@ class MarkitdownRunner(BaseRunner):
                 if filename is None:
                     filename = Path(raw_input).name
             except OSError as exc:
+                self.report_progress(0.0, "error: cannot read file")
                 return {
                     "success": False,
                     "error": f"Cannot read file '{raw_input}': {exc}",
@@ -126,6 +127,7 @@ class MarkitdownRunner(BaseRunner):
             base64_content = raw_input
 
         if not base64_content:
+            self.report_progress(0.0, "error: no input")
             return {
                 "success": False,
                 "error": "No input provided: set 'input' config or pipe output from previous step.",
@@ -155,6 +157,7 @@ class MarkitdownRunner(BaseRunner):
                 )
 
                 if response.status_code >= 400:
+                    self.report_progress(0.0, f"error: HTTP {response.status_code}")
                     return {
                         "success": False,
                         "error": f"Markitdown service error HTTP {response.status_code}: {response.text[:300]}",
@@ -168,18 +171,21 @@ class MarkitdownRunner(BaseRunner):
                     data = {"markdown": response.text, "metadata": {}, "extracted": {}}
 
         except httpx.ConnectError as exc:
+            self.report_progress(0.0, "error: service unreachable")
             return {
                 "success": False,
                 "error": f"Markitdown service unreachable at {base_url}: {exc}",
                 "duration": time.monotonic() - start,
             }
         except httpx.TimeoutException:
+            self.report_progress(0.0, "error: timeout")
             return {
                 "success": False,
                 "error": f"Markitdown service timed out after {timeout_seconds}s",
                 "duration": time.monotonic() - start,
             }
         except httpx.RequestError as exc:
+            self.report_progress(0.0, "error: request failed")
             return {
                 "success": False,
                 "error": f"Request error: {exc}",

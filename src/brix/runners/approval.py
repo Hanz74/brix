@@ -142,6 +142,7 @@ class ApprovalRunner(BaseRunner):
                         "duration": time.monotonic() - start,
                     }
                 if status == "rejected":
+                    self.report_progress(100.0, "rejected")
                     return {
                         "success": False,
                         "error": "Approval rejected",
@@ -159,6 +160,7 @@ class ApprovalRunner(BaseRunner):
         # ------------------------------------------------------------------ #
         elapsed = time.monotonic() - start
         if on_timeout == "continue":
+            self.report_progress(100.0, "timeout (auto-continued)")
             return {
                 "success": True,
                 "data": {
@@ -168,6 +170,7 @@ class ApprovalRunner(BaseRunner):
                 },
                 "duration": elapsed,
             }
+        self.report_progress(100.0, "timeout")
         return {
             "success": False,
             "error": f"Approval timed out after {timeout_str}",

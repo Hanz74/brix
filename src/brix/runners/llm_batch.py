@@ -129,19 +129,21 @@ class LlmBatchRunner(BaseRunner):
 
         # --- Validate Mistral availability ---
         if Mistral is None:
+            self.report_progress(0.0, "error: mistralai not installed")
             return {
                 "success": False,
                 "error": "mistralai package is not installed. Install it with: pip install mistralai",
-                "duration": 0.0,
+                "duration": time.monotonic() - start,
             }
 
         # --- API key ---
         api_key = os.environ.get("BUDDY_LLM_API_KEY") or os.environ.get("MISTRAL_API_KEY")
         if not api_key:
+            self.report_progress(0.0, "error: no API key")
             return {
                 "success": False,
                 "error": "No Mistral API key found. Set BUDDY_LLM_API_KEY or MISTRAL_API_KEY.",
-                "duration": 0.0,
+                "duration": time.monotonic() - start,
             }
 
         # --- Config ---
@@ -163,10 +165,11 @@ class LlmBatchRunner(BaseRunner):
         max_tokens: int = int(_get("max_tokens", 1000))
 
         if not system_prompt or not user_template:
+            self.report_progress(0.0, "error: missing prompt config")
             return {
                 "success": False,
                 "error": "llm_batch runner requires 'system_prompt' and 'user_template'",
-                "duration": 0.0,
+                "duration": time.monotonic() - start,
             }
 
         # --- Items from previous step output or direct input ---
@@ -182,10 +185,11 @@ class LlmBatchRunner(BaseRunner):
             items = _get("items", []) or []
 
         if not items:
+            self.report_progress(0.0, "error: no items")
             return {
                 "success": False,
                 "error": "llm_batch runner received no items to process",
-                "duration": 0.0,
+                "duration": time.monotonic() - start,
             }
 
         # --- Render system prompt once ---

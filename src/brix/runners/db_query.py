@@ -185,12 +185,14 @@ class DbQueryRunner(BaseRunner):
         params: dict | None = getattr(step, "params", None) or None
 
         if not connection_ref:
+            self.report_progress(0.0, "error: missing connection")
             return {
                 "success": False,
                 "error": "db_query step requires 'connection' field",
                 "duration": time.monotonic() - start,
             }
         if not query_template:
+            self.report_progress(0.0, "error: missing query")
             return {
                 "success": False,
                 "error": "db_query step requires 'query' field",
@@ -201,6 +203,7 @@ class DbQueryRunner(BaseRunner):
         try:
             query = self._render_query(query_template, context)
         except Exception as exc:
+            self.report_progress(0.0, "error: query render failed")
             return {
                 "success": False,
                 "error": f"Jinja2 render error in query: {exc}",
@@ -211,6 +214,7 @@ class DbQueryRunner(BaseRunner):
         try:
             driver, dsn = self._resolve_connection(connection_ref, context)
         except Exception as exc:
+            self.report_progress(0.0, "error: connection failed")
             return {
                 "success": False,
                 "error": f"Connection error: {exc}",
@@ -221,6 +225,7 @@ class DbQueryRunner(BaseRunner):
         try:
             rows = self._run_query(driver, dsn, query, params)
         except Exception as exc:
+            self.report_progress(0.0, "error: SQL execution failed")
             return {
                 "success": False,
                 "error": f"SQL error: {exc}",
