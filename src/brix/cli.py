@@ -1535,6 +1535,67 @@ def bundle_export_project(project, output):
             click.echo(f"    {pipe}: {', '.join(creds)}", err=True)
 
 
+@bundle.command("import-project")
+@click.argument("archive_file", type=click.Path(exists=True))
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Only report what would be imported, don't write.",
+)
+@click.option(
+    "--on-conflict",
+    type=click.Choice(["skip", "overwrite"]),
+    default="skip",
+    help="What to do when an entity already exists: skip (default) or overwrite.",
+)
+def bundle_import_project(archive_file, dry_run, on_conflict):
+    """Import ALL entities from a project-level archive.
+
+    Imports pipelines, helpers, triggers, trigger groups, and variables
+    from a .project.brix.tar.gz archive created by export-project.
+
+    Secret variables with masked values are automatically skipped.
+
+    Example:
+
+    \b
+        brix bundle import-project buddy.project.brix.tar.gz
+        brix bundle import-project backup.tar.gz --dry-run
+        brix bundle import-project backup.tar.gz --on-conflict overwrite
+    """
+    from brix.bundle import import_project
+
+    try:
+        result = import_project(
+            Path(archive_file),
+            dry_run=dry_run,
+            on_conflict=on_conflict,
+        )
+    except Exception as e:
+        click.echo(f"✗ Import failed: {e}", err=True)
+        sys.exit(1)
+
+    mode = " (DRY RUN)" if dry_run else ""
+    click.echo(f"✓ Import complete{mode}", err=True)
+    click.echo(f"  Imported:", err=True)
+    for entity_type, count in result.imported.items():
+        click.echo(f"    {entity_type:16s}: {count}", err=True)
+    if any(v > 0 for v in result.skipped.values()):
+        click.echo(f"  Skipped:", err=True)
+        for entity_type, count in result.skipped.items():
+            if count > 0:
+                click.echo(f"    {entity_type:16s}: {count}", err=True)
+    if result.errors:
+        click.echo(f"  Errors:", err=True)
+        for err in result.errors:
+            click.echo(f"    - {err}", err=True)
+    if result.missing_credentials:
+        click.echo(f"  Missing credentials (need manual setup):", err=True)
+        for cred in result.missing_credentials:
+            click.echo(f"    - {cred}", err=True)
+
+
 # ---------------------------------------------------------------------------
 # Credential management CLI (T-BRIX-V5-05)
 # ---------------------------------------------------------------------------

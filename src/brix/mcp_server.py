@@ -398,6 +398,36 @@ async def _handle_bundle_export_project(arguments: dict) -> dict:
         return {"success": False, "error": str(exc)}
 
 
+async def _handle_bundle_import_project(arguments: dict) -> dict:
+    """MCP handler for brix__bundle_import_project (T-BRIX-DBQUAL-03).
+
+    Imports all entities from a project-level tar.gz archive.
+    """
+    archive = arguments.get("archive")
+    if not archive:
+        return {"success": False, "error": "Missing required parameter: archive"}
+    dry_run = arguments.get("dry_run", False)
+    on_conflict = arguments.get("on_conflict", "skip")
+    if on_conflict not in ("skip", "overwrite"):
+        return {"success": False, "error": "on_conflict must be 'skip' or 'overwrite'"}
+    from pathlib import Path as _Path
+    from brix.bundle import import_project
+    try:
+        result = import_project(
+            _Path(archive),
+            dry_run=dry_run,
+            on_conflict=on_conflict,
+        )
+        return {
+            "success": True,
+            "dry_run": dry_run,
+            "on_conflict": on_conflict,
+            **result.to_dict(),
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
 async def _handle_analyze_migration(arguments: dict) -> dict:
     """MCP handler for brix__analyze_migration (T-BRIX-DB-10).
 
@@ -691,8 +721,9 @@ _HANDLERS = {
     "brix__list_pins": _handle_list_pins,
     # Org Registry — project/tag/group definitions (T-BRIX-ORG-02)
     "brix__org": _handle_org,
-    # Project-level bundle export (T-BRIX-DBQUAL-02)
+    # Project-level bundle export/import (T-BRIX-DBQUAL-02/03)
     "brix__bundle_export_project": _handle_bundle_export_project,
+    "brix__bundle_import_project": _handle_bundle_import_project,
     # T-BRIX-CRUD-01: Profiles CRUD + search
     "brix__create_profile": _handle_create_profile,
     "brix__get_profile": _handle_get_profile,

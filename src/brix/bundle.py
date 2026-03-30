@@ -644,6 +644,289 @@ def export_project(
     return manifest
 
 
+class ProjectImportResult:
+    """Result of a project-level bundle import."""
+
+    def __init__(
+        self,
+        *,
+        imported: dict[str, int],
+        skipped: dict[str, int],
+        errors: list[str],
+        missing_credentials: list[str],
+    ) -> None:
+        self.imported = imported
+        self.skipped = skipped
+        self.errors = errors
+        self.missing_credentials = missing_credentials
+
+    def to_dict(self) -> dict:
+        return {
+            "imported": self.imported,
+            "skipped": self.skipped,
+            "errors": self.errors,
+            "missing_credentials": self.missing_credentials,
+        }
+
+
+def import_project(
+    archive_path: Path,
+    *,
+    db: Optional[object] = None,
+    dry_run: bool = False,
+    on_conflict: str = "skip",
+) -> ProjectImportResult:
+    """Import all entities from a project-level bundle archive.
+
+    Parameters
+    ----------
+    archive_path:
+        Path to the ``.project.brix.tar.gz`` archive.
+    db:
+        Optional BrixDB instance.  When ``None`` a fresh one is created.
+    dry_run:
+        If ``True``, only report what *would* be imported — do not write.
+    on_conflict:
+        ``"skip"`` (default) = skip existing entities,
+        ``"overwrite"`` = update existing entities.
+
+    Returns
+    -------
+    ProjectImportResult
+        Summary of imported/skipped entities and any errors.
+    """
+    if db is None:
+        from brix.db import BrixDB
+        db = BrixDB()
+
+    archive_path = Path(archive_path).resolve()
+    imported: dict[str, int] = {
+        "pipelines": 0, "helpers": 0, "triggers": 0,
+        "trigger_groups": 0, "variables": 0,
+    }
+    skipped: dict[str, int] = {
+        "pipelines": 0, "helpers": 0, "triggers": 0,
+        "trigger_groups": 0, "variables": 0,
+    }
+    errors: list[str] = []
+    missing_credentials: list[str] = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(tmpdir)
+        except Exception as exc:
+            return ProjectImportResult(
+                imported=imported, skipped=skipped,
+                errors=[f"Failed to extract archive: {exc}"],
+                missing_credentials=[],
+            )
+
+        tmp = Path(tmpdir)
+
+        # Read manifest
+        manifest_path = tmp / MANIFEST_NAME
+        manifest: Optional[ProjectExportManifest] = None
+        if manifest_path.exists():
+            try:
+                manifest = ProjectExportManifest.from_dict(
+                    json.loads(manifest_path.read_text("utf-8"))
+                )
+            except Exception as exc:
+                errors.append(f"Failed to read manifest: {exc}")
+
+        # Collect credential references
+        if manifest and manifest.credential_references:
+            for pipe_name, creds in manifest.credential_references.items():
+                for c in creds:
+                    ref = f"{pipe_name}:{c}"
+                    if ref not in missing_credentials:
+                        missing_credentials.append(ref)
+
+        project_name = manifest.project if manifest else ""
+
+        # --- Pipelines ---
+        pipelines_dir = tmp / "pipelines"
+        if pipelines_dir.is_dir():
+            for yaml_file in sorted(pipelines_dir.glob("*.yaml")):
+                name = yaml_file.stem
+                yaml_content = yaml_file.read_text("utf-8")
+                try:
+                    existing = db.get_pipeline_yaml_content(name)
+                    if existing is not None and on_conflict == "skip":
+                        skipped["pipelines"] += 1
+                        continue
+                    if not dry_run:
+                        # Extract requirements from YAML
+                        reqs: list[str] = []
+                        try:
+                            parsed = yaml.safe_load(yaml_content) or {}
+                            reqs = parsed.get("requirements", []) or []
+                        except Exception:
+                            pass
+                        db.upsert_pipeline(
+                            name=name,
+                            path=f"db://{name}",
+                            requirements=reqs,
+                            yaml_content=yaml_content,
+                            project=project_name or None,
+                        )
+                    imported["pipelines"] += 1
+                except Exception as exc:
+                    errors.append(f"Pipeline '{name}': {exc}")
+
+        # --- Helpers ---
+        helpers_dir = tmp / "helpers"
+        if helpers_dir.is_dir():
+            for py_file in sorted(helpers_dir.glob("*.py")):
+                name = py_file.stem
+                code = py_file.read_text("utf-8")
+                # Read metadata sidecar if present
+                meta_file = helpers_dir / f"{name}.metadata.json"
+                meta: dict = {}
+                if meta_file.exists():
+                    try:
+                        meta = json.loads(meta_file.read_text("utf-8"))
+                    except Exception:
+                        pass
+                try:
+                    existing_code = db.get_helper_code(name)
+                    if existing_code is not None and on_conflict == "skip":
+                        skipped["helpers"] += 1
+                        continue
+                    if not dry_run:
+                        db.upsert_helper(
+                            name=name,
+                            script_path=f"db://{name}",
+                            description=meta.get("description", ""),
+                            requirements=meta.get("requirements"),
+                            input_schema=meta.get("input_schema"),
+                            output_schema=meta.get("output_schema"),
+                            code=code,
+                            project=project_name or None,
+                            tags=meta.get("tags"),
+                            group_name=meta.get("group_name"),
+                        )
+                    imported["helpers"] += 1
+                except Exception as exc:
+                    errors.append(f"Helper '{name}': {exc}")
+
+        # --- Triggers ---
+        triggers_dir = tmp / "triggers"
+        if triggers_dir.is_dir():
+            for json_file in sorted(triggers_dir.glob("*.json")):
+                try:
+                    data = json.loads(json_file.read_text("utf-8"))
+                    name = data.get("name", json_file.stem)
+                    existing = db.trigger_get(name)
+                    if existing is not None:
+                        if on_conflict == "skip":
+                            skipped["triggers"] += 1
+                            continue
+                        # overwrite
+                        if not dry_run:
+                            db.trigger_update(
+                                name=name,
+                                config=data.get("config"),
+                                enabled=data.get("enabled"),
+                                pipeline=data.get("pipeline"),
+                                project=data.get("project"),
+                                tags=data.get("tags"),
+                                group_name=data.get("group_name"),
+                            )
+                        imported["triggers"] += 1
+                    else:
+                        if not dry_run:
+                            db.trigger_add(
+                                name=name,
+                                type=data.get("type", "unknown"),
+                                config=data.get("config", {}),
+                                pipeline=data.get("pipeline", ""),
+                                enabled=data.get("enabled", True),
+                                project=data.get("project"),
+                                tags=data.get("tags"),
+                                group_name=data.get("group_name"),
+                            )
+                        imported["triggers"] += 1
+                except Exception as exc:
+                    errors.append(f"Trigger '{json_file.stem}': {exc}")
+
+        # --- Trigger Groups ---
+        tg_dir = tmp / "trigger_groups"
+        if tg_dir.is_dir():
+            for json_file in sorted(tg_dir.glob("*.json")):
+                try:
+                    data = json.loads(json_file.read_text("utf-8"))
+                    name = data.get("name", json_file.stem)
+                    existing = db.trigger_group_get(name)
+                    if existing is not None:
+                        if on_conflict == "skip":
+                            skipped["trigger_groups"] += 1
+                            continue
+                        # overwrite
+                        if not dry_run:
+                            db.trigger_group_update(
+                                name=name,
+                                triggers=data.get("triggers"),
+                                description=data.get("description"),
+                                enabled=data.get("enabled"),
+                                project=data.get("project"),
+                                tags=data.get("tags"),
+                                group_name=data.get("group_name"),
+                            )
+                        imported["trigger_groups"] += 1
+                    else:
+                        if not dry_run:
+                            db.trigger_group_add(
+                                name=name,
+                                triggers=data.get("triggers", []),
+                                description=data.get("description", ""),
+                                enabled=data.get("enabled", True),
+                                project=data.get("project"),
+                                tags=data.get("tags"),
+                                group_name=data.get("group_name"),
+                            )
+                        imported["trigger_groups"] += 1
+                except Exception as exc:
+                    errors.append(f"Trigger group '{json_file.stem}': {exc}")
+
+        # --- Variables (skip secrets with masked values) ---
+        vars_dir = tmp / "variables"
+        if vars_dir.is_dir():
+            for json_file in sorted(vars_dir.glob("*.json")):
+                try:
+                    data = json.loads(json_file.read_text("utf-8"))
+                    name = data.get("name", json_file.stem)
+                    value = data.get("value", "")
+                    is_secret = data.get("secret", False)
+
+                    # Skip secrets — masked values are not importable
+                    if is_secret and value == SECRET_MASK:
+                        skipped["variables"] += 1
+                        continue
+
+                    if not dry_run:
+                        db.variable_set(
+                            name=name,
+                            value=value,
+                            description=data.get("description", ""),
+                            secret=is_secret,
+                            project=data.get("project"),
+                            tags=data.get("tags"),
+                            group_name=data.get("group_name"),
+                        )
+                    imported["variables"] += 1
+                except Exception as exc:
+                    errors.append(f"Variable '{json_file.stem}': {exc}")
+
+    return ProjectImportResult(
+        imported=imported,
+        skipped=skipped,
+        errors=errors,
+        missing_credentials=missing_credentials,
+    )
+
+
 class ImportResult:
     """Result of a bundle import operation."""
 

@@ -4654,6 +4654,38 @@
       }
     },
     {
+      "name": "brix__bundle_import_project",
+      "description": "Import ALL entities from a project-level tar.gz archive (created by bundle_export_project). Imports pipelines, helpers, triggers, trigger_groups, and variables. Secrets with masked values are skipped. Supports dry-run and skip/overwrite conflict resolution.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "archive": {
+            "type": "string",
+            "description": "Path to the .project.brix.tar.gz archive file."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "If true, only report what would be imported without writing. Default: false."
+          },
+          "on_conflict": {
+            "type": "string",
+            "enum": ["skip", "overwrite"],
+            "description": "Conflict resolution: 'skip' (default) skips existing entities, 'overwrite' updates them."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity for audit logging.",
+            "properties": {
+              "session": { "type": "string" },
+              "model": { "type": "string" },
+              "agent": { "type": "string" }
+            }
+          }
+        },
+        "required": ["archive"]
+      }
+    },
+    {
       "name": "brix__plan_pipeline",
       "description": "Formalized reasoning phase before creating a pipeline. Decomposes a goal into atomic steps, recommends bricks/helpers/pipelines for each step with rationale and alternatives, checks constraints, and estimates complexity (simple/moderate/complex). Call this BEFORE compose_pipeline for complex goals to get a structured analysis. Returns a plan with per-step recommendations, constraint violations, and warnings about missing implementations.",
       "input_schema": {
