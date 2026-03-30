@@ -319,9 +319,10 @@ steps:
 
 
 async def test_repeat_default_timeout_is_7200s():
-    """RepeatRunner default timeout is 7200s (2h), not the old 60s."""
+    """RepeatRunner default timeout comes from BRIX_DEFAULT_TIMEOUT (43200s / 12h)."""
     from brix.runners.cli import get_default_timeout
-    assert get_default_timeout("repeat") == 7200.0
+    from brix.config import config
+    assert get_default_timeout("repeat") == config.TIMEOUT_REPEAT
     assert get_default_timeout("repeat") != 60.0
 
 

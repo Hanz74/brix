@@ -63,38 +63,83 @@ class BrixConfig:
         # Timeouts (seconds)
         # -----------------------------------------------------------------------
 
+        #: Universal default timeout (12 hours).  All per-type defaults
+        #: fall back to this value when their own env var is unset or 0.
+        self.BRIX_DEFAULT_TIMEOUT: float = float(
+            os.environ.get("BRIX_DEFAULT_TIMEOUT", "43200")
+        )
+
         #: Default timeout for individual MCP tool calls via the connection pool
         self.MCP_POOL_CALL_TIMEOUT: float = float(
             os.environ.get("BRIX_MCP_POOL_CALL_TIMEOUT", "60")
         )
 
         #: Fallback default timeout for step types not listed in the per-type table
-        self.TIMEOUT_DEFAULT: float = float(
-            os.environ.get("BRIX_TIMEOUT_DEFAULT", "600")
+        self.TIMEOUT_DEFAULT: float = (
+            float(os.environ.get("BRIX_TIMEOUT_DEFAULT", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
+        )
+
+        #: Default timeout for ``python`` / ``cli`` script steps
+        self.TIMEOUT_SCRIPT: float = (
+            float(os.environ.get("BRIX_SCRIPT_TIMEOUT", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
         )
 
         #: Default timeout for ``python`` steps
-        self.TIMEOUT_PYTHON: float = float(
-            os.environ.get("BRIX_TIMEOUT_PYTHON", "3600")
+        self.TIMEOUT_PYTHON: float = (
+            float(os.environ.get("BRIX_TIMEOUT_PYTHON", "0"))
+            or self.TIMEOUT_SCRIPT
         )
 
         #: Default timeout for ``cli`` steps
-        self.TIMEOUT_CLI: float = float(os.environ.get("BRIX_TIMEOUT_CLI", "300"))
+        self.TIMEOUT_CLI: float = (
+            float(os.environ.get("BRIX_TIMEOUT_CLI", "0"))
+            or self.TIMEOUT_SCRIPT
+        )
 
         #: Default timeout for ``mcp`` steps
-        self.TIMEOUT_MCP: float = float(os.environ.get("BRIX_TIMEOUT_MCP", "120"))
+        self.TIMEOUT_MCP: float = (
+            float(os.environ.get("BRIX_MCP_TIMEOUT", "0"))
+            or float(os.environ.get("BRIX_TIMEOUT_MCP", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
+        )
 
         #: Default timeout for ``http`` steps
-        self.TIMEOUT_HTTP: float = float(os.environ.get("BRIX_TIMEOUT_HTTP", "60"))
+        self.TIMEOUT_HTTP: float = (
+            float(os.environ.get("BRIX_HTTP_TIMEOUT", "0"))
+            or float(os.environ.get("BRIX_TIMEOUT_HTTP", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
+        )
+
+        #: Default timeout for ``db_query`` / ``db_upsert`` steps
+        self.TIMEOUT_DB: float = (
+            float(os.environ.get("BRIX_DB_TIMEOUT", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
+        )
+
+        #: Default timeout for ``llm_batch`` steps
+        self.TIMEOUT_LLM: float = (
+            float(os.environ.get("BRIX_LLM_TIMEOUT", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
+        )
 
         #: Default timeout for ``repeat`` steps
-        self.TIMEOUT_REPEAT: float = float(
-            os.environ.get("BRIX_TIMEOUT_REPEAT", "7200")
+        self.TIMEOUT_REPEAT: float = (
+            float(os.environ.get("BRIX_TIMEOUT_REPEAT", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
         )
 
         #: Default timeout for ``approval`` steps (waits for human input)
-        self.TIMEOUT_APPROVAL: float = float(
-            os.environ.get("BRIX_TIMEOUT_APPROVAL", "86400")
+        self.TIMEOUT_APPROVAL: float = (
+            float(os.environ.get("BRIX_TIMEOUT_APPROVAL", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
+        )
+
+        #: Default timeout for ``markitdown`` steps
+        self.TIMEOUT_MARKITDOWN: float = (
+            float(os.environ.get("BRIX_TIMEOUT_MARKITDOWN", "0"))
+            or self.BRIX_DEFAULT_TIMEOUT
         )
 
         #: Timeout for Mattermost webhook POSTs (alerting & run notifications)

@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
 
@@ -51,9 +52,9 @@ class ApprovalRunner(BaseRunner):
         start = time.monotonic()
 
         message = (getattr(step, "message", None) or "Approval required")
-        timeout_str = (getattr(step, "approval_timeout", None) or "24h")
+        timeout_str = getattr(step, "approval_timeout", None)
         on_timeout = (getattr(step, "on_timeout", None) or "stop")
-        timeout_seconds = parse_timeout(timeout_str)
+        timeout_seconds = parse_timeout(timeout_str) if timeout_str else config.TIMEOUT_APPROVAL
 
         # ------------------------------------------------------------------ #
         # Write approval request file into the run's workdir

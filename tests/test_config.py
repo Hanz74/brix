@@ -63,33 +63,49 @@ class TestBrixConfigDefaults:
         cfg = _fresh_config()
         assert cfg.MCP_POOL_CALL_TIMEOUT == 60.0
 
+    def test_brix_default_timeout(self):
+        cfg = _fresh_config()
+        assert cfg.BRIX_DEFAULT_TIMEOUT == 43200.0
+
     def test_timeout_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_DEFAULT == 600.0
+        assert cfg.TIMEOUT_DEFAULT == 43200.0
 
     def test_timeout_python_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_PYTHON == 3600.0
+        assert cfg.TIMEOUT_PYTHON == 43200.0
 
     def test_timeout_cli_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_CLI == 300.0
+        assert cfg.TIMEOUT_CLI == 43200.0
 
     def test_timeout_mcp_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_MCP == 120.0
+        assert cfg.TIMEOUT_MCP == 43200.0
 
     def test_timeout_http_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_HTTP == 60.0
+        assert cfg.TIMEOUT_HTTP == 43200.0
+
+    def test_timeout_db_default(self):
+        cfg = _fresh_config()
+        assert cfg.TIMEOUT_DB == 43200.0
+
+    def test_timeout_llm_default(self):
+        cfg = _fresh_config()
+        assert cfg.TIMEOUT_LLM == 43200.0
 
     def test_timeout_repeat_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_REPEAT == 7200.0
+        assert cfg.TIMEOUT_REPEAT == 43200.0
 
     def test_timeout_approval_default(self):
         cfg = _fresh_config()
-        assert cfg.TIMEOUT_APPROVAL == 86400.0
+        assert cfg.TIMEOUT_APPROVAL == 43200.0
+
+    def test_timeout_markitdown_default(self):
+        cfg = _fresh_config()
+        assert cfg.TIMEOUT_MARKITDOWN == 43200.0
 
     def test_mattermost_webhook_timeout_default(self):
         cfg = _fresh_config()

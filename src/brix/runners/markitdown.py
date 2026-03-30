@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from brix.config import config
 from brix.runners.base import BaseRunner
 
 
@@ -143,8 +144,10 @@ class MarkitdownRunner(BaseRunner):
         endpoint = "/v1/extract" if auto_extract else "/v1/convert"
         url = f"{base_url}{endpoint}"
 
+        timeout_seconds = config.TIMEOUT_MARKITDOWN
+
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 response = await client.post(
                     url,
                     json=payload,
@@ -173,7 +176,7 @@ class MarkitdownRunner(BaseRunner):
         except httpx.TimeoutException:
             return {
                 "success": False,
-                "error": f"Markitdown service timed out after 120s",
+                "error": f"Markitdown service timed out after {timeout_seconds}s",
                 "duration": time.monotonic() - start,
             }
         except httpx.RequestError as exc:

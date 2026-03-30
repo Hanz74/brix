@@ -35,14 +35,17 @@ flat    {field_name: value, ...}  where list-values are flattened to strings
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from typing import Any
 
 from jinja2.sandbox import SandboxedEnvironment
 
+from brix.config import config
 from brix.models import ExtractionRule, SpecialistConfig, ValidationRule
 from brix.runners.base import BaseRunner
+from brix.runners.cli import parse_timeout
 
 _jinja_env = SandboxedEnvironment()
 
@@ -229,6 +232,23 @@ class SpecialistRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
+        # Resolve timeout
+        timeout_str = getattr(step, "timeout", None)
+        timeout_seconds = parse_timeout(timeout_str) if timeout_str else config.BRIX_DEFAULT_TIMEOUT
+
+        try:
+            return await asyncio.wait_for(
+                self._execute_inner(step, context, start),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout_seconds}s",
+                "duration": time.monotonic() - start,
+            }
+
+    async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
         # --- Parse SpecialistConfig from step.config -------------------------
         raw_config = getattr(step, "config", None) or {}
         if not raw_config:

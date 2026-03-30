@@ -6,6 +6,7 @@ import re
 import time
 from typing import Any
 
+from brix.config import config
 from brix.runners.base import BaseRunner
 
 try:
@@ -84,8 +85,7 @@ class LlmBatchRunner(BaseRunner):
                 },
                 "timeout": {
                     "type": "integer",
-                    "default": 600,
-                    "description": "Max wait seconds for batch completion",
+                    "description": "Max wait seconds for batch completion (default from BRIX_LLM_TIMEOUT)",
                 },
                 "temperature": {
                     "type": "number",
@@ -145,7 +145,7 @@ class LlmBatchRunner(BaseRunner):
         user_template: str = _get("user_template", "")
         output_schema: dict | None = _get("output_schema", None)
         batch_size: int = int(_get("batch_size", 500))
-        timeout: int = int(_get("timeout", 600))
+        timeout: int = int(_get("timeout", 0) or config.TIMEOUT_LLM)
         temperature: float = float(_get("temperature", 0.1))
         max_tokens: int = int(_get("max_tokens", 1000))
 

@@ -1,8 +1,11 @@
 """Switch runner — multi-way conditional branching (T-BRIX-DB-17)."""
+import asyncio
 import time
 from typing import Any
 
+from brix.config import config
 from brix.runners.base import BaseRunner
+from brix.runners.cli import parse_timeout
 
 
 class SwitchRunner(BaseRunner):
@@ -52,6 +55,23 @@ class SwitchRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
+        # Resolve timeout
+        timeout_str = getattr(step, "timeout", None)
+        timeout_seconds = parse_timeout(timeout_str) if timeout_str else config.BRIX_DEFAULT_TIMEOUT
+
+        try:
+            return await asyncio.wait_for(
+                self._execute_inner(step, context, start),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout_seconds}s",
+                "duration": time.monotonic() - start,
+            }
+
+    async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
         field_expr = getattr(step, "field", None)
         cases = getattr(step, "cases", None) or {}
         default = getattr(step, "default", None)

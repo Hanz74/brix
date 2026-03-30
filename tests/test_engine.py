@@ -1042,7 +1042,7 @@ async def test_mcp_runner_with_pool():
 
     assert result["success"] is True
     assert result["data"] == "from-pool"
-    pool_mock.call_tool.assert_called_once_with("fake", "my_tool", {"arg": "val"}, timeout=120.0)
+    pool_mock.call_tool.assert_called_once_with("fake", "my_tool", {"arg": "val"}, timeout=43200.0)
 
 
 async def test_mcp_runner_without_pool():

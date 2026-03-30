@@ -9,14 +9,17 @@ Not yet implemented (raise NotImplementedError):
 """
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import os
 import time
 from pathlib import Path
 from typing import Any
 
+from brix.config import config
 from brix.connectors import CONNECTOR_REGISTRY, NormalizedItem
 from brix.runners.base import BaseRunner
+from brix.runners.cli import parse_timeout
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +163,25 @@ class SourceRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
-        config = self._extract_config(step)
-        connector_name = config.get("connector")
+        # Resolve timeout
+        timeout_str = getattr(step, "timeout", None)
+        timeout_seconds = parse_timeout(timeout_str) if timeout_str else config.BRIX_DEFAULT_TIMEOUT
+
+        try:
+            return await asyncio.wait_for(
+                self._execute_inner(step, context, start),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout_seconds}s",
+                "duration": time.monotonic() - start,
+            }
+
+    async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
+        step_config = self._extract_config(step)
+        connector_name = step_config.get("connector")
 
         if not connector_name:
             self.report_progress(0.0, "missing connector")
@@ -187,9 +207,9 @@ class SourceRunner(BaseRunner):
         # Dispatch to connector implementation
         try:
             if connector_name == "local_files":
-                items = await self._execute_local_files(config, start)
+                items = await self._execute_local_files(step_config, start)
             elif connector_name == "outlook":
-                items = await self._execute_outlook(config, start)
+                items = await self._execute_outlook(step_config, start)
             else:
                 raise NotImplementedError(
                     f"Connector '{connector_name}' (type={connector.type}) is not yet implemented "
@@ -220,9 +240,9 @@ class SourceRunner(BaseRunner):
     # local_files
     # ------------------------------------------------------------------
 
-    async def _execute_local_files(self, config: dict, start: float) -> list[dict]:
+    async def _execute_local_files(self, step_cfg: dict, start: float) -> list[dict]:
         """Scan local filesystem and return NormalizedItem dicts."""
-        path_str = config.get("path")
+        path_str = step_cfg.get("path")
         if not path_str:
             raise ValueError("Missing required config field: 'path' for local_files connector")
 
@@ -232,8 +252,8 @@ class SourceRunner(BaseRunner):
         if not base_path.is_dir():
             raise ValueError(f"Path is not a directory: {path_str}")
 
-        pattern = config.get("pattern", "*")
-        recursive = config.get("recursive", False)
+        pattern = step_cfg.get("pattern", "*")
+        recursive = step_cfg.get("recursive", False)
 
         self.report_progress(10.0, f"scanning {path_str}")
 
@@ -264,11 +284,11 @@ class SourceRunner(BaseRunner):
     # outlook
     # ------------------------------------------------------------------
 
-    async def _execute_outlook(self, config: dict, start: float) -> list[dict]:
+    async def _execute_outlook(self, step_cfg: dict, start: float) -> list[dict]:
         """Fetch messages from Outlook via M365 MCP and return NormalizedItem dicts."""
-        folder = config.get("folder", "INBOX")
-        odata_filter = config.get("filter")
-        limit = int(config.get("limit", 50))
+        folder = step_cfg.get("folder", "INBOX")
+        odata_filter = step_cfg.get("filter")
+        limit = int(step_cfg.get("limit", 50))
 
         self.report_progress(10.0, f"fetching from outlook folder={folder}")
 
@@ -327,15 +347,15 @@ class SourceRunner(BaseRunner):
         if isinstance(step, dict):
             return step
         # Step object — collect all non-private, non-callable attributes
-        config = {}
+        cfg = {}
         for attr in ("connector", "path", "pattern", "recursive", "folder", "filter", "limit"):
             val = getattr(step, attr, None)
             if val is not None:
-                config[attr] = val
+                cfg[attr] = val
         # Also try step.config or step.params if present
         extra = getattr(step, "config", None) or getattr(step, "params", None)
         if isinstance(extra, dict):
             for k, v in extra.items():
-                if k not in config:
-                    config[k] = v
-        return config
+                if k not in cfg:
+                    cfg[k] = v
+        return cfg

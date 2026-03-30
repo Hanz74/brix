@@ -1,11 +1,13 @@
 """DB Upsert runner — generic INSERT / UPSERT for SQLite and PostgreSQL."""
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
-
+from brix.config import config
 from brix.runners.base import BaseRunner
+from brix.runners.cli import parse_timeout
 
 
 class DbUpsertRunner(BaseRunner):
@@ -71,6 +73,24 @@ class DbUpsertRunner(BaseRunner):
 
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
+
+        # Resolve timeout
+        timeout_str = getattr(step, "timeout", None)
+        timeout_seconds = parse_timeout(timeout_str) if timeout_str else config.TIMEOUT_DB
+
+        try:
+            return await asyncio.wait_for(
+                self._execute_inner(step, context, start),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout_seconds}s",
+                "duration": time.monotonic() - start,
+            }
+
+    async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
         self.report_progress(0.0, "starting")
 
         params = getattr(step, "params", {}) or {}

@@ -356,8 +356,9 @@ async def test_mcp_runner_pool_path_passes_timeout(tmp_path: Path):
 
 
 async def test_mcp_runner_pool_path_uses_default_timeout(tmp_path: Path):
-    """McpRunner passes the mcp-type default timeout (120s) to pool.call_tool when step has no timeout."""
+    """McpRunner passes the mcp-type default timeout to pool.call_tool when step has no timeout."""
     from unittest.mock import AsyncMock
+    from brix.config import config
 
     mock_pool = AsyncMock()
     mock_pool.call_tool = AsyncMock(
@@ -370,7 +371,7 @@ async def test_mcp_runner_pool_path_uses_default_timeout(tmp_path: Path):
     result = await runner.execute(step, context=None)
 
     assert result["success"] is True
-    # Default for mcp steps is 120.0 seconds (T-BRIX-V4-BUG-08)
+    # Default for mcp steps comes from config.TIMEOUT_MCP (unified timeout)
     mock_pool.call_tool.assert_called_once_with(
-        "fake", "my_tool", {}, timeout=120.0
+        "fake", "my_tool", {}, timeout=config.TIMEOUT_MCP
     )

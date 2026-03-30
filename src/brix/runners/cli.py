@@ -39,12 +39,16 @@ def parse_timeout(timeout_str: str) -> float:
 # they can be overridden via environment variables at runtime.
 def _build_step_type_timeouts() -> dict[str, float]:
     return {
-        "python":   config.TIMEOUT_PYTHON,
-        "cli":      config.TIMEOUT_CLI,
-        "mcp":      config.TIMEOUT_MCP,
-        "http":     config.TIMEOUT_HTTP,
-        "repeat":   config.TIMEOUT_REPEAT,
-        "approval": config.TIMEOUT_APPROVAL,
+        "python":      config.TIMEOUT_PYTHON,
+        "cli":         config.TIMEOUT_CLI,
+        "mcp":         config.TIMEOUT_MCP,
+        "http":        config.TIMEOUT_HTTP,
+        "repeat":      config.TIMEOUT_REPEAT,
+        "approval":    config.TIMEOUT_APPROVAL,
+        "db_query":    config.TIMEOUT_DB,
+        "db_upsert":   config.TIMEOUT_DB,
+        "llm_batch":   config.TIMEOUT_LLM,
+        "markitdown":  config.TIMEOUT_MARKITDOWN,
     }
 
 
