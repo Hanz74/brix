@@ -447,6 +447,203 @@ class BundleManifest:
         )
 
 
+SECRET_MASK = "***SECRET***"
+PROJECT_BUNDLE_SUFFIX = ".project.brix.tar.gz"
+
+
+# ---------------------------------------------------------------------------
+# Project-level Export (T-BRIX-DBQUAL-02)
+# ---------------------------------------------------------------------------
+
+
+class ProjectExportManifest:
+    """Metadata for a project-level bundle export."""
+
+    def __init__(
+        self,
+        *,
+        project: str,
+        brix_version: str,
+        created_at: str,
+        counts: dict[str, int],
+        credential_references: dict[str, list[str]],
+    ) -> None:
+        self.project = project
+        self.brix_version = brix_version
+        self.created_at = created_at
+        self.counts = counts
+        self.credential_references = credential_references
+
+    def to_dict(self) -> dict:
+        return {
+            "project": self.project,
+            "brix_version": self.brix_version,
+            "created_at": self.created_at,
+            "counts": self.counts,
+            "credential_references": self.credential_references,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ProjectExportManifest":
+        return cls(
+            project=data.get("project", ""),
+            brix_version=data.get("brix_version", "?"),
+            created_at=data.get("created_at", ""),
+            counts=data.get("counts", {}),
+            credential_references=data.get("credential_references", {}),
+        )
+
+
+def export_project(
+    project_name: str,
+    output_path: Path,
+    *,
+    db: Optional[object] = None,
+) -> ProjectExportManifest:
+    """Export all entities for a project into a single tar.gz archive.
+
+    The archive structure is::
+
+        manifest.json
+        pipelines/<name>.yaml
+        helpers/<name>.py
+        helpers/<name>.metadata.json
+        triggers/<name>.json
+        trigger_groups/<name>.json
+        variables/<name>.json
+
+    Secret variable values are masked with ``***SECRET***``.
+
+    Parameters
+    ----------
+    project_name:
+        The project slug to export (matched against the ``project`` field).
+    output_path:
+        Destination archive path.
+    db:
+        Optional BrixDB instance.  When ``None`` a fresh one is created.
+
+    Returns
+    -------
+    ProjectExportManifest
+        Metadata about the created bundle.
+    """
+    if db is None:
+        from brix.db import BrixDB
+        db = BrixDB()
+
+    # 1. Collect entities by project
+    pipelines = db.list_pipelines(project=project_name)
+    helpers = db.list_helpers(project=project_name)
+    triggers = [t for t in db.trigger_list() if t.get("project", "") == project_name]
+    trigger_groups = [
+        g for g in db.trigger_group_list() if g.get("project", "") == project_name
+    ]
+    variables = db.variable_list(project=project_name)
+
+    # 2. Collect credential references from pipeline YAML
+    credential_refs: dict[str, list[str]] = {}
+    for p in pipelines:
+        yaml_content = db.get_pipeline_yaml_content(p["name"])
+        if yaml_content:
+            try:
+                parsed = yaml.safe_load(yaml_content) or {}
+                creds = parsed.get("credentials", {})
+                if creds:
+                    credential_refs[p["name"]] = list(creds.keys())
+            except Exception:
+                pass
+
+    # 3. Build manifest
+    counts = {
+        "pipelines": len(pipelines),
+        "helpers": len(helpers),
+        "triggers": len(triggers),
+        "trigger_groups": len(trigger_groups),
+        "variables": len(variables),
+    }
+    manifest = ProjectExportManifest(
+        project=project_name,
+        brix_version=__version__,
+        created_at=datetime.now(tz=timezone.utc).isoformat(),
+        counts=counts,
+        credential_references=credential_refs,
+    )
+
+    # 4. Write archive
+    output_path = output_path.resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tarfile.open(output_path, "w:gz") as tar:
+        # manifest.json
+        manifest_bytes = json.dumps(manifest.to_dict(), indent=2).encode("utf-8")
+        _tar_add_bytes(tar, data=manifest_bytes, arcname=MANIFEST_NAME)
+
+        # pipelines/
+        for p in pipelines:
+            yaml_content = db.get_pipeline_yaml_content(p["name"])
+            if yaml_content:
+                _tar_add_bytes(
+                    tar,
+                    data=yaml_content.encode("utf-8"),
+                    arcname=f"pipelines/{p['name']}.yaml",
+                )
+
+        # helpers/
+        for h in helpers:
+            code = db.get_helper_code(h["name"])
+            if code:
+                _tar_add_bytes(
+                    tar,
+                    data=code.encode("utf-8"),
+                    arcname=f"helpers/{h['name']}.py",
+                )
+            # metadata sidecar
+            meta = {
+                "name": h["name"],
+                "description": h.get("description", ""),
+                "requirements": h.get("requirements", []),
+                "input_schema": h.get("input_schema", {}),
+                "output_schema": h.get("output_schema", {}),
+                "tags": h.get("tags", []),
+                "group_name": h.get("group_name", ""),
+            }
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(meta, indent=2).encode("utf-8"),
+                arcname=f"helpers/{h['name']}.metadata.json",
+            )
+
+        # triggers/
+        for t in triggers:
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(t, indent=2, default=str).encode("utf-8"),
+                arcname=f"triggers/{t['name']}.json",
+            )
+
+        # trigger_groups/
+        for g in trigger_groups:
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(g, indent=2, default=str).encode("utf-8"),
+                arcname=f"trigger_groups/{g['name']}.json",
+            )
+
+        # variables/ (secrets masked)
+        for v in variables:
+            v_export = dict(v)
+            if v_export.get("secret"):
+                v_export["value"] = SECRET_MASK
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(v_export, indent=2, default=str).encode("utf-8"),
+                arcname=f"variables/{v['name']}.json",
+            )
+
+    return manifest
+
+
 class ImportResult:
     """Result of a bundle import operation."""
 

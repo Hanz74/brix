@@ -1492,6 +1492,49 @@ def bundle_inspect(bundle_file):
         sys.exit(1)
 
 
+@bundle.command("export-project")
+@click.argument("project")
+@click.option(
+    "--output", "-o",
+    default=None,
+    help="Output file path. Defaults to <project>.project.brix.tar.gz in cwd.",
+)
+def bundle_export_project(project, output):
+    """Export ALL entities for a project into a single archive.
+
+    Exports pipelines, helpers, triggers, trigger groups, and variables
+    that belong to the given project.  Secret variable values are masked.
+
+    Example:
+
+    \b
+        brix bundle export-project buddy
+        brix bundle export-project cody -o /tmp/cody-export.tar.gz
+    """
+    from brix.bundle import export_project, PROJECT_BUNDLE_SUFFIX
+
+    if output:
+        output_path = Path(output)
+    else:
+        output_path = Path.cwd() / f"{project}{PROJECT_BUNDLE_SUFFIX}"
+
+    try:
+        manifest = export_project(project, output_path)
+    except Exception as e:
+        click.echo(f"✗ Export failed: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"✓ Exported project '{project}' → {output_path}", err=True)
+    click.echo(f"  Brix     : {manifest.brix_version}", err=True)
+    click.echo(f"  Created  : {manifest.created_at}", err=True)
+    for entity_type, count in manifest.counts.items():
+        click.echo(f"  {entity_type:16s}: {count}", err=True)
+    if manifest.credential_references:
+        click.echo("  Credential references:", err=True)
+        for pipe, creds in manifest.credential_references.items():
+            click.echo(f"    {pipe}: {', '.join(creds)}", err=True)
+
+
 # ---------------------------------------------------------------------------
 # Credential management CLI (T-BRIX-V5-05)
 # ---------------------------------------------------------------------------

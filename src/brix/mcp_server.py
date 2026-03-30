@@ -373,6 +373,31 @@ from brix.mcp_handlers._shared import (
 
 
 
+async def _handle_bundle_export_project(arguments: dict) -> dict:
+    """MCP handler for brix__bundle_export_project (T-BRIX-DBQUAL-02).
+
+    Exports all entities for a project into a tar.gz archive.
+    """
+    project = arguments.get("project")
+    if not project:
+        return {"success": False, "error": "Missing required parameter: project"}
+    output = arguments.get("output")
+    if not output:
+        output = f"/host/root/{project}.project.brix.tar.gz"
+    from pathlib import Path as _Path
+    from brix.bundle import export_project
+    try:
+        manifest = export_project(project, _Path(output))
+        return {
+            "success": True,
+            "project": project,
+            "output": output,
+            "manifest": manifest.to_dict(),
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
 async def _handle_analyze_migration(arguments: dict) -> dict:
     """MCP handler for brix__analyze_migration (T-BRIX-DB-10).
 
@@ -666,6 +691,8 @@ _HANDLERS = {
     "brix__list_pins": _handle_list_pins,
     # Org Registry — project/tag/group definitions (T-BRIX-ORG-02)
     "brix__org": _handle_org,
+    # Project-level bundle export (T-BRIX-DBQUAL-02)
+    "brix__bundle_export_project": _handle_bundle_export_project,
     # T-BRIX-CRUD-01: Profiles CRUD + search
     "brix__create_profile": _handle_create_profile,
     "brix__get_profile": _handle_get_profile,
