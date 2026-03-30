@@ -231,7 +231,25 @@ MIGRATIONS: list[dict] = [
     {"version": 57, "name": "add_project_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN project TEXT DEFAULT ''", "down": ""},
     {"version": 58, "name": "add_tags_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN tags TEXT DEFAULT '[]'", "down": ""},
     {"version": 59, "name": "add_group_name_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
+    # T-BRIX-DBQUAL-01: Backfill pipeline_helpers from all stored pipeline YAMLs
+    {"version": 60, "name": "backfill_pipeline_helpers", "up": "", "up_fn": "_backfill_pipeline_helpers", "down": "DELETE FROM pipeline_helpers"},
 ]
+
+
+def _backfill_pipeline_helpers(db: "BrixDB") -> None:
+    """Backfill pipeline_helpers join table for all pipelines with yaml_content."""
+    import yaml as _yaml
+    with db._connect() as conn:
+        rows = conn.execute(
+            "SELECT id, name, yaml_content FROM pipelines WHERE yaml_content IS NOT NULL AND yaml_content != ''"
+        ).fetchall()
+        for row in rows:
+            pipeline_id, pipeline_name, yaml_content = row[0], row[1], row[2]
+            try:
+                raw = _yaml.safe_load(yaml_content) or {}
+            except Exception:
+                continue
+            db._sync_pipeline_helpers(conn, pipeline_id, raw)
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +335,14 @@ def run_pending_migrations(db: "BrixDB") -> list[dict]:
                             logger.info("Migration v%d: column already exists, skipping", version)
                         else:
                             raise
+
+                # Support Python callables for complex migrations (T-BRIX-DBQUAL-01)
+                up_fn_name = migration.get("up_fn")
+                if up_fn_name:
+                    fn = globals().get(up_fn_name)
+                    if fn and callable(fn):
+                        fn(db)
+
                 from brix.db import _now_iso  # avoid circular at module level
                 applied_at = _now_iso()
                 conn.execute(

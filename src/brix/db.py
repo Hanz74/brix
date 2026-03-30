@@ -47,6 +47,21 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_helper_ref(ref: str) -> str:
+    """Normalise a helper/script reference to a bare helper name.
+
+    Strips leading path components (``helpers/``, ``./helpers/``, ``/app/helpers/``)
+    and trailing ``.py`` so that ``helpers/my_helper.py`` becomes ``my_helper``.
+    """
+    import posixpath
+    # Take the basename to strip directory prefixes
+    name = posixpath.basename(ref)
+    # Strip .py extension
+    if name.endswith(".py"):
+        name = name[:-3]
+    return name
+
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -1386,31 +1401,79 @@ class BrixDB:
 
         return upserted
 
+    @staticmethod
+    def _extract_helper_refs(steps: list) -> set[str]:
+        """Extract all helper/script names referenced in steps, recursively.
+
+        Looks at each step for:
+        - ``helper`` (top-level field)
+        - ``script`` (top-level field, basename without .py / path prefix)
+        - ``params.helper`` (nested in params dict)
+        - ``params.script`` (nested in params dict)
+
+        Recurses into nested step containers:
+        - repeat  -> ``sequence``
+        - choose  -> ``choices[].steps`` and ``default_steps``
+        - parallel -> ``sub_steps``
+        """
+        helper_names: set[str] = set()
+
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+
+            # Direct helper/script fields
+            for field in ("helper", "script"):
+                val = step.get(field)
+                if val and isinstance(val, str):
+                    helper_names.add(_normalize_helper_ref(val))
+
+            # Params-level helper/script fields
+            params = step.get("params")
+            if isinstance(params, dict):
+                for field in ("helper", "script"):
+                    val = params.get(field)
+                    if val and isinstance(val, str):
+                        helper_names.add(_normalize_helper_ref(val))
+
+            # Recurse into nested step containers
+            # repeat -> sequence
+            seq = step.get("sequence")
+            if isinstance(seq, list):
+                helper_names |= BrixDB._extract_helper_refs(seq)
+            # choose -> choices[].steps + default_steps
+            choices = step.get("choices")
+            if isinstance(choices, list):
+                for choice in choices:
+                    if isinstance(choice, dict):
+                        branch_steps = choice.get("steps")
+                        if isinstance(branch_steps, list):
+                            helper_names |= BrixDB._extract_helper_refs(branch_steps)
+            default_steps = step.get("default_steps")
+            if isinstance(default_steps, list):
+                helper_names |= BrixDB._extract_helper_refs(default_steps)
+            # parallel -> sub_steps
+            sub_steps = step.get("sub_steps")
+            if isinstance(sub_steps, list):
+                helper_names |= BrixDB._extract_helper_refs(sub_steps)
+
+        return helper_names
+
     def _sync_pipeline_helpers(
         self, conn: sqlite3.Connection, pipeline_id: str, raw: dict
     ) -> None:
         """Update pipeline_helpers for a single pipeline.
 
-        Scans all steps for ``helper:`` or ``script:`` fields that refer to
-        a registered helper name, and inserts the join-table rows.
+        Scans all steps (recursively) for helper/script references and
+        inserts the corresponding join-table rows.
         """
-        # Collect all helper names referenced in the pipeline steps
         steps = raw.get("steps", [])
         if not isinstance(steps, list):
-            return
+            steps = []
 
-        helper_names: set[str] = set()
-        for step in steps:
-            if not isinstance(step, dict):
-                continue
-            h = step.get("helper")
-            if h and isinstance(h, str):
-                helper_names.add(h)
+        helper_names = self._extract_helper_refs(steps)
 
-        if not helper_names:
-            return
-
-        # Remove old links for this pipeline
+        # Always delete old links (even when no helpers found — handles removal)
         conn.execute(
             "DELETE FROM pipeline_helpers WHERE pipeline_id=?", (pipeline_id,)
         )
@@ -1427,6 +1490,35 @@ class BrixDB:
                     )
                 except Exception:
                     pass
+
+    def refresh_pipeline_deps(self, pipeline_name: str) -> None:
+        """Re-scan a pipeline's YAML and update pipeline_helpers.
+
+        Reads the pipeline's yaml_content from DB, extracts helper refs,
+        and refreshes the join table.  Safe to call after any mutation.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, yaml_content FROM pipelines WHERE name=?",
+                (pipeline_name,),
+            ).fetchone()
+            if not row:
+                return
+            pipeline_id = row[0]
+            yaml_content = row[1]
+            if not yaml_content:
+                # No YAML stored — clear any stale links
+                conn.execute(
+                    "DELETE FROM pipeline_helpers WHERE pipeline_id=?",
+                    (pipeline_id,),
+                )
+                return
+            try:
+                import yaml as _yaml
+                raw = _yaml.safe_load(yaml_content) or {}
+            except Exception:
+                return
+            self._sync_pipeline_helpers(conn, pipeline_id, raw)
 
     def sync_all(
         self,

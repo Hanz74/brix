@@ -218,6 +218,13 @@ async def _handle_add_step(arguments: dict) -> dict:
     validation = _validate_pipeline_dict(data)
     _save_pipeline_yaml(name, data)
 
+    # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _BrixDB().refresh_pipeline_deps(name)
+    except Exception:
+        pass  # Non-fatal
+
     source = _extract_source(arguments)
     _audit_db.write_audit_entry(
         tool="brix__add_step",
@@ -360,6 +367,13 @@ async def _handle_remove_step(arguments: dict) -> dict:
 
     _save_pipeline_yaml(name, data)
 
+    # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _BrixDB().refresh_pipeline_deps(name)
+    except Exception:
+        pass  # Non-fatal
+
     _audit_db.write_audit_entry(
         tool="brix__remove_step",
         source=source,
@@ -407,6 +421,13 @@ async def _handle_update_step(arguments: dict) -> dict:
 
     # Save
     store.save(raw, name)
+
+    # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _BrixDB().refresh_pipeline_deps(name)
+    except Exception:
+        pass  # Non-fatal
 
     _audit_db.write_audit_entry(
         tool="brix__update_step",

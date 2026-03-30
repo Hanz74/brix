@@ -186,6 +186,13 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     # Save regardless (agent can fix errors via add_step / validate)
     _save_pipeline_yaml(name, pipeline_data)
 
+    # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _BrixDB().refresh_pipeline_deps(name)
+    except Exception:
+        pass  # Non-fatal
+
     # Update project/tags/group_name in DB (T-BRIX-ORG-01)
     if org_project is not None or org_tags is not None or org_group is not None:
         try:
@@ -371,6 +378,13 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
             raw["version"] = _bump_version(old_version, "patch")
             changed_fields.append("version (auto-bump)")
         store.save(raw, name)
+
+        # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _BrixDB().refresh_pipeline_deps(name)
+        except Exception:
+            pass  # Non-fatal
 
     # Update project/tags/group_name in DB (T-BRIX-ORG-01)
     if has_org_update:
