@@ -219,6 +219,10 @@ MIGRATIONS: list[dict] = [
     {"version": 48, "name": "idx_object_versions_type_name", "up": "CREATE INDEX IF NOT EXISTS idx_object_versions_type_name ON object_versions (type, name)", "down": "DROP INDEX IF EXISTS idx_object_versions_type_name"},
     {"version": 49, "name": "idx_app_log_timestamp", "up": "CREATE INDEX IF NOT EXISTS idx_app_log_timestamp ON app_log (timestamp DESC)", "down": "DROP INDEX IF EXISTS idx_app_log_timestamp"},
     {"version": 50, "name": "idx_persistent_store_pipeline", "up": "CREATE INDEX IF NOT EXISTS idx_persistent_store_pipeline ON persistent_store (pipeline_name)", "down": "DROP INDEX IF EXISTS idx_persistent_store_pipeline"},
+    # T-BRIX-SCHEMA-01: Add org fields to connector_definitions (last entity without them)
+    {"version": 51, "name": "add_org_to_connector_definitions_project", "up": "ALTER TABLE connector_definitions ADD COLUMN project TEXT DEFAULT ''", "down": ""},
+    {"version": 52, "name": "add_org_to_connector_definitions_tags", "up": "ALTER TABLE connector_definitions ADD COLUMN tags TEXT DEFAULT '[]'", "down": ""},
+    {"version": 53, "name": "add_org_to_connector_definitions_group", "up": "ALTER TABLE connector_definitions ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
 ]
 
 
