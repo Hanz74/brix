@@ -58,6 +58,24 @@ _MOCK_VARIABLES = [
      "project": "testproj", "tags": [], "group_name": "", "description": "Secret"},
 ]
 
+_MOCK_CONNECTOR_DEFS = [
+    {"name": "outlook", "type": "mcp", "description": "M365 Outlook", "project": "testproj",
+     "required_mcp_server": "m365", "required_mcp_tools": ["send-mail"],
+     "output_schema": {}, "parameters": [], "related_pipelines": [], "related_helpers": [],
+     "tags": [], "group_name": ""},
+]
+
+_MOCK_ALERT_RULES = [
+    {"id": "ar1", "name": "high-failure-rate", "condition": "failure_rate > 0.5",
+     "channel": "mattermost", "config": {}, "enabled": True,
+     "project": "testproj", "tags": ["monitoring"], "group_name": ""},
+]
+
+_MOCK_PROFILES = [
+    {"name": "staging", "config": {"timeout": 30}, "description": "Staging env",
+     "project": "testproj", "tags": ["env"], "group_name": ""},
+]
+
 _MOCK_YAML_CONTENT = {
     "test-pipeline-1": (
         "name: test-pipeline-1\nversion: '1.0'\n"
@@ -83,6 +101,9 @@ def _make_export_db():
     db.trigger_list.return_value = _MOCK_TRIGGERS
     db.trigger_group_list.return_value = _MOCK_TRIGGER_GROUPS
     db.variable_list.return_value = _MOCK_VARIABLES
+    db.connector_definitions_list.return_value = _MOCK_CONNECTOR_DEFS
+    db.alert_rule_list.return_value = _MOCK_ALERT_RULES
+    db.profile_list.return_value = _MOCK_PROFILES
 
     def _get_yaml(name):
         return _MOCK_YAML_CONTENT.get(name)
@@ -96,7 +117,9 @@ def _make_export_db():
 
 
 def _make_import_db(*, has_pipelines=False, has_helpers=False,
-                    has_triggers=False, has_trigger_groups=False):
+                    has_triggers=False, has_trigger_groups=False,
+                    has_connectors=False, has_alert_rules=False,
+                    has_profiles=False):
     """Return a MagicMock that acts like BrixDB for project import."""
     db = MagicMock()
 
@@ -123,6 +146,24 @@ def _make_import_db(*, has_pipelines=False, has_helpers=False,
         db.trigger_group_get.return_value = {"id": "existing", "name": "group-a"}
     else:
         db.trigger_group_get.return_value = None
+
+    # connector_definitions_get: return None = doesn't exist
+    if has_connectors:
+        db.connector_definitions_get.return_value = {"name": "outlook"}
+    else:
+        db.connector_definitions_get.return_value = None
+
+    # alert_rule_get: return None = doesn't exist
+    if has_alert_rules:
+        db.alert_rule_get.return_value = {"id": "ar1", "name": "high-failure-rate"}
+    else:
+        db.alert_rule_get.return_value = None
+
+    # profile_get: return None = doesn't exist
+    if has_profiles:
+        db.profile_get.return_value = {"name": "staging", "config": {}}
+    else:
+        db.profile_get.return_value = None
 
     return db
 
@@ -206,6 +247,36 @@ class TestImportCreatesAllEntities:
         assert call_kw["name"] == "VAR_NORMAL"
         assert call_kw["value"] == "hello"
 
+    def test_imports_connector_definitions(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db()
+
+        result = import_project(archive, db=import_db)
+
+        assert result.imported["connector_definitions"] == 1
+        assert import_db.connector_definitions_upsert.call_count == 1
+
+    def test_imports_alert_rules(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db()
+
+        result = import_project(archive, db=import_db)
+
+        assert result.imported["alert_rules"] == 1
+        assert import_db.alert_rule_add.call_count == 1
+
+    def test_imports_profiles(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db()
+
+        result = import_project(archive, db=import_db)
+
+        assert result.imported["profiles"] == 1
+        assert import_db.profile_set.call_count == 1
+        call_kw = import_db.profile_set.call_args_list[0].kwargs
+        assert call_kw["name"] == "staging"
+        assert call_kw["config"] == {"timeout": 30}
+
 
 class TestDryRunDoesNotWrite:
     """Test that dry_run=True reports but does not modify DB."""
@@ -221,6 +292,9 @@ class TestDryRunDoesNotWrite:
         assert result.imported["triggers"] == 1
         assert result.imported["trigger_groups"] == 1
         assert result.imported["variables"] == 1
+        assert result.imported["connector_definitions"] == 1
+        assert result.imported["alert_rules"] == 1
+        assert result.imported["profiles"] == 1
 
     def test_dry_run_no_writes(self, tmp_path):
         archive = _create_export(tmp_path)
@@ -233,6 +307,9 @@ class TestDryRunDoesNotWrite:
         import_db.trigger_add.assert_not_called()
         import_db.trigger_group_add.assert_not_called()
         import_db.variable_set.assert_not_called()
+        import_db.connector_definitions_upsert.assert_not_called()
+        import_db.alert_rule_add.assert_not_called()
+        import_db.profile_set.assert_not_called()
 
 
 class TestOnConflictSkip:
@@ -323,6 +400,49 @@ class TestOnConflictOverwrite:
         assert result.imported["trigger_groups"] == 1
         import_db.trigger_group_update.assert_called_once()
         import_db.trigger_group_add.assert_not_called()
+
+    def test_overwrite_existing_alert_rules(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db(has_alert_rules=True)
+
+        result = import_project(archive, db=import_db, on_conflict="overwrite")
+
+        assert result.imported["alert_rules"] == 1
+        import_db.alert_rule_update.assert_called_once()
+        import_db.alert_rule_add.assert_not_called()
+
+
+class TestSkipNewEntityTypes:
+    """Test that on_conflict='skip' works for new entity types."""
+
+    def test_skip_existing_connectors(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db(has_connectors=True)
+
+        result = import_project(archive, db=import_db, on_conflict="skip")
+
+        assert result.imported["connector_definitions"] == 0
+        assert result.skipped["connector_definitions"] == 1
+        import_db.connector_definitions_upsert.assert_not_called()
+
+    def test_skip_existing_alert_rules(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db(has_alert_rules=True)
+
+        result = import_project(archive, db=import_db, on_conflict="skip")
+
+        assert result.imported["alert_rules"] == 0
+        assert result.skipped["alert_rules"] == 1
+
+    def test_skip_existing_profiles(self, tmp_path):
+        archive = _create_export(tmp_path)
+        import_db = _make_import_db(has_profiles=True)
+
+        result = import_project(archive, db=import_db, on_conflict="skip")
+
+        assert result.imported["profiles"] == 0
+        assert result.skipped["profiles"] == 1
+        import_db.profile_set.assert_not_called()
 
 
 class TestSecretsSkipped:

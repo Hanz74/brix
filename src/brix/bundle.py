@@ -540,6 +540,18 @@ def export_project(
         g for g in db.trigger_group_list() if g.get("project", "") == project_name
     ]
     variables = db.variable_list(project=project_name)
+    connector_defs = [
+        c for c in db.connector_definitions_list()
+        if c.get("project", "") == project_name
+    ]
+    alert_rules = [
+        a for a in db.alert_rule_list()
+        if a.get("project", "") == project_name
+    ]
+    profiles = [
+        p for p in db.profile_list()
+        if p.get("project", "") == project_name
+    ]
 
     # 2. Collect credential references from pipeline YAML
     credential_refs: dict[str, list[str]] = {}
@@ -561,6 +573,9 @@ def export_project(
         "triggers": len(triggers),
         "trigger_groups": len(trigger_groups),
         "variables": len(variables),
+        "connector_definitions": len(connector_defs),
+        "alert_rules": len(alert_rules),
+        "profiles": len(profiles),
     }
     manifest = ProjectExportManifest(
         project=project_name,
@@ -641,6 +656,30 @@ def export_project(
                 arcname=f"variables/{v['name']}.json",
             )
 
+        # connector_definitions/
+        for c in connector_defs:
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(c, indent=2, default=str).encode("utf-8"),
+                arcname=f"connector_definitions/{c['name']}.json",
+            )
+
+        # alert_rules/
+        for a in alert_rules:
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(a, indent=2, default=str).encode("utf-8"),
+                arcname=f"alert_rules/{a['name']}.json",
+            )
+
+        # profiles/
+        for p in profiles:
+            _tar_add_bytes(
+                tar,
+                data=json.dumps(p, indent=2, default=str).encode("utf-8"),
+                arcname=f"profiles/{p['name']}.json",
+            )
+
     return manifest
 
 
@@ -703,10 +742,12 @@ def import_project(
     imported: dict[str, int] = {
         "pipelines": 0, "helpers": 0, "triggers": 0,
         "trigger_groups": 0, "variables": 0,
+        "connector_definitions": 0, "alert_rules": 0, "profiles": 0,
     }
     skipped: dict[str, int] = {
         "pipelines": 0, "helpers": 0, "triggers": 0,
         "trigger_groups": 0, "variables": 0,
+        "connector_definitions": 0, "alert_rules": 0, "profiles": 0,
     }
     errors: list[str] = []
     missing_credentials: list[str] = []
@@ -918,6 +959,89 @@ def import_project(
                     imported["variables"] += 1
                 except Exception as exc:
                     errors.append(f"Variable '{json_file.stem}': {exc}")
+
+        # --- Connector Definitions ---
+        connectors_dir = tmp / "connector_definitions"
+        if connectors_dir.is_dir():
+            for json_file in sorted(connectors_dir.glob("*.json")):
+                try:
+                    data = json.loads(json_file.read_text("utf-8"))
+                    name = data.get("name", json_file.stem)
+                    existing = db.connector_definitions_get(name)
+                    if existing is not None and on_conflict == "skip":
+                        skipped["connector_definitions"] += 1
+                        continue
+                    if not dry_run:
+                        db.connector_definitions_upsert(data)
+                    imported["connector_definitions"] += 1
+                except Exception as exc:
+                    errors.append(f"Connector definition '{json_file.stem}': {exc}")
+
+        # --- Alert Rules ---
+        alerts_dir = tmp / "alert_rules"
+        if alerts_dir.is_dir():
+            for json_file in sorted(alerts_dir.glob("*.json")):
+                try:
+                    data = json.loads(json_file.read_text("utf-8"))
+                    rule_id = data.get("id", json_file.stem)
+                    name = data.get("name", json_file.stem)
+                    existing = db.alert_rule_get(rule_id)
+                    if existing is not None:
+                        if on_conflict == "skip":
+                            skipped["alert_rules"] += 1
+                            continue
+                        if not dry_run:
+                            db.alert_rule_update(
+                                rule_id=rule_id,
+                                name=data.get("name"),
+                                condition=data.get("condition"),
+                                channel=data.get("channel"),
+                                config=data.get("config"),
+                                enabled=data.get("enabled"),
+                                project=data.get("project"),
+                                tags=data.get("tags"),
+                                group_name=data.get("group_name"),
+                            )
+                        imported["alert_rules"] += 1
+                    else:
+                        if not dry_run:
+                            db.alert_rule_add(
+                                name=name,
+                                condition=data.get("condition", ""),
+                                channel=data.get("channel", ""),
+                                config=data.get("config"),
+                                rule_id=rule_id,
+                                project=data.get("project"),
+                                tags=data.get("tags"),
+                                group_name=data.get("group_name"),
+                            )
+                        imported["alert_rules"] += 1
+                except Exception as exc:
+                    errors.append(f"Alert rule '{json_file.stem}': {exc}")
+
+        # --- Profiles ---
+        profiles_dir = tmp / "profiles"
+        if profiles_dir.is_dir():
+            for json_file in sorted(profiles_dir.glob("*.json")):
+                try:
+                    data = json.loads(json_file.read_text("utf-8"))
+                    name = data.get("name", json_file.stem)
+                    existing = db.profile_get(name)
+                    if existing is not None and on_conflict == "skip":
+                        skipped["profiles"] += 1
+                        continue
+                    if not dry_run:
+                        db.profile_set(
+                            name=name,
+                            config=data.get("config", {}),
+                            description=data.get("description", ""),
+                            project=data.get("project"),
+                            tags=data.get("tags"),
+                            group_name=data.get("group_name"),
+                        )
+                    imported["profiles"] += 1
+                except Exception as exc:
+                    errors.append(f"Profile '{json_file.stem}': {exc}")
 
     return ProjectImportResult(
         imported=imported,

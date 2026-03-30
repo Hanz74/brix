@@ -52,6 +52,31 @@ _MOCK_VARIABLES = [
     {"name": "VAR_SECRET", "value": "***SECRET***", "secret": True, "project": "testproj", "tags": [], "group_name": ""},
 ]
 
+_MOCK_CONNECTOR_DEFS = [
+    {"name": "outlook", "type": "mcp", "description": "M365 Outlook", "project": "testproj",
+     "required_mcp_server": "m365", "required_mcp_tools": ["send-mail"],
+     "output_schema": {}, "parameters": [], "related_pipelines": [], "related_helpers": [],
+     "tags": [], "group_name": ""},
+    {"name": "gmail", "type": "imap", "description": "Gmail", "project": "other",
+     "tags": [], "group_name": ""},
+]
+
+_MOCK_ALERT_RULES = [
+    {"id": "ar1", "name": "high-failure-rate", "condition": "failure_rate > 0.5",
+     "channel": "mattermost", "config": {}, "enabled": True,
+     "project": "testproj", "tags": ["monitoring"], "group_name": ""},
+    {"id": "ar2", "name": "other-alert", "condition": "true",
+     "channel": "email", "config": {}, "enabled": True,
+     "project": "other", "tags": [], "group_name": ""},
+]
+
+_MOCK_PROFILES = [
+    {"name": "staging", "config": {"timeout": 30}, "description": "Staging env",
+     "project": "testproj", "tags": ["env"], "group_name": ""},
+    {"name": "production", "config": {"timeout": 60}, "description": "Prod env",
+     "project": "other", "tags": [], "group_name": ""},
+]
+
 _MOCK_YAML_CONTENT = {
     "test-pipeline-1": "name: test-pipeline-1\nversion: '1.0'\ncredentials:\n  api_key:\n    env: API_KEY\nsteps:\n  - id: step1\n    type: cli\n    args: ['echo', 'hi']\n",
     "test-pipeline-2": "name: test-pipeline-2\nversion: '1.0'\nsteps:\n  - id: step1\n    type: cli\n    args: ['echo', 'bye']\n",
@@ -70,6 +95,9 @@ def _make_mock_db():
     db.trigger_list.return_value = _MOCK_TRIGGERS
     db.trigger_group_list.return_value = _MOCK_TRIGGER_GROUPS
     db.variable_list.return_value = _MOCK_VARIABLES
+    db.connector_definitions_list.return_value = _MOCK_CONNECTOR_DEFS
+    db.alert_rule_list.return_value = _MOCK_ALERT_RULES
+    db.profile_list.return_value = _MOCK_PROFILES
 
     def _get_yaml(name):
         return _MOCK_YAML_CONTENT.get(name)
@@ -117,6 +145,9 @@ class TestExportProjectCreatesValidArchive:
         assert "trigger_groups/group-a.json" in names
         assert "variables/VAR_NORMAL.json" in names
         assert "variables/VAR_SECRET.json" in names
+        assert "connector_definitions/outlook.json" in names
+        assert "alert_rules/high-failure-rate.json" in names
+        assert "profiles/staging.json" in names
 
 
 class TestManifestCounts:
@@ -133,6 +164,9 @@ class TestManifestCounts:
         assert manifest.counts["triggers"] == 1  # only testproj, not 'other'
         assert manifest.counts["trigger_groups"] == 1
         assert manifest.counts["variables"] == 2
+        assert manifest.counts["connector_definitions"] == 1
+        assert manifest.counts["alert_rules"] == 1
+        assert manifest.counts["profiles"] == 1
 
     def test_manifest_in_archive_matches(self, tmp_path):
         output = tmp_path / "test.project.brix.tar.gz"
@@ -150,6 +184,9 @@ class TestManifestCounts:
         assert data["counts"]["triggers"] == 1
         assert data["counts"]["trigger_groups"] == 1
         assert data["counts"]["variables"] == 2
+        assert data["counts"]["connector_definitions"] == 1
+        assert data["counts"]["alert_rules"] == 1
+        assert data["counts"]["profiles"] == 1
 
 
 class TestAllEntityTypesIncluded:
@@ -221,6 +258,79 @@ class TestAllEntityTypesIncluded:
 
         assert data["name"] == "group-a"
 
+    def test_connector_definition_included(self, tmp_path):
+        output = tmp_path / "test.project.brix.tar.gz"
+        mock_db = _make_mock_db()
+
+        export_project("testproj", output, db=mock_db)
+
+        with tarfile.open(output, "r:gz") as tar:
+            f = tar.extractfile("connector_definitions/outlook.json")
+            data = json.loads(f.read())
+
+        assert data["name"] == "outlook"
+        assert data["project"] == "testproj"
+
+    def test_connector_from_other_project_excluded(self, tmp_path):
+        output = tmp_path / "test.project.brix.tar.gz"
+        mock_db = _make_mock_db()
+
+        export_project("testproj", output, db=mock_db)
+
+        with tarfile.open(output, "r:gz") as tar:
+            names = tar.getnames()
+
+        assert "connector_definitions/gmail.json" not in names
+
+    def test_alert_rule_included(self, tmp_path):
+        output = tmp_path / "test.project.brix.tar.gz"
+        mock_db = _make_mock_db()
+
+        export_project("testproj", output, db=mock_db)
+
+        with tarfile.open(output, "r:gz") as tar:
+            f = tar.extractfile("alert_rules/high-failure-rate.json")
+            data = json.loads(f.read())
+
+        assert data["name"] == "high-failure-rate"
+        assert data["project"] == "testproj"
+
+    def test_alert_from_other_project_excluded(self, tmp_path):
+        output = tmp_path / "test.project.brix.tar.gz"
+        mock_db = _make_mock_db()
+
+        export_project("testproj", output, db=mock_db)
+
+        with tarfile.open(output, "r:gz") as tar:
+            names = tar.getnames()
+
+        assert "alert_rules/other-alert.json" not in names
+
+    def test_profile_included(self, tmp_path):
+        output = tmp_path / "test.project.brix.tar.gz"
+        mock_db = _make_mock_db()
+
+        export_project("testproj", output, db=mock_db)
+
+        with tarfile.open(output, "r:gz") as tar:
+            f = tar.extractfile("profiles/staging.json")
+            data = json.loads(f.read())
+
+        assert data["name"] == "staging"
+        assert data["project"] == "testproj"
+        assert data["config"] == {"timeout": 30}
+
+    def test_profile_from_other_project_excluded(self, tmp_path):
+        output = tmp_path / "test.project.brix.tar.gz"
+        mock_db = _make_mock_db()
+
+        export_project("testproj", output, db=mock_db)
+
+        with tarfile.open(output, "r:gz") as tar:
+            names = tar.getnames()
+
+        assert "profiles/production.json" not in names
+
     def test_credential_references_in_manifest(self, tmp_path):
         output = tmp_path / "test.project.brix.tar.gz"
         mock_db = _make_mock_db()
@@ -288,6 +398,9 @@ class TestProjectExportManifest:
         mock_db.trigger_list.return_value = []
         mock_db.trigger_group_list.return_value = []
         mock_db.variable_list.return_value = []
+        mock_db.connector_definitions_list.return_value = []
+        mock_db.alert_rule_list.return_value = []
+        mock_db.profile_list.return_value = []
 
         manifest = export_project("empty", output, db=mock_db)
 
@@ -297,6 +410,9 @@ class TestProjectExportManifest:
         assert manifest.counts["triggers"] == 0
         assert manifest.counts["trigger_groups"] == 0
         assert manifest.counts["variables"] == 0
+        assert manifest.counts["connector_definitions"] == 0
+        assert manifest.counts["alert_rules"] == 0
+        assert manifest.counts["profiles"] == 0
 
         with tarfile.open(output, "r:gz") as tar:
             names = tar.getnames()
