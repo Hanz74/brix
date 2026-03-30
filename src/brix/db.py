@@ -2831,6 +2831,41 @@ class BrixDB:
             )
             zombie_cleaned = cursor_z.rowcount
 
+        # Pass 4: Remove test pipelines and their data (T-BRIX-BUG-04)
+        test_pipelines_deleted = 0
+        test_runs_deleted = 0
+        with self._connect() as conn:
+            # Find test pipeline names
+            tp_rows = conn.execute(
+                "SELECT name FROM pipelines WHERE name LIKE 'test-%' OR name LIKE 'xtest-%'"
+            ).fetchall()
+            tp_names = [r[0] for r in tp_rows]
+
+            if tp_names:
+                ph = ",".join("?" * len(tp_names))
+                # Collect run_ids belonging to these pipelines
+                run_rows = conn.execute(
+                    f"SELECT run_id FROM runs WHERE pipeline IN ({ph})", tp_names
+                ).fetchall()
+                run_ids = [r[0] for r in run_rows]
+
+                if run_ids:
+                    rph = ",".join("?" * len(run_ids))
+                    conn.execute(f"DELETE FROM step_outputs WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM step_executions WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM foreach_item_executions WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM run_inputs WHERE run_id IN ({rph})", run_ids)
+
+                cursor_tr = conn.execute(
+                    f"DELETE FROM runs WHERE pipeline IN ({ph})", tp_names
+                )
+                test_runs_deleted = cursor_tr.rowcount
+
+                cursor_tp = conn.execute(
+                    f"DELETE FROM pipelines WHERE name IN ({ph})", tp_names
+                )
+                test_pipelines_deleted = cursor_tp.rowcount
+
         # Final size after cleanup
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
         db_size_mb = db_size_bytes / (1024 * 1024)
@@ -2840,6 +2875,8 @@ class BrixDB:
             "runs_deleted_size": runs_deleted_size,
             "app_log_deleted": app_log_deleted,
             "zombie_cleaned": zombie_cleaned,
+            "test_pipelines_deleted": test_pipelines_deleted,
+            "test_runs_deleted": test_runs_deleted,
             "db_size_mb": round(db_size_mb, 3),
         }
 
