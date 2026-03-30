@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from brix.config import config as _brix_config
 
-BRIX_DB_PATH = Path.home() / ".brix" / "brix.db"
+BRIX_DB_PATH = Path(os.environ["BRIX_DB_PATH"]) if os.environ.get("BRIX_DB_PATH") else Path.home() / ".brix" / "brix.db"
 HISTORY_DB_PATH = Path.home() / ".brix" / "history.db"
 REGISTRY_YAML_PATH = Path.home() / ".brix" / "helpers" / "registry.yaml"
 PIPELINES_DIR = Path.home() / ".brix" / "pipelines"
