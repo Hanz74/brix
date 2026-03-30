@@ -65,7 +65,7 @@ async def _handle_trigger_list(arguments: dict) -> dict:
     from brix.triggers.store import TriggerStore
     store = TriggerStore()
     triggers = store.list_all()
-    return {"triggers": triggers, "total": len(triggers)}
+    return {"success": True, "triggers": triggers, "count": len(triggers)}
 
 
 async def _handle_trigger_get(arguments: dict) -> dict:
@@ -331,7 +331,7 @@ async def _handle_trigger_group_list(arguments: dict) -> dict:
     from brix.triggers.store import TriggerGroupStore
     store = TriggerGroupStore()
     groups = store.list_all()
-    return {"groups": groups, "total": len(groups)}
+    return {"success": True, "groups": groups, "count": len(groups)}
 
 
 async def _handle_trigger_group_delete(arguments: dict) -> dict:
@@ -410,7 +410,7 @@ async def _handle_search_trigger_groups(arguments: dict) -> dict:
         if q_lower in g.get("name", "").lower()
         or q_lower in g.get("description", "").lower()
     ]
-    return {"success": True, "query": query, "groups": matches, "total": len(matches)}
+    return {"success": True, "query": query, "groups": matches, "count": len(matches)}
 
 
 async def _handle_search_triggers(arguments: dict) -> dict:
@@ -428,7 +428,7 @@ async def _handle_search_triggers(arguments: dict) -> dict:
         or q_lower in t.get("pipeline", "").lower()
         or q_lower in t.get("type", "").lower()
     ]
-    return {"success": True, "query": query, "triggers": matches, "total": len(matches)}
+    return {"success": True, "query": query, "triggers": matches, "count": len(matches)}
 
 
 async def _handle_trigger_group_start(arguments: dict) -> dict:

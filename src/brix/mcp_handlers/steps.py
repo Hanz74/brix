@@ -54,6 +54,7 @@ async def _handle_list_bricks(arguments: dict) -> dict:
         pass
 
     return {
+        "success": True,
         "bricks": [
             {
                 "name": b.name,
@@ -65,7 +66,7 @@ async def _handle_list_bricks(arguments: dict) -> dict:
             }
             for b in bricks
         ],
-        "total": len(bricks),
+        "count": len(bricks),
         "categories": _registry.get_categories(),
     }
 
@@ -78,8 +79,9 @@ async def _handle_search_bricks(arguments: dict) -> dict:
     results = _registry.search(query, category=category)
 
     return {
+        "success": True,
         "query": query,
-        "results": [
+        "bricks": [
             {
                 "name": b.name,
                 "type": b.type,
@@ -89,7 +91,7 @@ async def _handle_search_bricks(arguments: dict) -> dict:
             }
             for b in results
         ],
-        "total": len(results),
+        "count": len(results),
     }
 
 

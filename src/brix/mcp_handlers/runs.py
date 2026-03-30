@@ -614,7 +614,7 @@ async def _handle_get_run_errors(arguments: dict) -> dict:
     return {
         "success": True,
         "errors": errors,
-        "total": len(errors),
+        "count": len(errors),
     }
 
 
@@ -656,7 +656,7 @@ async def _handle_get_run_history(arguments: dict) -> dict:
     return {
         "success": True,
         "runs": runs,
-        "total": len(runs),
+        "count": len(runs),
     }
 
 
@@ -744,8 +744,8 @@ async def _handle_run_search(arguments: dict) -> dict:
 
     return {
         "success": True,
-        "total": len(results),
         "runs": results,
+        "count": len(results),
     }
 
 

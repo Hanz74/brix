@@ -171,7 +171,7 @@ class TestListTemplates:
             _handle_list_templates({})
         )
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
         assert result["templates"] == []
 
     def test_template_exposes_blueprint_params(self, tmp_pipelines_dir):

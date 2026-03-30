@@ -75,6 +75,7 @@ async def _handle_alert_list(arguments: dict) -> dict:
     db = BrixDB()
     rows = db.alert_rule_list()
     return {
+        "success": True,
         "rules": [
             {
                 "id": r["id"],
@@ -90,7 +91,7 @@ async def _handle_alert_list(arguments: dict) -> dict:
             }
             for r in rows
         ],
-        "total": len(rows),
+        "count": len(rows),
     }
 
 
@@ -162,7 +163,7 @@ async def _handle_alert_history(arguments: dict) -> dict:
     limit = int(arguments.get("limit", 20))
     mgr = AlertManager()
     history = mgr.get_alert_history(limit=limit)
-    return {"history": history, "total": len(history)}
+    return {"success": True, "history": history, "count": len(history)}
 
 
 async def _handle_get_alert_rule(arguments: dict) -> dict:
@@ -226,4 +227,4 @@ async def _handle_search_alert_rules(arguments: dict) -> dict:
         if q_lower in r.get("name", "").lower()
         or q_lower in r.get("condition", "").lower()
     ]
-    return {"success": True, "query": query, "rules": matches, "total": len(matches)}
+    return {"success": True, "query": query, "rules": matches, "count": len(matches)}

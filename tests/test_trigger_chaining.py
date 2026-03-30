@@ -567,7 +567,7 @@ def test_mcp_trigger_group_list_empty(monkeypatch, tmp_path):
     _patch_group_store(monkeypatch, tmp_path)
     result = _run_mcp(_mcp._handle_trigger_group_list({}))
     assert result["groups"] == []
-    assert result["total"] == 0
+    assert result["count"] == 0
 
 
 def test_mcp_trigger_group_list_populated(monkeypatch, tmp_path):
@@ -577,7 +577,7 @@ def test_mcp_trigger_group_list_populated(monkeypatch, tmp_path):
     _run_mcp(_mcp._handle_trigger_group_add({"name": "g2", "triggers": ["t2", "t3"]}))
 
     result = _run_mcp(_mcp._handle_trigger_group_list({}))
-    assert result["total"] == 2
+    assert result["count"] == 2
     names = {g["name"] for g in result["groups"]}
     assert names == {"g1", "g2"}
 
@@ -590,7 +590,7 @@ def test_mcp_trigger_group_delete(monkeypatch, tmp_path):
     assert result["success"] is True
 
     list_result = _run_mcp(_mcp._handle_trigger_group_list({}))
-    assert list_result["total"] == 0
+    assert list_result["count"] == 0
 
 
 def test_mcp_trigger_group_delete_missing(monkeypatch, tmp_path):

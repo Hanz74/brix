@@ -213,7 +213,7 @@ async def _handle_search_connections(arguments: dict) -> dict:
             "success": True,
             "query": query,
             "connections": matches,
-            "total": len(matches),
+            "count": len(matches),
             "note": "DSNs are encrypted and never shown.",
         }
     except Exception as exc:

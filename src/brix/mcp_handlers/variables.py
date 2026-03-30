@@ -114,7 +114,7 @@ async def _handle_list_variables(arguments: dict) -> dict:
         v.setdefault("group", v.pop("group_name", "") or "")
         if "group_name" in v:
             v["group"] = v.pop("group_name")
-    result: dict = {"variables": variables, "count": len(variables)}
+    result: dict = {"success": True, "variables": variables, "count": len(variables)}
     if filter_project or filter_tags or filter_group:
         result["filter"] = {
             "project": filter_project,
@@ -149,7 +149,7 @@ async def _handle_search_variables(arguments: dict) -> dict:
         if q_lower in v.get("name", "").lower()
         or q_lower in v.get("description", "").lower()
     ]
-    return {"success": True, "query": query, "variables": matches, "total": len(matches)}
+    return {"success": True, "query": query, "variables": matches, "count": len(matches)}
 
 
 # ------------------------------------------------------------------
@@ -193,7 +193,7 @@ async def _handle_store_list(arguments: dict) -> dict:
 
     db = BrixDB()
     entries = db.store_list(pipeline_name=pipeline_name)
-    return {"entries": entries, "count": len(entries)}
+    return {"success": True, "entries": entries, "count": len(entries)}
 
 
 async def _handle_store_delete(arguments: dict) -> dict:

@@ -39,9 +39,9 @@ async def _handle_list_connectors(arguments: dict) -> dict:
 
     return {
         "success": True,
+        "connectors": items,
         "count": len(items),
         "type_filter": type_filter,
-        "connectors": items,
     }
 
 

@@ -100,7 +100,7 @@ async def _handle_state_list(arguments: dict) -> dict:
 
     db = BrixDB()
     entries = db.state_list(prefix=prefix)
-    return {"entries": entries, "count": len(entries)}
+    return {"success": True, "entries": entries, "count": len(entries)}
 
 
 async def _handle_state_delete(arguments: dict) -> dict:

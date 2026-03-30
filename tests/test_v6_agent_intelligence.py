@@ -481,7 +481,7 @@ class TestGetProactiveSuggestions:
 
         assert result["success"] is True
         assert isinstance(result["suggestions"], list)
-        assert result["total"] == len(result["suggestions"])
+        assert result["count"] == len(result["suggestions"])
 
     def test_slow_step_generates_performance_suggestion(self, tmp_path):
         from brix.mcp_server import _handle_get_proactive_suggestions

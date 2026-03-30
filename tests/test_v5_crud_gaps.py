@@ -124,8 +124,8 @@ class TestSearchPipelines:
         with mock.patch("brix.mcp_handlers.pipelines.PipelineStore", return_value=store):
             result = run(_handle_search_pipelines({"query": "invoice"}))
         assert result["success"] is True
-        assert result["total"] == 1
-        assert result["results"][0]["name"] == "import-invoices"
+        assert result["count"] == 1
+        assert result["pipelines"][0]["name"] == "import-invoices"
 
     def test_match_by_description(self, isolated_pipeline_dir, monkeypatch):
         from brix.mcp_server import _handle_search_pipelines
@@ -134,7 +134,7 @@ class TestSearchPipelines:
         with mock.patch("brix.mcp_handlers.pipelines.PipelineStore", return_value=store):
             result = run(_handle_search_pipelines({"query": "budget"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
 
     def test_case_insensitive(self, isolated_pipeline_dir, monkeypatch):
         from brix.mcp_server import _handle_search_pipelines
@@ -143,7 +143,7 @@ class TestSearchPipelines:
         with mock.patch("brix.mcp_handlers.pipelines.PipelineStore", return_value=store):
             result = run(_handle_search_pipelines({"query": "EMAIL"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
 
     def test_no_match_returns_empty(self, isolated_pipeline_dir, monkeypatch):
         from brix.mcp_server import _handle_search_pipelines
@@ -152,7 +152,7 @@ class TestSearchPipelines:
         with mock.patch("brix.mcp_handlers.pipelines.PipelineStore", return_value=store):
             result = run(_handle_search_pipelines({"query": "xxxxnotfound"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
     def test_missing_query_returns_error(self):
         from brix.mcp_server import _handle_search_pipelines
@@ -246,7 +246,7 @@ class TestCredentialSearch:
         with mock.patch("brix.mcp_handlers.credentials.CredentialStore", return_value=cred_store):
             result = run(_handle_credential_search({"query": "openai"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
         assert result["credentials"][0]["name"] == "openai-key"
 
     def test_search_by_type(self, cred_store):
@@ -256,7 +256,7 @@ class TestCredentialSearch:
         with mock.patch("brix.mcp_handlers.credentials.CredentialStore", return_value=cred_store):
             result = run(_handle_credential_search({"query": "oauth"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
         assert result["credentials"][0]["type"] == "oauth2"
 
     def test_search_case_insensitive(self, cred_store):
@@ -265,7 +265,7 @@ class TestCredentialSearch:
         with mock.patch("brix.mcp_handlers.credentials.CredentialStore", return_value=cred_store):
             result = run(_handle_credential_search({"query": "MYAPI"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
 
     def test_search_no_results(self, cred_store):
         from brix.mcp_server import _handle_credential_search
@@ -273,7 +273,7 @@ class TestCredentialSearch:
         with mock.patch("brix.mcp_handlers.credentials.CredentialStore", return_value=cred_store):
             result = run(_handle_credential_search({"query": "xxxxnotfound"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
     def test_search_no_values_returned(self, cred_store):
         from brix.mcp_server import _handle_credential_search
@@ -364,28 +364,28 @@ class TestRunSearch:
         with mock.patch("brix.mcp_handlers.runs.RunHistory", return_value=history):
             result = run(_handle_run_search({"pipeline": "pipeline-a"}))
         assert result["success"] is True
-        assert result["total"] == 3
+        assert result["count"] == 3
 
     def test_search_by_status_success(self, history):
         from brix.mcp_server import _handle_run_search
         with mock.patch("brix.mcp_handlers.runs.RunHistory", return_value=history):
             result = run(_handle_run_search({"status": "success"}))
         assert result["success"] is True
-        assert result["total"] == 2
+        assert result["count"] == 2
 
     def test_search_by_status_failure(self, history):
         from brix.mcp_server import _handle_run_search
         with mock.patch("brix.mcp_handlers.runs.RunHistory", return_value=history):
             result = run(_handle_run_search({"status": "failure"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
 
     def test_search_by_status_running(self, history):
         from brix.mcp_server import _handle_run_search
         with mock.patch("brix.mcp_handlers.runs.RunHistory", return_value=history):
             result = run(_handle_run_search({"status": "running"}))
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
         assert result["runs"][0]["pipeline"] == "pipeline-b"
 
     def test_search_invalid_status(self, history):
@@ -399,7 +399,7 @@ class TestRunSearch:
         with mock.patch("brix.mcp_handlers.runs.RunHistory", return_value=history):
             result = run(_handle_run_search({}))
         assert result["success"] is True
-        assert result["total"] == 4
+        assert result["count"] == 4
 
     def test_search_result_has_no_heavy_fields(self, history):
         from brix.mcp_server import _handle_run_search
@@ -416,7 +416,7 @@ class TestRunSearch:
         with mock.patch("brix.mcp_handlers.runs.RunHistory", return_value=history):
             result = run(_handle_run_search({"pipeline": "pipeline-a", "status": "success"}))
         assert result["success"] is True
-        assert result["total"] == 2
+        assert result["count"] == 2
 
 
 # ===========================================================================
@@ -525,7 +525,7 @@ class TestServerMcpTools:
         with mock.patch("brix.server_manager.ServerManager", return_value=mgr):
             result = run(_handle_server_list({}))
         assert result["success"] is True
-        assert result["total"] == 2
+        assert result["count"] == 2
 
     def test_server_update_mcp(self, mgr):
         from brix.mcp_server import _handle_server_update

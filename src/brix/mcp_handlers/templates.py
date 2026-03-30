@@ -95,7 +95,7 @@ async def _handle_list_templates(arguments: dict) -> dict:
     return {
         "success": True,
         "templates": templates,
-        "total": len(templates),
+        "count": len(templates),
     }
 
 

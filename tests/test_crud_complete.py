@@ -159,7 +159,7 @@ class TestSearchConnections:
              mock.patch("brix.connections.ConnectionManager", return_value=mgr):
             result = run(_handle_search_connections({"query": "test"}))
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
         assert any("test" in c["name"].lower() for c in result["connections"])
 
     def test_no_matches(self, conn_mgr):
@@ -170,7 +170,7 @@ class TestSearchConnections:
              mock.patch("brix.connections.ConnectionManager", return_value=mgr):
             result = run(_handle_search_connections({"query": "zzznomatch999"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
 
 # ===========================================================================
@@ -232,7 +232,7 @@ class TestSearchTriggerGroups:
         with mock.patch("brix.triggers.store.TriggerGroupStore", return_value=tg_store):
             result = run(_handle_search_trigger_groups({"query": "email"}))
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
 
     def test_no_matches(self, tg_store):
         from brix.mcp_handlers.triggers import _handle_search_trigger_groups
@@ -240,7 +240,7 @@ class TestSearchTriggerGroups:
         with mock.patch("brix.triggers.store.TriggerGroupStore", return_value=tg_store):
             result = run(_handle_search_trigger_groups({"query": "zzznomatch999"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
 
 # ===========================================================================
@@ -254,7 +254,7 @@ class TestSearchTriggers:
         with mock.patch("brix.triggers.store.TriggerStore", return_value=tr_store):
             result = run(_handle_search_triggers({"query": "mail"}))
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
 
     def test_no_matches(self, tr_store):
         from brix.mcp_handlers.triggers import _handle_search_triggers
@@ -262,7 +262,7 @@ class TestSearchTriggers:
         with mock.patch("brix.triggers.store.TriggerStore", return_value=tr_store):
             result = run(_handle_search_triggers({"query": "zzznomatch999"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
 
 # ===========================================================================
@@ -277,7 +277,7 @@ class TestSearchVariables:
         with mock.patch("brix.mcp_handlers.variables.BrixDB", return_value=var_db):
             result = run(_handle_search_variables({"query": "my_var"}))
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
         assert any(v["name"] == "my_var" for v in result["variables"])
 
     def test_no_matches(self, var_db):
@@ -286,7 +286,7 @@ class TestSearchVariables:
         with mock.patch("brix.mcp_handlers.variables.BrixDB", return_value=var_db):
             result = run(_handle_search_variables({"query": "zzznomatch999"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
 
 # ===========================================================================
@@ -300,7 +300,7 @@ class TestSearchProfiles:
         with mock.patch("brix.db.BrixDB", return_value=profile_db):
             result = run(_handle_search_profiles({"query": "my-profile"}))
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
         assert any(p["name"] == "my-profile" for p in result["profiles"])
 
     def test_no_matches(self, profile_db):
@@ -309,7 +309,7 @@ class TestSearchProfiles:
         with mock.patch("brix.db.BrixDB", return_value=profile_db):
             result = run(_handle_search_profiles({"query": "zzznomatch999"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
 
 # ===========================================================================
@@ -346,7 +346,7 @@ class TestSearchAlertRules:
         with mock.patch("brix.db.BrixDB", return_value=alert_db):
             result = run(_handle_search_alert_rules({"query": "failure"}))
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
 
     def test_no_matches(self, alert_db):
         from brix.mcp_handlers.alerts import _handle_search_alert_rules
@@ -354,4 +354,4 @@ class TestSearchAlertRules:
         with mock.patch("brix.db.BrixDB", return_value=alert_db):
             result = run(_handle_search_alert_rules({"query": "zzznomatch999"}))
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0

@@ -321,7 +321,7 @@ async def _handle_get_proactive_suggestions(arguments: dict) -> dict:
     return {
         "success": True,
         "suggestions": suggestions,
-        "total": len(suggestions),
+        "count": len(suggestions),
     }
 
 

@@ -628,7 +628,7 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
         return {
             "success": True,
             "pipelines": pipelines,
-            "total": len(pipelines),
+            "count": len(pipelines),
             "directory": str(search_dir),
         }
     elif has_org_filter:
@@ -659,7 +659,7 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
         return {
             "success": True,
             "pipelines": pipelines,
-            "total": len(pipelines),
+            "count": len(pipelines),
             "directory": "multi-path",
             "filter": {
                 "project": filter_project,
@@ -704,7 +704,7 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
         result_list: dict = {
             "success": True,
             "pipelines": pipelines,
-            "total": len(pipelines),
+            "count": len(pipelines),
             "directory": "multi-path",
         }
         # Hint if any pipelines lack a project
@@ -733,8 +733,8 @@ async def _handle_search_pipelines(arguments: dict) -> dict:
     return {
         "success": True,
         "query": query,
-        "results": matches,
-        "total": len(matches),
+        "pipelines": matches,
+        "count": len(matches),
     }
 
 

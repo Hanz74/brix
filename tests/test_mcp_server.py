@@ -453,7 +453,7 @@ class TestDiscoveryHandlers:
         """list_bricks returns at least 10 built-in bricks."""
         result = await _handle_list_bricks({})
         assert "bricks" in result
-        assert result["total"] >= 10
+        assert result["count"] >= 10
         names = [b["name"] for b in result["bricks"]]
         assert "http_get" in names
 
@@ -461,7 +461,7 @@ class TestDiscoveryHandlers:
     async def test_list_bricks_category_filter(self):
         """list_bricks category filter only returns matching bricks."""
         result = await _handle_list_bricks({"category": "http"})
-        assert result["total"] >= 1
+        assert result["count"] >= 1
         for brick in result["bricks"]:
             assert brick["category"] == "http"
 
@@ -469,16 +469,16 @@ class TestDiscoveryHandlers:
     async def test_search_bricks_finds_http(self):
         """Search for 'http' finds http_get brick."""
         result = await _handle_search_bricks({"query": "http"})
-        assert result["total"] > 0
-        names = [b["name"] for b in result["results"]]
+        assert result["count"] > 0
+        names = [b["name"] for b in result["bricks"]]
         assert any("http" in n for n in names)
 
     @pytest.mark.asyncio
     async def test_search_bricks_no_match(self):
         """Search for nonsense query returns empty list."""
         result = await _handle_search_bricks({"query": "xyzzy_nonexistent_brick_9999"})
-        assert result["total"] == 0
-        assert result["results"] == []
+        assert result["count"] == 0
+        assert result["bricks"] == []
 
     @pytest.mark.asyncio
     async def test_get_brick_schema_valid(self):
@@ -1276,7 +1276,7 @@ class TestExecutionHandlers:
 
         history_result = await _handle_get_run_history({"limit": 20})
         assert history_result["success"] is True
-        assert history_result["total"] >= 1
+        assert history_result["count"] >= 1
 
     @pytest.mark.asyncio
     async def test_get_run_history_pipeline_filter(self, tmp_path, monkeypatch):
@@ -1305,7 +1305,7 @@ class TestExecutionHandlers:
 
         result = await _handle_list_pipelines({})
         assert result["success"] is True
-        assert result["total"] >= 2
+        assert result["count"] >= 2
         names = [p["name"] for p in result["pipelines"]]
         assert "listed-pipeline-a" in names
         assert "listed-pipeline-b" in names
@@ -1320,7 +1320,7 @@ class TestExecutionHandlers:
         )
         result = await _handle_list_pipelines({"directory": str(tmp_path)})
         assert result["success"] is True
-        assert result["total"] >= 1
+        assert result["count"] >= 1
         names = [p["name"] for p in result["pipelines"]]
         assert "custom-pipe" in names
 
@@ -2055,7 +2055,7 @@ class TestGetRunErrors:
         result = await _handle_get_run_errors({})
         assert result["success"] is True
         assert result["errors"] == []
-        assert result["total"] == 0
+        assert result["count"] == 0
 
     @pytest.mark.asyncio
     async def test_get_run_errors_unknown_run_id(self, tmp_path, monkeypatch):
@@ -2086,7 +2086,7 @@ class TestGetRunErrors:
             })
             result = await _handle_get_run_errors({"run_id": "err-run-1"})
             assert result["success"] is True
-            assert result["total"] == 1
+            assert result["count"] == 1
             err = result["errors"][0]
             assert err["step_id"] == "step2"
             assert "ModuleNotFoundError" in err["error_message"]

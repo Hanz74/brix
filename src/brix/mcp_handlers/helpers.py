@@ -211,7 +211,7 @@ async def _handle_list_helpers(arguments: dict) -> dict:
         return {
             "success": True,
             "helpers": helpers,
-            "total": len(helpers),
+            "count": len(helpers),
             "filter": {
                 "project": filter_project,
                 "tags": filter_tags,
@@ -225,7 +225,7 @@ async def _handle_list_helpers(arguments: dict) -> dict:
     result_h: dict = {
         "success": True,
         "helpers": helpers_list,
-        "total": len(helpers_list),
+        "count": len(helpers_list),
     }
     # Hint if any helpers lack a project
     no_project_count = sum(1 for h in helpers_list if not h.get("project"))
@@ -264,7 +264,7 @@ async def _handle_search_helpers(arguments: dict) -> dict:
         "success": True,
         "query": query,
         "helpers": [_make_helper_dict(e) for e in results],
-        "total": len(results),
+        "count": len(results),
     }
 
 

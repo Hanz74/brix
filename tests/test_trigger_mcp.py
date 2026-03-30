@@ -235,7 +235,7 @@ def test_mcp_trigger_list_empty(monkeypatch, tmp_path):
     _patch_store(monkeypatch, tmp_path)
     result = _run(_mcp._handle_trigger_list({}))
     assert result["triggers"] == []
-    assert result["total"] == 0
+    assert result["count"] == 0
 
 
 def test_mcp_trigger_list_populated(monkeypatch, tmp_path):
@@ -245,7 +245,7 @@ def test_mcp_trigger_list_populated(monkeypatch, tmp_path):
     _run(_mcp._handle_trigger_add({"name": "t2", "type": "mail", "pipeline": "p2"}))
 
     result = _run(_mcp._handle_trigger_list({}))
-    assert result["total"] == 2
+    assert result["count"] == 2
     names = {t["name"] for t in result["triggers"]}
     assert names == {"t1", "t2"}
 
@@ -493,7 +493,7 @@ def test_mcp_trigger_roundtrip(monkeypatch, tmp_path):
 
     # List
     list_result = _run(_mcp._handle_trigger_list({}))
-    assert list_result["total"] == 1
+    assert list_result["count"] == 1
 
     # Delete
     del_result = _run(_mcp._handle_trigger_delete({"name": "roundtrip"}))
@@ -501,4 +501,4 @@ def test_mcp_trigger_roundtrip(monkeypatch, tmp_path):
 
     # Confirm gone
     list_after = _run(_mcp._handle_trigger_list({}))
-    assert list_after["total"] == 0
+    assert list_after["count"] == 0

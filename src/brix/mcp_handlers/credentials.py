@@ -152,7 +152,7 @@ async def _handle_credential_search(arguments: dict) -> dict:
             "success": True,
             "query": query,
             "credentials": results,
-            "total": len(results),
+            "count": len(results),
         }
     except Exception as exc:
         return {"success": False, "error": str(exc)}

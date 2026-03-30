@@ -61,7 +61,7 @@ async def _handle_org(arguments: dict) -> dict:
                 "action": "list",
                 "entries": rows,
                 "grouped": grouped,
-                "total": len(rows),
+                "count": len(rows),
             }
         except Exception as exc:
             return {"success": False, "error": str(exc)}

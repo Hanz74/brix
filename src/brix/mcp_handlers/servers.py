@@ -30,7 +30,7 @@ async def _handle_server_list(arguments: dict) -> dict:
     from brix.server_manager import ServerManager
     mgr = ServerManager()
     servers = mgr.list_all()
-    return {"success": True, "servers": servers, "total": len(servers)}
+    return {"success": True, "servers": servers, "count": len(servers)}
 
 
 async def _handle_server_update(arguments: dict) -> dict:
@@ -101,7 +101,7 @@ async def _handle_server_health(arguments: dict) -> dict:
             },
             ...
           },
-          "total": <int>
+          "count": <int>
         }
 
     If the module-level pool has not been initialised (no pipeline run yet),
@@ -119,4 +119,4 @@ async def _handle_server_health(arguments: dict) -> dict:
     except (ImportError, AttributeError):
         pass
 
-    return {"success": True, "servers": health, "total": len(health)}
+    return {"success": True, "servers": health, "count": len(health)}

@@ -261,14 +261,14 @@ class TestMcpHandlerListHelpers:
         result = await _handle_list_helpers({})
         assert result["success"] is True
         assert result["helpers"] == []
-        assert result["total"] == 0
+        assert result["count"] == 0
 
     async def test_list_with_entries(self, mock_registry):
         from brix.mcp_server import _handle_register_helper, _handle_list_helpers
         await _handle_register_helper({"name": "a", "script": "/a.py"})
         await _handle_register_helper({"name": "b", "script": "/b.py"})
         result = await _handle_list_helpers({})
-        assert result["total"] == 2
+        assert result["count"] == 2
         names = [h["name"] for h in result["helpers"]]
         assert "a" in names
         assert "b" in names
@@ -301,7 +301,7 @@ class TestMcpHandlerSearchHelpers:
         await _handle_register_helper({"name": "mail_fetcher", "script": "/mail.py", "description": "Fetches emails"})
         result = await _handle_search_helpers({"query": "invoice"})
         assert result["success"] is True
-        assert result["total"] == 1
+        assert result["count"] == 1
         assert result["helpers"][0]["name"] == "invoice_parser"
 
     async def test_search_no_results(self, mock_registry):
@@ -309,7 +309,7 @@ class TestMcpHandlerSearchHelpers:
         await _handle_register_helper({"name": "alpha", "script": "/a.py"})
         result = await _handle_search_helpers({"query": "zzznomatch"})
         assert result["success"] is True
-        assert result["total"] == 0
+        assert result["count"] == 0
 
 
 class TestMcpHandlerUpdateHelper:

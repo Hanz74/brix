@@ -161,6 +161,6 @@ async def _handle_search_profiles(arguments: dict) -> dict:
             if q_lower in p.get("name", "").lower()
             or q_lower in p.get("description", "").lower()
         ]
-        return {"success": True, "query": query, "profiles": matches, "total": len(matches)}
+        return {"success": True, "query": query, "profiles": matches, "count": len(matches)}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
