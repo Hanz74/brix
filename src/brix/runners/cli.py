@@ -84,6 +84,18 @@ class CliRunner(BaseRunner):
             },
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        args = config.get("args")
+        if args is not None and not isinstance(args, list):
+            errors.append("'args' must be a list of strings")
+        command = config.get("command")
+        if command is not None and not isinstance(command, str):
+            errors.append("'command' must be a string")
+        if not args and not command:
+            errors.append("Either 'args' or 'command' must be provided")
+        return errors
+
     def input_type(self) -> str:
         return "none"
 

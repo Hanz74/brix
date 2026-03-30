@@ -42,6 +42,16 @@ class ApprovalRunner(BaseRunner):
             "required": ["message"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        msg = config.get("message")
+        if msg is not None and not isinstance(msg, str):
+            errors.append("'message' must be a string")
+        on_to = config.get("on_timeout")
+        if on_to is not None and on_to not in ("stop", "continue"):
+            errors.append("'on_timeout' must be 'stop' or 'continue'")
+        return errors
+
     def input_type(self) -> str:
         return "none"
 

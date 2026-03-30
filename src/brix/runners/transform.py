@@ -34,6 +34,13 @@ class TransformRunner(BaseRunner):
             "required": ["expression"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        expr = config.get("expression")
+        if expr is not None and not isinstance(expr, str):
+            errors.append("'expression' must be a string (Jinja2 template)")
+        return errors
+
     def input_type(self) -> str:
         return "any"
 

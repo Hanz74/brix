@@ -61,6 +61,16 @@ class DbUpsertRunner(BaseRunner):
             "required": ["connection", "table"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        conn = config.get("connection")
+        if conn is not None and not isinstance(conn, str):
+            errors.append("'connection' must be a string")
+        table = config.get("table")
+        if table is not None and not isinstance(table, str):
+            errors.append("'table' must be a string")
+        return errors
+
     def input_type(self) -> str:
         return "dict"
 

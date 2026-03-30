@@ -2713,3 +2713,70 @@ steps:
     assert len(end_entries) == 1
     assert end_entries[0]["level"] == "ERROR"
     assert "failure" in end_entries[0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# validate_config wiring in engine (T-BRIX-STD-03)
+# ---------------------------------------------------------------------------
+
+
+async def test_engine_validate_config_rejects_bad_config():
+    """Engine rejects a step whose config fails validate_config (on_error=stop)."""
+    pipeline = load_pipeline("""
+name: bad-config
+error_handling:
+  on_error: stop
+steps:
+  - id: bad_filter
+    type: filter
+    params:
+      where: 12345
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    # The filter runner's validate_config should reject where=12345 (not a string)
+    assert result.success is False
+    assert result.steps["bad_filter"].status == "error"
+    assert "validation failed" in result.steps["bad_filter"].error_message.lower() or \
+           "validate" in result.steps["bad_filter"].error_message.lower()
+
+
+async def test_engine_validate_config_skip_on_continue():
+    """Engine skips failed validation step and continues when on_error=continue."""
+    pipeline = load_pipeline("""
+name: bad-config-continue
+error_handling:
+  on_error: continue
+steps:
+  - id: bad_switch
+    type: switch
+    params:
+      field: 999
+      cases: not_a_dict
+  - id: ok_step
+    type: cli
+    args: ["echo", "still-running"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    # bad_switch should fail validation, ok_step should still run
+    assert result.steps["bad_switch"].status == "error"
+    assert result.steps["ok_step"].status == "ok"
+
+
+async def test_engine_validate_config_passes_good_config():
+    """Engine does not block a step with valid config."""
+    pipeline = load_pipeline("""
+name: good-config
+steps:
+  - id: greet
+    type: cli
+    args: ["echo", "hello"]
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True
+    assert result.steps["greet"].status == "ok"

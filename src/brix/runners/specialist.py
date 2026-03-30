@@ -223,6 +223,16 @@ class SpecialistRunner(BaseRunner):
             },
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        extract = config.get("extract")
+        if extract is not None and not isinstance(extract, list):
+            errors.append("'extract' must be a list of extraction rules")
+        validate = config.get("validate")
+        if validate is not None and not isinstance(validate, list):
+            errors.append("'validate' must be a list of validation rules")
+        return errors
+
     def input_type(self) -> str:
         return "text"
 

@@ -30,6 +30,13 @@ class FilterRunner(BaseRunner):
             "required": ["where"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        where = config.get("where")
+        if where is not None and not isinstance(where, str):
+            errors.append("'where' must be a string (Jinja2 boolean expression)")
+        return errors
+
     def input_type(self) -> str:
         return "list[dict]"
 

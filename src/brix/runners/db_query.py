@@ -137,6 +137,16 @@ class DbQueryRunner(BaseRunner):
             "required": ["connection", "query"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        conn = config.get("connection")
+        if conn is not None and not isinstance(conn, str):
+            errors.append("'connection' must be a string")
+        query = config.get("query")
+        if query is not None and not isinstance(query, str):
+            errors.append("'query' must be a string")
+        return errors
+
     def input_type(self) -> str:
         return "none"
 

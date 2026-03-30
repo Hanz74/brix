@@ -101,6 +101,19 @@ class LlmBatchRunner(BaseRunner):
             "required": ["system_prompt", "user_template"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        sp = config.get("system_prompt")
+        if sp is not None and not isinstance(sp, str):
+            errors.append("'system_prompt' must be a string")
+        ut = config.get("user_template")
+        if ut is not None and not isinstance(ut, str):
+            errors.append("'user_template' must be a string")
+        schema = config.get("output_schema")
+        if schema is not None and not isinstance(schema, dict):
+            errors.append("'output_schema' must be a dict (JSON Schema)")
+        return errors
+
     def input_type(self) -> str:
         return "list[dict]"
 

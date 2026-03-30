@@ -800,6 +800,34 @@ class PipelineEngine:
                                 break
                             continue
 
+                        # --- validate_config (T-BRIX-STD-03) ---
+                        _vc_config = dict(step.params or {})
+                        # Merge top-level step attributes that runners may read
+                        for _vc_attr in (
+                            "connector", "script", "url", "method", "server", "tool",
+                            "command", "args", "shell", "pipeline", "pipelines",
+                            "message", "field", "cases", "default",
+                            "connection", "query", "table",
+                        ):
+                            _vc_val = getattr(step, _vc_attr, None)
+                            if _vc_val is not None and _vc_attr not in _vc_config:
+                                _vc_config[_vc_attr] = _vc_val
+                        _vc_errors = runner.validate_config(_vc_config)
+                        if _vc_errors:
+                            _vc_msg = f"Config validation failed for step '{step.id}': {'; '.join(_vc_errors)}"
+                            logger.warning(_vc_msg)
+                            step_statuses[step.id] = StepStatus(
+                                status="error", duration=0.0, errors=1,
+                                error_message=_vc_msg,
+                            )
+                            self.progress.step_start(step.id, step.type)
+                            self.progress.step_error(step.id, _vc_msg)
+                            effective_on_error = step.on_error or pipeline.error_handling.on_error
+                            if effective_on_error == "stop":
+                                pipeline_aborted = True
+                                break
+                            continue
+
                         # --- foreach branch ---
                         if step.foreach:
                             # Per-step dependency check for foreach steps (T-BRIX-V6-03)

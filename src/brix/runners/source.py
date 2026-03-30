@@ -154,6 +154,13 @@ class SourceRunner(BaseRunner):
             "required": ["connector"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        connector = config.get("connector")
+        if connector is not None and not isinstance(connector, str):
+            errors.append("'connector' must be a string")
+        return errors
+
     def input_type(self) -> str:
         return "none"
 

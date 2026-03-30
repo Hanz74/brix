@@ -48,6 +48,16 @@ class AggregateRunner(BaseRunner):
             "required": ["group_by", "operations"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        ops = config.get("operations")
+        if ops is not None and not isinstance(ops, dict):
+            errors.append("'operations' must be a dict mapping output_name to {op, field?}")
+        group_by = config.get("group_by")
+        if group_by is not None and not isinstance(group_by, str):
+            errors.append("'group_by' must be a string (Jinja2 expression)")
+        return errors
+
     def input_type(self) -> str:
         return "list[dict]"
 

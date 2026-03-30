@@ -46,6 +46,16 @@ class SwitchRunner(BaseRunner):
             "required": ["field", "cases"],
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        field = config.get("field")
+        if field is not None and not isinstance(field, str):
+            errors.append("'field' must be a string (Jinja2 expression)")
+        cases = config.get("cases")
+        if cases is not None and not isinstance(cases, dict):
+            errors.append("'cases' must be a dict mapping case_value to target_step_id")
+        return errors
+
     def input_type(self) -> str:
         return "any"
 

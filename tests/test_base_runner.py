@@ -266,3 +266,145 @@ def test_progress_set_after_execute():
     runner = _MinimalRunner()
     asyncio.get_event_loop().run_until_complete(runner.execute(None, None))
     assert runner._progress is not None
+
+
+# ---------------------------------------------------------------------------
+# validate_config per-runner overrides (T-BRIX-STD-03)
+# ---------------------------------------------------------------------------
+
+
+class TestValidateConfigPerRunner:
+    """Test validate_config() overrides on concrete runners."""
+
+    def test_filter_where_must_be_string(self):
+        from brix.runners.filter import FilterRunner
+        runner = FilterRunner()
+        errors = runner.validate_config({"where": 123})
+        assert any("'where' must be a string" in e for e in errors)
+
+    def test_filter_valid_config(self):
+        from brix.runners.filter import FilterRunner
+        runner = FilterRunner()
+        errors = runner.validate_config({"where": "{{ item.ok }}"})
+        assert errors == []
+
+    def test_transform_expression_must_be_string(self):
+        from brix.runners.transform import TransformRunner
+        runner = TransformRunner()
+        errors = runner.validate_config({"expression": ["not", "a", "string"]})
+        assert any("'expression' must be a string" in e for e in errors)
+
+    def test_aggregate_operations_must_be_dict(self):
+        from brix.runners.aggregate import AggregateRunner
+        runner = AggregateRunner()
+        errors = runner.validate_config({"group_by": "{{ item.x }}", "operations": "wrong"})
+        assert any("'operations' must be a dict" in e for e in errors)
+
+    def test_aggregate_group_by_must_be_string(self):
+        from brix.runners.aggregate import AggregateRunner
+        runner = AggregateRunner()
+        errors = runner.validate_config({"group_by": 42, "operations": {"count": {"op": "count"}}})
+        assert any("'group_by' must be a string" in e for e in errors)
+
+    def test_aggregate_valid_config(self):
+        from brix.runners.aggregate import AggregateRunner
+        runner = AggregateRunner()
+        errors = runner.validate_config({"group_by": "{{ item.x }}", "operations": {"count": {"op": "count"}}})
+        assert errors == []
+
+    def test_switch_cases_must_be_dict(self):
+        from brix.runners.switch import SwitchRunner
+        runner = SwitchRunner()
+        errors = runner.validate_config({"field": "{{ x }}", "cases": ["a", "b"]})
+        assert any("'cases' must be a dict" in e for e in errors)
+
+    def test_switch_field_must_be_string(self):
+        from brix.runners.switch import SwitchRunner
+        runner = SwitchRunner()
+        errors = runner.validate_config({"field": 99, "cases": {"a": "step_a"}})
+        assert any("'field' must be a string" in e for e in errors)
+
+    def test_db_query_connection_must_be_string(self):
+        from brix.runners.db_query import DbQueryRunner
+        runner = DbQueryRunner()
+        errors = runner.validate_config({"connection": 123, "query": "SELECT 1"})
+        assert any("'connection' must be a string" in e for e in errors)
+
+    def test_db_query_query_must_be_string(self):
+        from brix.runners.db_query import DbQueryRunner
+        runner = DbQueryRunner()
+        errors = runner.validate_config({"connection": "mydb", "query": 456})
+        assert any("'query' must be a string" in e for e in errors)
+
+    def test_db_upsert_table_must_be_string(self):
+        from brix.runners.db_upsert import DbUpsertRunner
+        runner = DbUpsertRunner()
+        errors = runner.validate_config({"connection": "mydb", "table": ["wrong"]})
+        assert any("'table' must be a string" in e for e in errors)
+
+    def test_llm_batch_system_prompt_must_be_string(self):
+        from brix.runners.llm_batch import LlmBatchRunner
+        runner = LlmBatchRunner()
+        errors = runner.validate_config({"system_prompt": 42, "user_template": "x"})
+        assert any("'system_prompt' must be a string" in e for e in errors)
+
+    def test_llm_batch_output_schema_must_be_dict(self):
+        from brix.runners.llm_batch import LlmBatchRunner
+        runner = LlmBatchRunner()
+        errors = runner.validate_config({"system_prompt": "x", "user_template": "y", "output_schema": "not_dict"})
+        assert any("'output_schema' must be a dict" in e for e in errors)
+
+    def test_source_connector_must_be_string(self):
+        from brix.runners.source import SourceRunner
+        runner = SourceRunner()
+        errors = runner.validate_config({"connector": ["wrong"]})
+        assert any("'connector' must be a string" in e for e in errors)
+
+    def test_approval_on_timeout_must_be_valid(self):
+        from brix.runners.approval import ApprovalRunner
+        runner = ApprovalRunner()
+        errors = runner.validate_config({"message": "ok", "on_timeout": "crash"})
+        assert any("'on_timeout' must be 'stop' or 'continue'" in e for e in errors)
+
+    def test_cli_needs_args_or_command(self):
+        from brix.runners.cli import CliRunner
+        runner = CliRunner()
+        errors = runner.validate_config({})
+        assert any("'args' or 'command' must be provided" in e for e in errors)
+
+    def test_cli_args_must_be_list(self):
+        from brix.runners.cli import CliRunner
+        runner = CliRunner()
+        errors = runner.validate_config({"args": "not-a-list"})
+        assert any("'args' must be a list" in e for e in errors)
+
+    def test_cli_valid_config(self):
+        from brix.runners.cli import CliRunner
+        runner = CliRunner()
+        errors = runner.validate_config({"args": ["echo", "hello"]})
+        assert errors == []
+
+    def test_specialist_extract_must_be_list(self):
+        from brix.runners.specialist import SpecialistRunner
+        runner = SpecialistRunner()
+        errors = runner.validate_config({"extract": "wrong"})
+        assert any("'extract' must be a list" in e for e in errors)
+
+    def test_validate_rules_must_be_list(self):
+        from brix.runners.validate import ValidateRunner
+        runner = ValidateRunner()
+        errors = runner.validate_config({"rules": "wrong"})
+        assert any("'rules' must be a list" in e for e in errors)
+
+    def test_all_runners_validate_config_callable(self):
+        """Every discovered runner's validate_config returns a list."""
+        registry = discover_runners()
+        for step_type, runner_cls in registry.items():
+            try:
+                runner = runner_cls()
+            except TypeError:
+                runner = runner_cls(engine=None)
+            result = runner.validate_config({})
+            assert isinstance(result, list), (
+                f"{runner_cls.__name__}.validate_config({{}}) did not return a list"
+            )

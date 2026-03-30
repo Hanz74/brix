@@ -35,6 +35,13 @@ class ValidateRunner(BaseRunner):
             },
         }
 
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        rules = config.get("rules")
+        if rules is not None and not isinstance(rules, list):
+            errors.append("'rules' must be a list of validation rule objects")
+        return errors
+
     def input_type(self) -> str:
         return "any"
 
