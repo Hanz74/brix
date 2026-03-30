@@ -2101,7 +2101,7 @@ steps:
 
 @pytest.mark.asyncio
 async def test_repeat_max_iterations():
-    """When until never matches, repeat stops at max_iterations."""
+    """When until never matches, repeat stops at max_iterations — exhausted."""
     pipeline = load_pipeline("""
 name: repeat-max
 steps:
@@ -2117,7 +2117,8 @@ steps:
     engine = PipelineEngine()
     result = await engine.run(pipeline)
 
-    assert result.success is True
+    # until was set but never became true → exhausted
+    assert result.success is False
 
 
 @pytest.mark.asyncio

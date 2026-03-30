@@ -26,6 +26,7 @@ class RepeatRunner(BaseRunner):
                 "while_condition": {"type": "string", "description": "Jinja2 condition to continue while true"},
                 "max_iterations": {"type": "integer", "description": "Maximum loop iterations (default 100)"},
                 "timeout": {"type": "string", "description": "Total timeout for the loop e.g. '1h'"},
+                "delay": {"type": "number", "description": "Delay in seconds between iterations (default 0)"},
             },
         }
 
@@ -41,12 +42,14 @@ class RepeatRunner(BaseRunner):
         until_cond = getattr(step, "until", None)
         while_cond = getattr(step, "while_condition", None)
         max_iter = getattr(step, "max_iterations", 100)
+        delay = float(getattr(step, "delay", 0) or 0)
 
         from brix.models import Pipeline
         from brix.loader import PipelineLoader
         loader = PipelineLoader()
 
         results = []
+        until_met = False
         # Max iterations is known upfront for bounded loops; 0 = unknown (while only)
         _known_max = max_iter if not while_cond else 0
         self.report_progress(0.0, f"Starting repeat loop (max {max_iter} iterations)", done=0, total=_known_max)
@@ -118,6 +121,7 @@ class RepeatRunner(BaseRunner):
                 jinja_ctx["repeat"] = {"index": i, "first": i == 0, "last": True}
                 try:
                     if loader.evaluate_condition(until_cond, jinja_ctx):
+                        until_met = True
                         break
                 except Exception as e:
                     # BUG-3: surface UndefinedError and similar as real error_message
@@ -129,16 +133,27 @@ class RepeatRunner(BaseRunner):
                         "iterations": len(results),
                     }
 
+            # Delay between iterations (skip after the last iteration)
+            if delay > 0 and i < max_iter - 1:
+                await asyncio.sleep(delay)
+
         last_result = results[-1] if results else None
         total_duration = time.monotonic() - start
         all_ok = all(r.success for r in results) if results else True
 
+        # Exhausted: until was set but never became true after all iterations
+        exhausted = bool(until_cond and not until_met and len(results) == max_iter)
+
         ret: dict = {
-            "success": all_ok,
+            "success": all_ok and not exhausted,
             "data": last_result.result if last_result else None,
             "duration": total_duration,
             "iterations": len(results),
         }
+
+        if exhausted:
+            ret["exhausted"] = True
+            ret["error"] = f"max_iterations ({max_iter}) exhausted without until condition being met"
 
         if not all_ok:
             # Find the last failed sub-run and surface its error message so that

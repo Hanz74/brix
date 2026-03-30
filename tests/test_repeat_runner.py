@@ -166,12 +166,14 @@ steps:
     engine = PipelineEngine()
     result = await engine.run(pipeline)
 
-    # Jinja2 undefined → condition is False → loop runs all 3 iterations → success
+    # Jinja2 undefined → condition is False → loop runs all 3 iterations → exhausted
     # The important invariant: error_message must never be the generic "unknown error"
+    assert result.success is False
     loop_status = result.steps.get("loop")
     assert loop_status is not None
-    if loop_status.error_message is not None:
-        assert loop_status.error_message != "unknown error"
+    assert loop_status.error_message is not None
+    assert loop_status.error_message != "unknown error"
+    assert "exhausted" in loop_status.error_message
 
 
 async def test_repeat_until_exception_returns_descriptive_error():
