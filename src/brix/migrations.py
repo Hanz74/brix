@@ -213,6 +213,12 @@ MIGRATIONS: list[dict] = [
     {"version": 44, "name": "add_org_to_registry_templates_project", "up": "ALTER TABLE registry_templates ADD COLUMN project TEXT DEFAULT ''", "down": ""},
     {"version": 45, "name": "add_org_to_registry_templates_group", "up": "ALTER TABLE registry_templates ADD COLUMN group_name TEXT DEFAULT ''", "down": "",
     },
+    # T-BRIX-PERF-01: Performance indexes for common query patterns
+    {"version": 46, "name": "idx_runs_pipeline", "up": "CREATE INDEX IF NOT EXISTS idx_runs_pipeline ON runs (pipeline)", "down": "DROP INDEX IF EXISTS idx_runs_pipeline"},
+    {"version": 47, "name": "idx_runs_started_at", "up": "CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs (started_at DESC)", "down": "DROP INDEX IF EXISTS idx_runs_started_at"},
+    {"version": 48, "name": "idx_object_versions_type_name", "up": "CREATE INDEX IF NOT EXISTS idx_object_versions_type_name ON object_versions (type, name)", "down": "DROP INDEX IF EXISTS idx_object_versions_type_name"},
+    {"version": 49, "name": "idx_app_log_timestamp", "up": "CREATE INDEX IF NOT EXISTS idx_app_log_timestamp ON app_log (timestamp DESC)", "down": "DROP INDEX IF EXISTS idx_app_log_timestamp"},
+    {"version": 50, "name": "idx_persistent_store_pipeline", "up": "CREATE INDEX IF NOT EXISTS idx_persistent_store_pipeline ON persistent_store (pipeline_name)", "down": "DROP INDEX IF EXISTS idx_persistent_store_pipeline"},
 ]
 
 
