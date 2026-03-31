@@ -114,6 +114,76 @@ def _load_db_tips() -> list[str]:
     return lines
 
 
+def _load_registry_content() -> list[str]:
+    """Load lessons learned, error patterns, and best practices from registry tables.
+
+    Returns formatted markdown lines for inclusion in get_tips output.
+    Returns empty list if no entries exist (no empty headers).
+    """
+    lines: list[str] = []
+    try:
+        from brix.db import BrixDB
+        db = BrixDB()
+
+        # --- Lessons Learned ---
+        lessons = db.registry_list("lessons_learned")
+        if lessons:
+            lines.append("## LESSONS LEARNED")
+            for entry in lessons:
+                lines.append(f"### {entry['name']}")
+                if entry.get("description"):
+                    lines.append(f"  {entry['description']}")
+                content = entry.get("content")
+                if content and isinstance(content, dict):
+                    for k, v in content.items():
+                        lines.append(f"  {k}: {v}")
+                elif content and isinstance(content, str):
+                    for cl in content.split("\n"):
+                        lines.append(f"  {cl}" if cl.strip() else "")
+                lines.append("")
+
+        # --- Error Patterns ---
+        errors = db.registry_list("error_patterns")
+        if errors:
+            lines.append("## ERROR PATTERNS")
+            for entry in errors:
+                lines.append(f"### {entry['name']}")
+                if entry.get("description"):
+                    lines.append(f"  {entry['description']}")
+                content = entry.get("content")
+                if content and isinstance(content, dict):
+                    if "solution" in content:
+                        lines.append(f"  Solution: {content['solution']}")
+                    for k, v in content.items():
+                        if k != "solution":
+                            lines.append(f"  {k}: {v}")
+                elif content and isinstance(content, str):
+                    for cl in content.split("\n"):
+                        lines.append(f"  {cl}" if cl.strip() else "")
+                lines.append("")
+
+        # --- Best Practices ---
+        practices = db.registry_list("best_practices")
+        if practices:
+            lines.append("## BEST PRACTICES")
+            for entry in practices:
+                lines.append(f"### {entry['name']}")
+                if entry.get("description"):
+                    lines.append(f"  {entry['description']}")
+                content = entry.get("content")
+                if content and isinstance(content, dict):
+                    for k, v in content.items():
+                        lines.append(f"  {k}: {v}")
+                elif content and isinstance(content, str):
+                    for cl in content.split("\n"):
+                        lines.append(f"  {cl}" if cl.strip() else "")
+                lines.append("")
+
+    except Exception as e:
+        logger.debug("Could not load registry content: %s", e)
+    return lines
+
+
 async def _handle_get_tips(arguments: dict) -> dict:
     """Return usage tips and best practices for Brix."""
     # Gather brick categories
@@ -243,6 +313,9 @@ async def _handle_get_tips(arguments: dict) -> dict:
     # T-BRIX-TIPS-01: Load static tips from DB instead of hardcoded lines
     db_tip_lines = _load_db_tips()
 
+    # T-BRIX-TIPS-02: Load registry content (lessons, error patterns, best practices)
+    registry_lines = _load_registry_content()
+
     tips = [
         *integrity_alert_lines,
         *legacy_alert_lines,
@@ -250,6 +323,7 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "=== Brix Quick Reference ===",
         "",
         *db_tip_lines,
+        *registry_lines,
         "## VERFÜGBARE BRICK-KATEGORIEN",
         *category_lines,
         f"  Total bricks: {len(all_bricks)}",
