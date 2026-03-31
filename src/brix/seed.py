@@ -88,7 +88,9 @@ def _seed_from_file(db: BrixDB, seed_file: Path) -> dict[str, int]:
 
 
 def _seed_bricks_from_data(db: BrixDB, records: list[dict]) -> int:
-    if db.brick_definitions_count() > 0:
+    count = db.brick_definitions_count()
+    if count > 0:
+        logger.info("seed: brick_definition already has %d rows, skipping", count)
         return 0
     for rec in records:
         db.brick_definitions_upsert(rec)
@@ -97,7 +99,9 @@ def _seed_bricks_from_data(db: BrixDB, records: list[dict]) -> int:
 
 
 def _seed_connectors_from_data(db: BrixDB, records: list[dict]) -> int:
-    if db.connector_definitions_count() > 0:
+    count = db.connector_definitions_count()
+    if count > 0:
+        logger.info("seed: connector_definition already has %d rows, skipping", count)
         return 0
     for rec in records:
         db.connector_definitions_upsert(rec)
@@ -106,7 +110,9 @@ def _seed_connectors_from_data(db: BrixDB, records: list[dict]) -> int:
 
 
 def _seed_tools_from_data(db: BrixDB, records: list[dict]) -> int:
-    if db.mcp_tool_schemas_count() > 0:
+    count = db.mcp_tool_schemas_count()
+    if count > 0:
+        logger.info("seed: mcp_tool_schema already has %d rows, skipping", count)
         return 0
     for rec in records:
         db.mcp_tool_schemas_upsert(rec)
@@ -115,7 +121,9 @@ def _seed_tools_from_data(db: BrixDB, records: list[dict]) -> int:
 
 
 def _seed_help_from_data(db: BrixDB, records: list[dict]) -> int:
-    if db.help_topics_count() > 0:
+    count = db.help_topics_count()
+    if count > 0:
+        logger.info("seed: help_topic already has %d rows, skipping", count)
         return 0
     for rec in records:
         db.help_topics_upsert(rec)
@@ -124,7 +132,9 @@ def _seed_help_from_data(db: BrixDB, records: list[dict]) -> int:
 
 
 def _seed_keywords_from_data(db: BrixDB, records: list[dict]) -> int:
-    if db.keyword_taxonomies_count() > 0:
+    count = db.keyword_taxonomies_count()
+    if count > 0:
+        logger.info("seed: keyword_taxonomy already has %d rows, skipping", count)
         return 0
     for rec in records:
         db.keyword_taxonomies_upsert(
@@ -138,7 +148,9 @@ def _seed_keywords_from_data(db: BrixDB, records: list[dict]) -> int:
 
 
 def _seed_types_from_data(db: BrixDB, records: list[dict]) -> int:
-    if db.type_compatibility_count() > 0:
+    count = db.type_compatibility_count()
+    if count > 0:
+        logger.info("seed: type_compatibility already has %d rows, skipping", count)
         return 0
     for rec in records:
         db.type_compatibility_upsert(
@@ -173,7 +185,9 @@ def _seed_from_code(db: BrixDB) -> dict[str, int]:
 
 def _seed_brick_definitions(db: BrixDB) -> int:
     """Seed brick_definitions from ALL_BUILTINS if table is empty."""
-    if db.brick_definitions_count() > 0:
+    count = db.brick_definitions_count()
+    if count > 0:
+        logger.info("seed: brick_definition already has %d rows, skipping (code path)", count)
         return 0
 
     try:
@@ -219,7 +233,9 @@ def _seed_brick_definitions(db: BrixDB) -> int:
 
 def _seed_connector_definitions(db: BrixDB) -> int:
     """Seed connector_definitions from CONNECTOR_REGISTRY if table is empty."""
-    if db.connector_definitions_count() > 0:
+    count = db.connector_definitions_count()
+    if count > 0:
+        logger.info("seed: connector_definition already has %d rows, skipping (code path)", count)
         return 0
 
     try:
@@ -261,7 +277,9 @@ def _seed_connector_definitions(db: BrixDB) -> int:
 
 def _seed_mcp_tool_schemas(db: BrixDB) -> int:
     """Seed mcp_tool_schemas from BRIX_TOOLS if table is empty (legacy fallback)."""
-    if db.mcp_tool_schemas_count() > 0:
+    count = db.mcp_tool_schemas_count()
+    if count > 0:
+        logger.info("seed: mcp_tool_schema already has %d rows, skipping (code path)", count)
         return 0
 
     try:
@@ -285,7 +303,9 @@ def _seed_mcp_tool_schemas(db: BrixDB) -> int:
 
 def _seed_help_topics(db: BrixDB) -> int:
     """Seed help_topics from _HELP_TOPICS if table is empty (legacy fallback)."""
-    if db.help_topics_count() > 0:
+    count = db.help_topics_count()
+    if count > 0:
+        logger.info("seed: help_topic already has %d rows, skipping (code path)", count)
         return 0
 
     try:
@@ -309,7 +329,9 @@ def _seed_help_topics(db: BrixDB) -> int:
 
 def _seed_keyword_taxonomies(db: BrixDB) -> int:
     """Seed keyword_taxonomies from composer _*_KEYWORDS dicts if table is empty."""
-    if db.keyword_taxonomies_count() > 0:
+    count = db.keyword_taxonomies_count()
+    if count > 0:
+        logger.info("seed: keyword_taxonomy already has %d rows, skipping (code path)", count)
         return 0
 
     try:
@@ -344,7 +366,9 @@ def _seed_keyword_taxonomies(db: BrixDB) -> int:
 
 def _seed_type_compatibility(db: BrixDB) -> int:
     """Seed type_compatibility from TYPE_COMPATIBILITY dict if table is empty."""
-    if db.type_compatibility_count() > 0:
+    count = db.type_compatibility_count()
+    if count > 0:
+        logger.info("seed: type_compatibility already has %d rows, skipping (code path)", count)
         return 0
 
     try:
@@ -401,8 +425,9 @@ def import_pipeline_content(db: BrixDB) -> int:
     """
     import yaml as _yaml
 
-    if db.count_pipelines_with_content() > 0:
-        # Already imported — skip
+    existing = db.count_pipelines_with_content()
+    if existing > 0:
+        logger.info("seed: pipeline table already has %d rows with content, skipping import", existing)
         return 0
 
     count = 0
@@ -447,8 +472,9 @@ def import_helper_code(db: BrixDB) -> int:
     Only imports if the DB has helpers without code.
     Idempotent: skips helpers that already have code.
     """
-    if db.count_helpers_with_code() > 0:
-        # Already imported — skip
+    existing = db.count_helpers_with_code()
+    if existing > 0:
+        logger.info("seed: helper table already has %d rows with code, skipping import", existing)
         return 0
 
     count = 0
