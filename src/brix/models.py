@@ -121,6 +121,8 @@ class Step(BaseModel):
         "flatten", "diff", "respond",
         # Advanced flow runners (T-BRIX-DB-22)
         "queue", "emit",
+        # File I/O bricks (T-BRIX-BUG-15)
+        "file_read", "file_write",
         # Brick-First dot-notation names (T-BRIX-DB-05c)
         "script.python", "http.request", "mcp.call", "script.cli",
         "flow.filter", "flow.transform", "flow.set", "flow.repeat",

@@ -571,3 +571,57 @@ def test_pipeline_groups_roundtrip():
     data = p.model_dump()
     p2 = Pipeline.model_validate(data)
     assert p2.groups == groups
+
+
+# ---------------------------------------------------------------------------
+# T-BRIX-BUG-15: All registered brick names must be valid step types
+# ---------------------------------------------------------------------------
+
+
+def test_all_builtin_brick_names_are_valid_step_types():
+    """Every system brick and file I/O brick must be accepted as a Step type.
+
+    System bricks (one per runner, T-BRIX-DB-05c) and file I/O bricks
+    are used directly as step.type values in pipeline YAML.  This test
+    catches the case where a new brick is added to builtins.py but the
+    corresponding name is not added to the Step.type Literal in models.py.
+
+    Domain/helper bricks (http_get, source.fetch_emails, convert.to_markdown,
+    etc.) are composer-level abstractions that resolve to underlying runners
+    via their brick type field — they are NOT direct step types.
+    """
+    from typing import get_args, get_type_hints
+
+    from brix.bricks.builtins import ALL_BUILTINS, SYSTEM_BRICKS
+
+    # Extract all allowed type values from the Step.type Literal annotation
+    type_hints = get_type_hints(Step)
+    allowed_types = set(get_args(type_hints["type"]))
+
+    # System bricks (one per runner) must all be valid step types
+    system_brick_names = {b.name for b in SYSTEM_BRICKS}
+
+    # file_read / file_write are registered bricks used as step types
+    file_io_names = {
+        b.name for b in ALL_BUILTINS
+        if b.name in ("file_read", "file_write")
+    }
+
+    must_be_valid = system_brick_names | file_io_names
+    missing = must_be_valid - allowed_types
+    assert not missing, (
+        f"Brick names registered in builtins but missing from "
+        f"Step.type Literal: {sorted(missing)}"
+    )
+
+
+def test_file_read_step_is_valid():
+    """file_read can be used as a step type without validation error."""
+    step = Step(id="read", type="file_read", params={"path": "/tmp/test.txt"})
+    assert step.type == "file_read"
+
+
+def test_file_write_step_is_valid():
+    """file_write can be used as a step type without validation error."""
+    step = Step(id="write", type="file_write", params={"path": "/tmp/out.txt", "content": "hello"})
+    assert step.type == "file_write"
