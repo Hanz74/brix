@@ -1373,6 +1373,84 @@ SYSTEM_EXTRACT_ICS = BrickSchema(
     output_description='{"events": [{"summary": "...", "start": "...", "end": "...", ...}], "count": N}',
 )
 
+# Util+LLM bricks (T-BRIX-BRICK-04)
+SYSTEM_CONVERT_BATCH = BrickSchema(
+    name="convert.batch",
+    type="convert_batch",
+    description="Batch-convert files in a directory via MarkItDown HTTP API.",
+    when_to_use="Use to convert many documents (PDF, DOCX, etc.) to Markdown in one step.",
+    runner="convert_batch",
+    system=True,
+    namespace="convert",
+    category="system",
+    config_schema={
+        "input_dir": BrickParam(type="string", description="Directory containing files to convert", required=True),
+        "output_dir": BrickParam(type="string", description="Directory to write converted files to", required=True),
+        "format": BrickParam(type="string", description="Output format (default: 'markdown')", default="markdown"),
+        "pattern": BrickParam(type="string", description="Glob pattern to match input files", default="*"),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"converted": N, "errors": N, "details": [{"file": "...", "status": "ok"|"error", "output_path": "..."}]}',
+)
+
+SYSTEM_LLM_BATCH_POLL = BrickSchema(
+    name="llm.batch_poll",
+    type="llm_batch_poll",
+    description="Generic LLM batch submit + poll wrapper. Submits requests, polls until done.",
+    when_to_use="Use when you need to submit a batch of LLM requests and wait for all results.",
+    runner="llm_batch_poll",
+    system=True,
+    namespace="llm",
+    category="system",
+    config_schema={
+        "provider": BrickParam(type="string", description="LLM provider (default: 'mistral')", default="mistral"),
+        "model": BrickParam(type="string", description="Model ID", required=True),
+        "requests": BrickParam(type="array", description="List of request dicts with custom_id and messages", required=True),
+        "timeout": BrickParam(type="integer", description="Max seconds to wait (default: 3600)", default="3600"),
+        "poll_interval": BrickParam(type="integer", description="Seconds between checks (default: 30)", default="30"),
+    },
+    input_type="list[dict]",
+    output_type="dict",
+    output_description='{"results": [...], "batch_id": "...", "status": "completed"|"timeout", "duration": N}',
+)
+
+SYSTEM_UTIL_WAIT = BrickSchema(
+    name="util.wait",
+    type="util_wait",
+    description="Simple sleep/delay brick. Pauses pipeline execution for a specified duration.",
+    when_to_use="Use to add a delay between pipeline steps (e.g. rate limiting, waiting for external processes).",
+    runner="util_wait",
+    system=True,
+    namespace="util",
+    category="system",
+    config_schema={
+        "seconds": BrickParam(type="number", description="Number of seconds to wait (max 3600)", required=True),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"waited": N, "success": true}',
+)
+
+SYSTEM_UTIL_LOAD_DIR = BrickSchema(
+    name="util.load_dir",
+    type="util_load_dir",
+    description="Load all files of a type from a directory, optionally reading content as text.",
+    when_to_use="Use to load multiple files from a directory for batch processing in subsequent steps.",
+    runner="util_load_dir",
+    system=True,
+    namespace="util",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Directory path to load files from", required=True),
+        "pattern": BrickParam(type="string", description="Glob pattern to match files", default="*.md"),
+        "as_text": BrickParam(type="boolean", description="Load content as text (default: true)", default="true"),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"files": [{"name": "...", "path": "...", "content": "..."}], "count": N}',
+)
+
 # All system bricks (one per runner)
 SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_SCRIPT_PYTHON,
@@ -1412,6 +1490,11 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_FILTER_KEYWORD,
     SYSTEM_EXTRACT_URL,
     SYSTEM_EXTRACT_ICS,
+    # Util+LLM bricks (T-BRIX-BRICK-04)
+    SYSTEM_CONVERT_BATCH,
+    SYSTEM_LLM_BATCH_POLL,
+    SYSTEM_UTIL_WAIT,
+    SYSTEM_UTIL_LOAD_DIR,
 ]
 
 

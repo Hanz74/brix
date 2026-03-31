@@ -141,6 +141,9 @@ class Step(BaseModel):
         # Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
         "keyword_filter", "extract_url", "extract_ics",
         "filter.keyword", "extract.url", "extract.ics",
+        # Util+LLM bricks (T-BRIX-BRICK-04)
+        "convert_batch", "llm_batch_poll", "util_wait", "util_load_dir",
+        "convert.batch", "llm.batch_poll", "util.wait", "util.load_dir",
     ]
 
     # Step enablement — disabled steps are unconditionally skipped
