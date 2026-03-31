@@ -272,7 +272,63 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_get_app_log_tool",
         "down": "DELETE FROM mcp_tool_schema WHERE name = 'brix__get_app_log'",
     },
+    # T-BRIX-COMPAT-01: Backward-compat views for brix-ui (reads DB directly with plural names)
+    {
+        "version": 65,
+        "name": "create_plural_compat_views",
+        "up": "",
+        "up_fn": "_create_plural_compat_views",
+        "down": "",
+    },
 ]
+
+
+def _create_plural_compat_views(db: "BrixDB") -> None:
+    """T-BRIX-COMPAT-01: Create read-only views with old plural names.
+
+    Brix-UI mounts the SQLite DB directly and queries with plural table names.
+    These views map the old plural names to the new singular tables.
+    Idempotent: uses CREATE VIEW IF NOT EXISTS.
+    """
+    view_map = {
+        "agent_sessions": "agent_session",
+        "alert_rules": "alert_rule",
+        "brick_definitions": "brick_definition",
+        "connections": "connection",
+        "connector_definitions": "connector_definition",
+        "foreach_item_executions": "foreach_item_execution",
+        "help_topics": "help_topic",
+        "helpers": "helper",
+        "keyword_taxonomies": "keyword_taxonomy",
+        "mcp_tool_schemas": "mcp_tool_schema",
+        "object_versions": "object_version",
+        "pipeline_events": "pipeline_event",
+        "pipeline_helpers": "pipeline_helper",
+        "pipelines": "pipeline",
+        "profiles": "profile",
+        "registry_best_practices": "registry_best_practice",
+        "registry_error_patterns": "registry_error_pattern",
+        "registry_lessons_learned": "registry_lesson_learned",
+        "registry_patterns": "registry_pattern",
+        "registry_schemas": "registry_schema",
+        "registry_templates": "registry_template",
+        "resource_locks": "resource_lock",
+        "run_inputs": "run_input",
+        "runs": "run",
+        "schema_migrations": "schema_migration",
+        "step_executions": "step_execution",
+        "step_outputs": "step_output",
+        "step_pins": "step_pin",
+        "tips": "tip",
+        "trigger_groups": "trigger_group",
+        "triggers": "trigger",
+        "variables": "variable",
+    }
+    with db._connect() as conn:
+        for plural, singular in view_map.items():
+            if _table_exists(conn, singular):
+                conn.execute(f"CREATE VIEW IF NOT EXISTS [{plural}] AS SELECT * FROM [{singular}]")
+                logger.info("compat_views: created view '%s' -> '%s'", plural, singular)
 
 
 def _rename_tables_to_singular(db: "BrixDB") -> None:
