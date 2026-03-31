@@ -42,10 +42,17 @@ _TEST_HELPER_PATTERNS = (
     "my_helper",
     "no-project-helper",
     "no_project_helper",
+    "no_proj_helper",
     "org_helper",
+    "org_get_h",
+    "org_list_h",
+    "get_org_helper",
+    "list_org_helper",
+    "update_org_helper",
     "with-project-helper",
     "with_project_helper",
     "test_mcp_output",
+    "inline_extract",
 )
 
 _TEST_HELPER_PREFIXES = (
@@ -55,6 +62,26 @@ _TEST_HELPER_PREFIXES = (
     "mock_",
 )
 
+# Test artifact patterns for pipeline files — matched against the name
+_TEST_PIPELINE_PATTERNS = (
+    "audit-test-pipeline",
+    "no-project-pipe",
+    "no-source-pipeline",
+    "no-tags-pipe",
+    "step-pipe",
+    "to-delete",
+    "upd-pipe",
+    "with-project-pipe",
+    "with-tags-pipe",
+    "buddy-test-pipe",
+    "rmstep-pipe",
+)
+
+_TEST_PIPELINE_PREFIXES = (
+    "test-",
+    "xtest-",
+)
+
 
 def _is_test_helper(name: str) -> bool:
     """Return True if a helper filename (stem) looks like a test artifact."""
@@ -62,6 +89,14 @@ def _is_test_helper(name: str) -> bool:
     if name_lower in (p.replace("-", "_") for p in _TEST_HELPER_PATTERNS):
         return True
     return any(name_lower.startswith(prefix) for prefix in _TEST_HELPER_PREFIXES)
+
+
+def _is_test_pipeline(name: str) -> bool:
+    """Return True if a pipeline name looks like a test artifact."""
+    name_lower = name.lower()
+    if name_lower in _TEST_PIPELINE_PATTERNS:
+        return True
+    return any(name_lower.startswith(prefix) for prefix in _TEST_PIPELINE_PREFIXES)
 
 
 def _scan_helper_files() -> dict[str, Path]:
@@ -192,7 +227,6 @@ def _sync_helpers(db: "BrixDB") -> int:
 
 def _sync_pipelines(db: "BrixDB") -> int:
     """Import pipeline YAML files from disk that are not yet in the DB."""
-    from brix.seed import _is_test_pipeline
 
     disk_pipelines = _scan_pipeline_files()
     db_pipelines = {p["name"] for p in db.list_pipelines()}
@@ -314,19 +348,31 @@ def _detect_orphans(db: "BrixDB") -> dict:
 
 
 def _cleanup_test_artifacts() -> int:
-    """Delete test helper files from ~/.brix/helpers/ only."""
-    cleanup_dir = Path.home() / ".brix" / "helpers"
-    if not cleanup_dir.exists():
-        return 0
-
+    """Delete test helper and pipeline files from ~/.brix/ only."""
     cleaned = 0
-    for f in sorted(cleanup_dir.glob("*.py")):
-        if _is_test_helper(f.stem):
-            try:
-                f.unlink()
-                logger.info("startup_sync: cleaned test artifact %s", f)
-                cleaned += 1
-            except Exception as exc:
-                logger.warning("startup_sync: failed to clean %s: %s", f, exc)
+
+    # Clean test helpers
+    helper_dir = Path.home() / ".brix" / "helpers"
+    if helper_dir.exists():
+        for f in sorted(helper_dir.glob("*.py")):
+            if _is_test_helper(f.stem):
+                try:
+                    f.unlink()
+                    logger.info("startup_sync: cleaned test helper %s", f)
+                    cleaned += 1
+                except Exception as exc:
+                    logger.warning("startup_sync: failed to clean %s: %s", f, exc)
+
+    # Clean test pipelines
+    pipeline_dir = Path.home() / ".brix" / "pipelines"
+    if pipeline_dir.exists():
+        for f in sorted(pipeline_dir.rglob("*.yaml")):
+            if _is_test_pipeline(f.stem):
+                try:
+                    f.unlink()
+                    logger.info("startup_sync: cleaned test pipeline %s", f)
+                    cleaned += 1
+                except Exception as exc:
+                    logger.warning("startup_sync: failed to clean %s: %s", f, exc)
 
     return cleaned
