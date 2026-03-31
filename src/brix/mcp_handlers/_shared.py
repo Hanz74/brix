@@ -25,7 +25,7 @@ from brix.credential_store import CredentialStore, CredentialNotFoundError, CRED
 from brix.config import config
 
 # Shared singletons
-_registry = BrickRegistry()
+_registry = BrickRegistry(db=BrixDB())
 _loader = PipelineLoader()
 _validator = PipelineValidator()
 _store = PipelineStore()

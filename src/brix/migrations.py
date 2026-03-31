@@ -295,6 +295,14 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_new_tool_schemas_v67",
         "down": "",
     },
+    # Backfill real input_schema for 43 tools that had empty schemas
+    {
+        "version": 68,
+        "name": "backfill_tool_input_schemas",
+        "up": "",
+        "up_fn": "_backfill_tool_input_schemas_v68",
+        "down": "",
+    },
 ]
 
 
@@ -321,6 +329,74 @@ def _register_new_tool_schemas_v67(db: "BrixDB") -> None:
                 registered += 1
         if registered:
             logger.info("migration v67: registered %d missing tool schemas", registered)
+
+
+def _backfill_tool_input_schemas_v68(db: "BrixDB") -> None:
+    """Backfill real input_schema for 43 tools that were registered with empty schemas.
+
+    Reads schemas from seed-data.json and UPDATEs existing rows.
+    Only updates rows whose input_schema is empty ('{}' or '').
+    """
+    import json
+    from pathlib import Path
+
+    # Try loading from seed-data.json (available in container and dev)
+    seed_paths = [
+        Path("/app/seed-data.json"),           # Docker container
+        Path(__file__).parent.parent.parent / "seed-data.json",  # Dev checkout
+    ]
+    seed_data = None
+    for sp in seed_paths:
+        if sp.exists():
+            try:
+                with open(sp) as f:
+                    seed_data = json.load(f)
+                break
+            except Exception:
+                continue
+
+    if seed_data is None:
+        logger.warning("migration v68: seed-data.json not found, skipping schema backfill")
+        return
+
+    tool_schemas = seed_data.get("mcp_tool_schemas", [])
+    schema_map = {}
+    for ts in tool_schemas:
+        s = ts.get("input_schema", {})
+        if isinstance(s, str):
+            try:
+                s = json.loads(s)
+            except (json.JSONDecodeError, TypeError):
+                s = {}
+        if s and s != {}:
+            schema_map[ts["name"]] = json.dumps(s)
+
+    with db._connect() as conn:
+        # Find rows with empty schemas
+        rows = conn.execute(
+            "SELECT name, input_schema FROM mcp_tool_schema"
+        ).fetchall()
+        updated = 0
+        for name, current_schema in rows:
+            # Check if current schema is empty
+            is_empty = not current_schema or current_schema.strip() in ("", "{}", "null")
+            if not is_empty:
+                try:
+                    parsed = json.loads(current_schema)
+                    is_empty = parsed == {} or parsed is None
+                except (json.JSONDecodeError, TypeError):
+                    is_empty = True
+
+            if is_empty and name in schema_map:
+                conn.execute(
+                    "UPDATE mcp_tool_schema SET input_schema = ?, updated_at = datetime('now') WHERE name = ?",
+                    (schema_map[name], name),
+                )
+                updated += 1
+                logger.info("migration v68: backfilled schema for '%s'", name)
+
+        if updated:
+            logger.info("migration v68: backfilled %d tool schemas", updated)
 
 
 def _create_plural_compat_views(db: "BrixDB") -> None:

@@ -6139,41 +6139,23 @@
         "properties": {
           "category": {
             "type": "string",
-            "description": "Tip category (e.g. 'KERN-REGEL', 'DEBUGGING', 'ANTI-PATTERNS')."
+            "description": "Tip category."
           },
           "title": {
             "type": "string",
-            "description": "Short title for the tip."
+            "description": "Tip title."
           },
           "content": {
             "type": "string",
-            "description": "Full tip content text."
+            "description": "Tip content text."
           },
           "priority": {
             "type": "integer",
-            "description": "Priority 0-10 (higher = shown first). Default: 5.",
-            "default": 5
+            "description": "Priority (1-10, higher = more important, default 5)."
           },
           "is_active": {
             "type": "boolean",
-            "description": "Whether the tip is active. Default: true.",
-            "default": true
-          },
-          "source": {
-            "type": "object",
-            "description": "Optional caller identity.",
-            "properties": {
-              "session": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string"
-              },
-              "agent": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+            "description": "Whether the tip is active (default true)."
           }
         },
         "required": [
@@ -6191,43 +6173,27 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "UUID of the tip to update."
+            "description": "Tip ID to update."
           },
           "category": {
             "type": "string",
-            "description": "New category."
+            "description": "Updated category."
           },
           "title": {
             "type": "string",
-            "description": "New title."
+            "description": "Updated title."
           },
           "content": {
             "type": "string",
-            "description": "New content."
+            "description": "Updated content."
           },
           "priority": {
             "type": "integer",
-            "description": "New priority 0-10."
+            "description": "Updated priority."
           },
           "is_active": {
             "type": "boolean",
-            "description": "Activate or deactivate the tip."
-          },
-          "source": {
-            "type": "object",
-            "description": "Optional caller identity.",
-            "properties": {
-              "session": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string"
-              },
-              "agent": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+            "description": "Updated active state."
           }
         },
         "required": [
@@ -6243,23 +6209,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "UUID of the tip to delete."
-          },
-          "source": {
-            "type": "object",
-            "description": "Optional caller identity.",
-            "properties": {
-              "session": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string"
-              },
-              "agent": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+            "description": "Tip ID to delete."
           }
         },
         "required": [
@@ -6275,28 +6225,11 @@
         "properties": {
           "category": {
             "type": "string",
-            "description": "Filter by category name."
+            "description": "Filter by category."
           },
           "active_only": {
             "type": "boolean",
-            "description": "Only return active tips. Default: true.",
-            "default": true
-          },
-          "source": {
-            "type": "object",
-            "description": "Optional caller identity.",
-            "properties": {
-              "session": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string"
-              },
-              "agent": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+            "description": "Only return active tips (default true)."
           }
         }
       }
@@ -6309,7 +6242,26 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "CRUD action: add/get/list/update/delete"
+            "enum": [
+              "add",
+              "get",
+              "list",
+              "update",
+              "delete"
+            ],
+            "description": "CRUD action to perform."
+          },
+          "name": {
+            "type": "string",
+            "description": "Tool schema name (required for add/get/update/delete)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Tool description (for add/update)."
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "JSON Schema for tool input (for add/update)."
           }
         },
         "required": [
@@ -6325,7 +6277,30 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "CRUD action: add/get/list/update/delete"
+            "enum": [
+              "add",
+              "get",
+              "list",
+              "update",
+              "delete"
+            ],
+            "description": "CRUD action to perform."
+          },
+          "name": {
+            "type": "string",
+            "description": "Help topic name (required for add/get/update/delete)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Topic title (for add/update)."
+          },
+          "content": {
+            "type": "string",
+            "description": "Topic content as markdown (for add/update)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Topic category (for add/update/list filter)."
           }
         },
         "required": [
@@ -6341,7 +6316,28 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "CRUD action: add/list/delete"
+            "enum": [
+              "add",
+              "list",
+              "delete"
+            ],
+            "description": "Action to perform."
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Keyword string (required for add/delete)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Keyword category (required for add/delete, optional filter for list)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code (default 'de')."
+          },
+          "mapped_to": {
+            "type": "string",
+            "description": "Target mapping (for add)."
           }
         },
         "required": [
@@ -6357,7 +6353,20 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "CRUD action: add/list/delete"
+            "enum": [
+              "add",
+              "list",
+              "delete"
+            ],
+            "description": "Action to perform."
+          },
+          "source_type": {
+            "type": "string",
+            "description": "Source/output type (required for add/delete, optional filter for list)."
+          },
+          "target_type": {
+            "type": "string",
+            "description": "Target/input type (required for add/delete)."
           }
         },
         "required": [
@@ -6370,7 +6379,12 @@
       "description": "MCP tool: brix__analyze_migration",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "helper_name": {
+            "type": "string",
+            "description": "Helper name to analyze. If omitted, analyzes all helpers."
+          }
+        }
       }
     },
     {
@@ -6378,7 +6392,12 @@
       "description": "MCP tool: brix__backup",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Target directory for backup files. Defaults to ~/.brix/backups."
+          }
+        }
       }
     },
     {
@@ -6386,7 +6405,12 @@
       "description": "MCP tool: brix__backup_list",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory to scan for backup files. Defaults to ~/.brix/backups."
+          }
+        }
       }
     },
     {
@@ -6394,7 +6418,15 @@
       "description": "MCP tool: brix__connection_get",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Connection name to retrieve."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6402,7 +6434,15 @@
       "description": "MCP tool: brix__connection_search",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search substring for connection name or description."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -6410,7 +6450,42 @@
       "description": "MCP tool: brix__connection_update",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Connection name to update."
+          },
+          "driver": {
+            "type": "string",
+            "description": "Database driver (e.g. 'postgresql', 'sqlite')."
+          },
+          "env_var": {
+            "type": "string",
+            "description": "Environment variable name for DSN override."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags for categorization."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group name."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6418,7 +6493,67 @@
       "description": "MCP tool: brix__create_brick",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Brick name (e.g. 'custom.my_brick')."
+          },
+          "runner": {
+            "type": "string",
+            "description": "Runner backend name (e.g. 'python', 'http', 'cli')."
+          },
+          "description": {
+            "type": "string",
+            "description": "What the brick does."
+          },
+          "config_defaults": {
+            "type": "object",
+            "description": "Default config/params for the brick."
+          },
+          "input_type": {
+            "type": "string",
+            "description": "Input type (default '*')."
+          },
+          "output_type": {
+            "type": "string",
+            "description": "Output type (default '*')."
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Alternative names/keywords."
+          },
+          "when_to_use": {
+            "type": "string",
+            "description": "When to use this brick."
+          },
+          "when_NOT_to_use": {
+            "type": "string",
+            "description": "When NOT to use this brick."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Brick namespace (e.g. 'flow', 'action')."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category (default 'custom')."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags for categorization."
+          }
+        },
+        "required": [
+          "name",
+          "runner",
+          "description"
+        ]
       }
     },
     {
@@ -6426,7 +6561,39 @@
       "description": "MCP tool: brix__create_profile",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Profile name."
+          },
+          "config": {
+            "type": "object",
+            "description": "Config defaults as JSON object."
+          },
+          "description": {
+            "type": "string",
+            "description": "Profile description."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group name."
+          }
+        },
+        "required": [
+          "name",
+          "config"
+        ]
       }
     },
     {
@@ -6442,7 +6609,19 @@
       "description": "MCP tool: brix__delete_brick",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the brick to delete."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Force delete even if referenced in pipelines (default false)."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6450,7 +6629,15 @@
       "description": "MCP tool: brix__delete_profile",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Profile name to delete."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6458,7 +6645,16 @@
       "description": "MCP tool: brix__discover",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Category to list in detail (e.g. 'bricks', 'runners', 'connectors', 'pipelines')."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search string to match across all categories."
+          }
+        }
       }
     },
     {
@@ -6466,7 +6662,16 @@
       "description": "MCP tool: brix__get_alert_rule",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Alert rule name or ID."
+          },
+          "id": {
+            "type": "string",
+            "description": "Alert rule ID (alternative to name)."
+          }
+        }
       }
     },
     {
@@ -6474,7 +6679,24 @@
       "description": "MCP tool: brix__get_app_log",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "component": {
+            "type": "string",
+            "description": "Filter by component name."
+          },
+          "level": {
+            "type": "string",
+            "description": "Filter by log level (e.g. 'ERROR', 'WARNING', 'INFO')."
+          },
+          "since": {
+            "type": "string",
+            "description": "ISO-8601 timestamp to filter entries after."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max entries to return (default 50)."
+          }
+        }
       }
     },
     {
@@ -6482,7 +6704,15 @@
       "description": "MCP tool: brix__get_profile",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Profile name to retrieve."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6490,7 +6720,15 @@
       "description": "MCP tool: brix__get_runner_info",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Runner name to get details for."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6522,7 +6760,15 @@
       "description": "MCP tool: brix__list_pins",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "pipeline_name": {
+            "type": "string",
+            "description": "Pipeline name to list pins for."
+          }
+        },
+        "required": [
+          "pipeline_name"
+        ]
       }
     },
     {
@@ -6554,7 +6800,27 @@
       "description": "MCP tool: brix__pin_step_data",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "pipeline_name": {
+            "type": "string",
+            "description": "Pipeline name containing the step."
+          },
+          "step_id": {
+            "type": "string",
+            "description": "Step ID to pin."
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Run ID to load step output from. If omitted, 'data' is used."
+          },
+          "data": {
+            "description": "Inline mock data to pin (used if run_id is omitted)."
+          }
+        },
+        "required": [
+          "pipeline_name",
+          "step_id"
+        ]
       }
     },
     {
@@ -6562,7 +6828,19 @@
       "description": "MCP tool: brix__restore",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "backup_path": {
+            "type": "string",
+            "description": "Full path to the backup file to restore."
+          },
+          "target": {
+            "type": "string",
+            "description": "Target database path. If omitted, inferred from filename."
+          }
+        },
+        "required": [
+          "backup_path"
+        ]
       }
     },
     {
@@ -6570,7 +6848,15 @@
       "description": "MCP tool: brix__search_alert_rules",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search substring to match against name and condition."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -6578,7 +6864,15 @@
       "description": "MCP tool: brix__search_profiles",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search substring to match against name and description."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -6586,7 +6880,15 @@
       "description": "MCP tool: brix__search_trigger_groups",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search substring to match against name and description."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -6594,7 +6896,15 @@
       "description": "MCP tool: brix__search_triggers",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search substring to match against name, pipeline, or type."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -6602,7 +6912,15 @@
       "description": "MCP tool: brix__search_variables",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search substring to match against name and description."
+          }
+        },
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -6610,7 +6928,15 @@
       "description": "MCP tool: brix__trigger_group_get",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Trigger group name to retrieve."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6618,7 +6944,45 @@
       "description": "MCP tool: brix__trigger_group_update",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Trigger group name to update."
+          },
+          "triggers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Updated list of trigger names."
+          },
+          "description": {
+            "type": "string",
+            "description": "Updated description."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable or disable the group."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group name."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6626,7 +6990,20 @@
       "description": "MCP tool: brix__unpin_step_data",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "pipeline_name": {
+            "type": "string",
+            "description": "Pipeline name."
+          },
+          "step_id": {
+            "type": "string",
+            "description": "Step ID to unpin."
+          }
+        },
+        "required": [
+          "pipeline_name",
+          "step_id"
+        ]
       }
     },
     {
@@ -6634,7 +7011,65 @@
       "description": "MCP tool: brix__update_brick",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the brick to update."
+          },
+          "runner": {
+            "type": "string",
+            "description": "Runner backend name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Updated description."
+          },
+          "config_defaults": {
+            "type": "object",
+            "description": "Updated default config/params."
+          },
+          "input_type": {
+            "type": "string",
+            "description": "Input type."
+          },
+          "output_type": {
+            "type": "string",
+            "description": "Output type."
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Alternative names."
+          },
+          "when_to_use": {
+            "type": "string",
+            "description": "When to use."
+          },
+          "when_NOT_to_use": {
+            "type": "string",
+            "description": "When NOT to use."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Brick namespace."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -6642,7 +7077,38 @@
       "description": "MCP tool: brix__update_profile",
       "input_schema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Profile name to update."
+          },
+          "config": {
+            "type": "object",
+            "description": "Updated config."
+          },
+          "description": {
+            "type": "string",
+            "description": "Updated description."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group name."
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     }
   ],
