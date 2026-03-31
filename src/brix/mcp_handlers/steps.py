@@ -1,6 +1,8 @@
 """Step and brick handler module."""
 from __future__ import annotations
 
+import logging
+
 from brix.mcp_handlers._shared import (
     _registry,
     _audit_db,
@@ -18,6 +20,36 @@ from brix.mcp_handlers._shared import (
 from brix.bricks.types import is_compatible, suggest_converter
 from brix.pipeline_store import PipelineStore
 from brix.engine import LEGACY_ALIASES
+
+_logger = logging.getLogger(__name__)
+
+# Cache for runner config schemas — populated lazily on first call.
+_runner_config_schemas: dict[str, dict] | None = None
+
+
+def _get_runner_config_schema(runner_name: str) -> dict | None:
+    """Return the config_schema() dict for *runner_name*, or None.
+
+    Uses discover_runners() to find all runner classes and caches the result.
+    This is a fallback for bricks whose DB/code definition has an empty
+    config_schema but whose runner class provides one (T-BRIX-BUG-13).
+    """
+    global _runner_config_schemas
+    if _runner_config_schemas is None:
+        _runner_config_schemas = {}
+        try:
+            from brix.runners.base import discover_runners
+            for step_type, runner_cls in discover_runners().items():
+                try:
+                    instance = runner_cls()
+                    schema = instance.config_schema()
+                    if schema and isinstance(schema, dict):
+                        _runner_config_schemas[step_type] = schema
+                except Exception as exc:
+                    _logger.debug("Could not get config_schema for runner '%s': %s", step_type, exc)
+        except Exception as exc:
+            _logger.warning("discover_runners failed: %s", exc)
+    return _runner_config_schemas.get(runner_name)
 
 
 async def _handle_list_bricks(arguments: dict) -> dict:
@@ -120,6 +152,16 @@ async def _handle_get_brick_schema(arguments: dict) -> dict:
             if other.output_type and is_compatible(other.output_type, brick.input_type):
                 compatible_with.append(other.name)
 
+    # T-BRIX-BUG-13: If the brick definition has an empty config_schema but a
+    # runner is known, fall back to the runner class's config_schema() method.
+    config_schema = brick.to_json_schema()
+    if (
+        not brick.config_schema
+        and brick.runner
+        and (runner_schema := _get_runner_config_schema(brick.runner))
+    ):
+        config_schema = runner_schema
+
     return {
         "name": brick.name,
         "type": brick.type,
@@ -130,7 +172,7 @@ async def _handle_get_brick_schema(arguments: dict) -> dict:
         "output_type": brick.output_type,
         "input_description": brick.input_description,
         "output_description": brick.output_description,
-        "config_schema": brick.to_json_schema(),
+        "config_schema": config_schema,
         "compatible_with": compatible_with,
     }
 
