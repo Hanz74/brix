@@ -75,6 +75,7 @@ _TEST_PIPELINE_PATTERNS = (
     "with-tags-pipe",
     "buddy-test-pipe",
     "rmstep-pipe",
+    "test",
 )
 
 _TEST_PIPELINE_PREFIXES = (
