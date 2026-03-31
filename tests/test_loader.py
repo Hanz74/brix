@@ -959,3 +959,69 @@ template_params:
         assert pipeline.kind is None
         assert pipeline.extends is None
         assert pipeline.template_params == {}
+
+
+# ---------------------------------------------------------------------------
+# T-BRIX-BUG-10: render_value preserves native types for pure expressions
+# ---------------------------------------------------------------------------
+
+class TestRenderValueNativeTypes:
+    """Verify that render_value returns native Python objects for {{ expr }}."""
+
+    def test_pure_expression_returns_list(self):
+        loader = PipelineLoader()
+        ctx = {"items": [{"id": 1}, {"id": 2}]}
+        result = loader.render_value("{{ items }}", ctx)
+        assert isinstance(result, list)
+        assert result == [{"id": 1}, {"id": 2}]
+
+    def test_pure_expression_returns_dict(self):
+        loader = PipelineLoader()
+        ctx = {"step1": {"output": {"key": "val"}}}
+        result = loader.render_value("{{ step1.output }}", ctx)
+        assert isinstance(result, dict)
+        assert result == {"key": "val"}
+
+    def test_pure_expression_dotted_path(self):
+        loader = PipelineLoader()
+        ctx = {"fetch": {"output": {"data": [1, 2, 3]}}}
+        result = loader.render_value("{{ fetch.output.data }}", ctx)
+        assert isinstance(result, list)
+        assert result == [1, 2, 3]
+
+    def test_expression_with_filter_uses_jinja(self):
+        """Expressions with filters should still go through Jinja2 rendering."""
+        loader = PipelineLoader()
+        ctx = {"items": [1, 2, 3]}
+        # This has a filter so _resolve_pure_expression should skip it
+        result = loader.render_value("{{ items | length }}", ctx)
+        assert result == 3 or result == "3"
+
+    def test_mixed_template_uses_jinja(self):
+        """Templates with text around {{ }} should use normal Jinja2."""
+        loader = PipelineLoader()
+        ctx = {"name": "world"}
+        result = loader.render_value("hello {{ name }}", ctx)
+        assert result == "hello world"
+
+    def test_step_output_list_preserved_as_python_list(self):
+        """Simulate the exact pattern: items: '{{ prev_step.output }}'."""
+        loader = PipelineLoader()
+        original_items = [
+            {"id": "doc-1", "text": "First document"},
+            {"id": "doc-2", "text": "Second document"},
+        ]
+        ctx = {"prev_step": {"output": original_items}}
+        result = loader.render_value("{{ prev_step.output }}", ctx)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0]["id"] == "doc-1"
+
+    def test_last_output_resolved(self):
+        """Verify {{ last_output }} works when set in context."""
+        loader = PipelineLoader()
+        data = [{"a": 1}, {"b": 2}]
+        ctx = {"last_output": data}
+        result = loader.render_value("{{ last_output }}", ctx)
+        assert isinstance(result, list)
+        assert result is data

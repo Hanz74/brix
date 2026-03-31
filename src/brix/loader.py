@@ -11,6 +11,9 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from brix.models import Pipeline, Step
 
+# Sentinel for _resolve_pure_expression to distinguish "not resolved" from None
+_SENTINEL = object()
+
 
 class PipelineLoader:
     """Loads pipeline YAML files and renders Jinja2 templates."""
@@ -373,6 +376,43 @@ class PipelineLoader:
         template = self.env.from_string(template_string)
         return template.render(context)
 
+    def _resolve_pure_expression(self, value: str, context: dict):
+        """Resolve a pure Jinja2 expression like ``{{ x.y }}`` directly from *context*.
+
+        Returns the native Python object instead of stringifying it, which avoids
+        the lossy str → json.loads/ast.literal_eval roundtrip for lists and dicts.
+        Returns ``_SENTINEL`` when the template is not a pure expression or the
+        path cannot be resolved.
+
+        T-BRIX-BUG-10: Jinja2 SandboxedEnvironment renders lists/dicts to their
+        Python ``str()`` representation.  Parsing them back via ``ast.literal_eval``
+        works for simple cases but breaks for non-trivial content.  This method
+        bypasses the problem entirely for the common ``{{ expr }}`` pattern.
+        """
+        stripped = value.strip()
+        # Must be exactly one expression block: {{ ... }}
+        if not (stripped.startswith("{{") and stripped.endswith("}}")):
+            return _SENTINEL
+        inner = stripped[2:-2].strip()
+        # Skip anything that contains filters, function calls, or operators
+        # — those need full Jinja2 rendering.
+        if any(ch in inner for ch in ("|", "(", ")", "+", "-", "*", "/", "%", "~", "[", ">")):
+            return _SENTINEL
+        # Resolve dotted path from context: "step1.output.data" → context["step1"]["output"]["data"]
+        parts = inner.split(".")
+        obj = context
+        for part in parts:
+            if isinstance(obj, dict) and part in obj:
+                obj = obj[part]
+            else:
+                return _SENTINEL
+        # Only use fast path for complex types (list, dict, etc.).  Scalar
+        # types (str, int, float, bool) are cheap to round-trip through Jinja2
+        # and some callers rely on the json.loads parsing of rendered strings.
+        if isinstance(obj, (list, dict)):
+            return obj
+        return _SENTINEL
+
     def render_value(self, value, context: dict):
         """Render a value recursively.
 
@@ -382,6 +422,10 @@ class PipelineLoader:
         - Everything else → returned unchanged.
         """
         if isinstance(value, str) and "{{" in value:
+            # T-BRIX-BUG-10: fast path — resolve pure expressions natively
+            native = self._resolve_pure_expression(value, context)
+            if native is not _SENTINEL:
+                return native
             rendered = self.render_template(value, context)
             try:
                 return json.loads(rendered)

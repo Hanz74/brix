@@ -407,3 +407,50 @@ steps:
     ctx = PipelineContext.from_pipeline(pipeline)
     assert ctx.credentials["api_token"] == "static-value"
     os.environ.pop("DUMMY_REFRESH_TOKEN", None)
+
+
+# ---------------------------------------------------------------------------
+# T-BRIX-BUG-10: last_output propagation
+# ---------------------------------------------------------------------------
+
+class TestLastOutput:
+    """Verify that last_output is tracked and exposed in Jinja2 context."""
+
+    def test_last_output_initialized_to_none(self):
+        ctx = PipelineContext()
+        assert ctx.last_output is None
+
+    def test_set_output_updates_last_output(self):
+        ctx = PipelineContext()
+        data = [{"id": 1}, {"id": 2}]
+        ctx.set_output("step1", data)
+        assert ctx.last_output is data
+
+    def test_last_output_tracks_most_recent(self):
+        ctx = PipelineContext()
+        ctx.set_output("step1", {"a": 1})
+        ctx.set_output("step2", {"b": 2})
+        assert ctx.last_output == {"b": 2}
+
+    def test_jinja_context_contains_last_output(self):
+        ctx = PipelineContext()
+        items = [{"id": 1}, {"id": 2}, {"id": 3}]
+        ctx.set_output("fetch", items)
+        jinja_ctx = ctx.to_jinja_context()
+        assert "last_output" in jinja_ctx
+        assert jinja_ctx["last_output"] is items
+
+    def test_jinja_context_no_last_output_when_none(self):
+        ctx = PipelineContext()
+        jinja_ctx = ctx.to_jinja_context()
+        assert "last_output" not in jinja_ctx
+
+    def test_last_output_available_as_list_for_llm_batch(self):
+        """Simulate multi-step pipeline: step1 produces items, step2 (llm.batch) reads them."""
+        ctx = PipelineContext()
+        step1_data = [{"text": "hello"}, {"text": "world"}]
+        ctx.set_output("extract", step1_data)
+        # llm_batch reads context.last_output
+        assert hasattr(ctx, "last_output")
+        assert isinstance(ctx.last_output, list)
+        assert len(ctx.last_output) == 2

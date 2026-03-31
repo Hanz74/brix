@@ -109,6 +109,7 @@ class PipelineContext:
         self._resume_from = resume_from
         self._jinja_cache: dict | None = None
         self._secret_values: set[str] = set()  # plaintext secret variable values (T-BRIX-DB-26)
+        self.last_output: Any = None  # most recent step output (T-BRIX-BUG-10)
 
     @classmethod
     def from_pipeline(
@@ -297,6 +298,7 @@ class PipelineContext:
         if output_schema:
             self.validate_output_schema(step_id, output, output_schema)
         self._jinja_cache = None  # Invalidate cache on any output change
+        self.last_output = output  # T-BRIX-BUG-10: expose for downstream steps
         if isinstance(output, dict) and "items" in output:
             items = output.get("items", [])
             if isinstance(items, list) and len(items) > 0:
@@ -562,6 +564,10 @@ class PipelineContext:
                     ):
                         step_ns["results"] = output["items"]
                     ctx[step_id] = step_ns
+            # T-BRIX-BUG-10: include last_output so downstream steps can
+            # reference {{ last_output }} in Jinja2 templates.
+            if self.last_output is not None:
+                ctx["last_output"] = self.last_output
             self._jinja_cache = ctx
 
         if item is not None:
