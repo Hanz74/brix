@@ -85,38 +85,15 @@ _TEST_PIPELINE_PREFIXES = (
 
 
 def _sync_builtin_bricks(db: "BrixDB") -> int:
-    """Ensure all built-in bricks from builtins.py are registered in the DB."""
-    from brix.bricks.builtins import SYSTEM_BRICKS
+    """No-op — brick definitions live exclusively in the DB (T-BRIX-DBF-02).
 
-    with db._connect() as conn:
-        db_names = {r[0] for r in conn.execute("SELECT name FROM brick_definition").fetchall()}
+    Previously this function synced bricks from builtins.py into the DB on every
+    startup, making code the source of truth.  Now the DB is the sole authority;
+    initial population is handled by seed.py (seed_if_empty).
 
-        synced = 0
-        for brick in SYSTEM_BRICKS:
-            if brick.name in db_names:
-                continue
-            try:
-                conn.execute(
-                    """INSERT INTO brick_definition
-                    (name, runner, namespace, category, description, when_to_use, when_NOT_to_use,
-                     aliases, input_type, output_type, config_schema, examples, system,
-                     created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))""",
-                    (
-                        brick.name, brick.runner or "", brick.namespace or "",
-                        brick.category or "", brick.description or "",
-                        brick.when_to_use or "", brick.when_NOT_to_use or "",
-                        str(brick.aliases or []), brick.input_type or "",
-                        brick.output_type or "", str(brick.config_schema or {}),
-                        str(brick.examples or []),
-                    ),
-                )
-                logger.info("startup_sync: registered brick '%s'", brick.name)
-                synced += 1
-            except Exception as exc:
-                logger.warning("startup_sync: failed to register brick '%s': %s", brick.name, exc)
-
-    return synced
+    The function signature is kept so callers don't break, but it always returns 0.
+    """
+    return 0
 
 
 def _is_test_helper(name: str) -> bool:

@@ -1,10 +1,9 @@
-"""Brick registry: built-in bricks + MCP auto-discovery."""
+"""Brick registry: built-in bricks + MCP auto-discovery — DB-only (T-BRIX-DBF-02)."""
 import json
 import logging
 from typing import Optional
 
 from brix.bricks.schema import BrickParam, BrickSchema
-from brix.bricks.builtins import ALL_BUILTINS
 from brix.cache import SchemaCache
 
 logger = logging.getLogger(__name__)
@@ -62,8 +61,7 @@ class BrickRegistry:
         self._load_builtins()
 
     def _load_builtins(self):
-        """Register all built-in bricks — from DB if available, else from code."""
-        loaded_from_db = False
+        """Register all built-in bricks from DB (T-BRIX-DBF-02: DB is sole source of truth)."""
         if self._db is not None:
             try:
                 rows = self._db.brick_definitions_list()
@@ -74,13 +72,8 @@ class BrickRegistry:
                             self._bricks[brick.name] = brick
                         except Exception as e:
                             logger.warning("Could not load brick '%s' from DB: %s", row.get("name"), e)
-                    loaded_from_db = True
             except Exception as e:
                 logger.warning("Could not load bricks from DB: %s", e)
-
-        if not loaded_from_db:
-            for brick in ALL_BUILTINS:
-                self._bricks[brick.name] = brick
 
     def register(self, brick: BrickSchema):
         """Register a custom brick."""
@@ -279,12 +272,9 @@ class BrickRegistry:
 
     @property
     def builtin_count(self) -> int:
-        """Number of built-in bricks (from DB if loaded, else from code)."""
-        if self._db is not None:
-            try:
-                count = self._db.brick_definitions_count()
-                if count > 0:
-                    return count
-            except Exception:
-                pass
-        return len(ALL_BUILTINS)
+        """Number of built-in (system) bricks successfully loaded into the registry.
+
+        T-BRIX-DBF-02: counts only bricks that were successfully parsed from the DB,
+        not the raw DB row count (which may include rows with malformed data).
+        """
+        return sum(1 for b in self._bricks.values() if b.system)

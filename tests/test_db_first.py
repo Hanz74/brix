@@ -186,13 +186,12 @@ class TestBrickRegistryFromDB:
         assert brick is not None
         assert brick.description
 
-    def test_registry_fallback_when_db_empty(self, fresh_db):
-        """When DB is empty, registry falls back to ALL_BUILTINS code."""
+    def test_registry_empty_when_db_empty(self, fresh_db):
+        """When DB is empty, registry is empty — no code fallback (T-BRIX-DBF-02)."""
         from brix.bricks.registry import BrickRegistry
-        from brix.bricks.builtins import ALL_BUILTINS
         reg = BrickRegistry(db=fresh_db)
-        # DB is empty → should fall back to code
-        assert reg.count == len(ALL_BUILTINS)
+        # DB is empty → registry should be empty (no code fallback)
+        assert reg.count == 0
 
     def test_registry_db_brick_has_correct_category(self, fresh_db):
         seed_if_empty(fresh_db)
