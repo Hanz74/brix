@@ -287,7 +287,42 @@ MIGRATIONS: list[dict] = [
         "up": "ALTER TABLE help_topic ADD COLUMN category TEXT DEFAULT ''",
         "down": "",
     },
+    # Register missing MCP tool schemas (added after initial seed)
+    {
+        "version": 67,
+        "name": "register_new_mcp_tool_schemas",
+        "up": "",
+        "up_fn": "_register_new_tool_schemas_v67",
+        "down": "",
+    },
 ]
+
+
+def _register_new_tool_schemas_v67(db: "BrixDB") -> None:
+    """Register MCP tool schemas that were added after the initial seed."""
+    tools = [
+        ("brix__tool_schema", "Manage MCP tool schemas (add/get/list/update/delete)"),
+        ("brix__help_topic", "Manage help topics (add/get/list/update/delete)"),
+        ("brix__keyword", "Manage keyword taxonomies (add/list/delete)"),
+        ("brix__type_compat", "Manage type compatibility rules (add/list/delete)"),
+        ("brix__get_app_log", "Query structured application log (component/level/since filters)"),
+        ("brix__create_tip", "Create a new tip in the DB"),
+        ("brix__update_tip", "Update an existing tip"),
+        ("brix__delete_tip", "Delete a tip"),
+        ("brix__list_tips", "List tips with optional category filter"),
+    ]
+    with db._connect() as conn:
+        for name, desc in tools:
+            existing = conn.execute(
+                "SELECT name FROM mcp_tool_schema WHERE name = ?", (name,)
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at) "
+                    "VALUES (?, ?, '{}', datetime('now'), datetime('now'))",
+                    (name, desc),
+                )
+                logger.info("migration v67: registered tool '%s'", name)
 
 
 def _create_plural_compat_views(db: "BrixDB") -> None:
