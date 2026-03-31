@@ -970,6 +970,15 @@ async def run_mcp_server() -> None:
     except Exception as _int_err:
         logger.warning("integrity checks failed (non-fatal): %s", _int_err)
 
+    # T-BRIX-INTEGRITY-01: Startup disk-DB sync
+    try:
+        from brix.startup_sync import run_startup_sync
+        _sync_db = BrixDB()
+        _sync_result = run_startup_sync(_sync_db)
+        logger.info("startup_sync: completed — %s", _sync_result)
+    except Exception as _sync_err:
+        logger.warning("startup_sync failed (non-fatal): %s", _sync_err)
+
     server = create_server()
     # T-BRIX-V6-BUG-01: Auto-start scheduler if enabled triggers exist
     await _auto_start_scheduler_if_needed()
