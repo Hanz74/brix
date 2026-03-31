@@ -163,20 +163,14 @@ class TestSeedSkipsNonEmpty:
         assert any("brick_definition already has" in msg for msg in caplog.messages)
 
     def test_full_seed_if_empty_idempotent(self, fresh_db):
-        """Full seed_if_empty called twice returns zeros on second call."""
+        """Full seed_if_empty called twice skips entirely on second call (T-BRIX-DBF-03)."""
         seed_if_empty(fresh_db)
         counts2 = seed_if_empty(fresh_db)
-        for table in [
-            "brick_definitions",
-            "connector_definitions",
-            "mcp_tool_schemas",
-            "help_topics",
-            "keyword_taxonomies",
-            "type_compatibility",
-        ]:
-            assert counts2[table] == 0, (
-                f"Second seed should skip '{table}', got {counts2[table]}"
-            )
+        # T-BRIX-DBF-03: second call returns early with skipped=True
+        assert counts2.get("skipped") is True, (
+            f"Second seed should return skipped=True, got {counts2}"
+        )
+        assert "seed_version" in counts2
 
 
 # ---------------------------------------------------------------------------

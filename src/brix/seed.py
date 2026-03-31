@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 _SEED_FILE = Path(__file__).parent.parent.parent / "seed-data.json"
 
 
+def _get_brix_version() -> str:
+    """Return the current Brix version from __init__.py."""
+    from brix import __version__
+    return __version__
+
+
+_SEED_VERSION_KEY = "_brix_seed_version"
+
+
 def seed_if_empty(db: BrixDB) -> dict[str, int]:
     """Seed all DB-First tables if they are empty.
 
@@ -26,8 +35,15 @@ def seed_if_empty(db: BrixDB) -> dict[str, int]:
     seed file is missing — no silent fallback to code imports.
 
     Returns a dict with the count of rows seeded per table.
+    Skips entirely if the DB was already seeded (version flag in persistent_store).
     Skips any table that already has data (idempotent).
     """
+    # T-BRIX-DBF-03: Check if DB was already seeded — skip JSON parsing entirely
+    stored_version = db.store_get(_SEED_VERSION_KEY)
+    if stored_version:
+        logger.info("seed: DB already seeded (version %s), skipping", stored_version)
+        return {"skipped": True, "seed_version": stored_version}
+
     if not _SEED_FILE.exists():
         raise FileNotFoundError(
             f"seed-data.json not found at {_SEED_FILE}. "
@@ -46,6 +62,11 @@ def seed_if_empty(db: BrixDB) -> dict[str, int]:
 
     # Migrate legacy step types in all DB pipelines
     counts["legacy_steps_migrated"] = migrate_legacy_step_types(db)
+
+    # T-BRIX-DBF-03: Mark DB as seeded so subsequent starts skip JSON parsing
+    current_version = _get_brix_version()
+    db.store_set(_SEED_VERSION_KEY, current_version)
+    logger.info("seed: marked DB as seeded (version %s)", current_version)
 
     return counts
 
