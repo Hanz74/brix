@@ -6364,6 +6364,286 @@
           "action"
         ]
       }
+    },
+    {
+      "name": "brix__analyze_migration",
+      "description": "MCP tool: brix__analyze_migration",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__backup",
+      "description": "MCP tool: brix__backup",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__backup_list",
+      "description": "MCP tool: brix__backup_list",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__connection_get",
+      "description": "MCP tool: brix__connection_get",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__connection_search",
+      "description": "MCP tool: brix__connection_search",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__connection_update",
+      "description": "MCP tool: brix__connection_update",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__create_brick",
+      "description": "MCP tool: brix__create_brick",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__create_profile",
+      "description": "MCP tool: brix__create_profile",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__db_status",
+      "description": "MCP tool: brix__db_status",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__delete_brick",
+      "description": "MCP tool: brix__delete_brick",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__delete_profile",
+      "description": "MCP tool: brix__delete_profile",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__discover",
+      "description": "MCP tool: brix__discover",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__get_alert_rule",
+      "description": "MCP tool: brix__get_alert_rule",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__get_app_log",
+      "description": "MCP tool: brix__get_app_log",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__get_profile",
+      "description": "MCP tool: brix__get_profile",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__get_runner_info",
+      "description": "MCP tool: brix__get_runner_info",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__health",
+      "description": "MCP tool: brix__health",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__list_env_config",
+      "description": "MCP tool: brix__list_env_config",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__list_namespaces",
+      "description": "MCP tool: brix__list_namespaces",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__list_pins",
+      "description": "MCP tool: brix__list_pins",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__list_profiles",
+      "description": "MCP tool: brix__list_profiles",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__list_runners",
+      "description": "MCP tool: brix__list_runners",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__list_types",
+      "description": "MCP tool: brix__list_types",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__pin_step_data",
+      "description": "MCP tool: brix__pin_step_data",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__restore",
+      "description": "MCP tool: brix__restore",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__search_alert_rules",
+      "description": "MCP tool: brix__search_alert_rules",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__search_profiles",
+      "description": "MCP tool: brix__search_profiles",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__search_trigger_groups",
+      "description": "MCP tool: brix__search_trigger_groups",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__search_triggers",
+      "description": "MCP tool: brix__search_triggers",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__search_variables",
+      "description": "MCP tool: brix__search_variables",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__trigger_group_get",
+      "description": "MCP tool: brix__trigger_group_get",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__trigger_group_update",
+      "description": "MCP tool: brix__trigger_group_update",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__unpin_step_data",
+      "description": "MCP tool: brix__unpin_step_data",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__update_brick",
+      "description": "MCP tool: brix__update_brick",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "brix__update_profile",
+      "description": "MCP tool: brix__update_profile",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
     }
   ],
   "help_topics": [

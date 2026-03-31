@@ -287,7 +287,7 @@ MIGRATIONS: list[dict] = [
         "up": "ALTER TABLE help_topic ADD COLUMN category TEXT DEFAULT ''",
         "down": "",
     },
-    # Register missing MCP tool schemas (added after initial seed)
+    # Register ALL missing MCP tool schemas from _HANDLERS
     {
         "version": 67,
         "name": "register_new_mcp_tool_schemas",
@@ -299,30 +299,28 @@ MIGRATIONS: list[dict] = [
 
 
 def _register_new_tool_schemas_v67(db: "BrixDB") -> None:
-    """Register MCP tool schemas that were added after the initial seed."""
-    tools = [
-        ("brix__tool_schema", "Manage MCP tool schemas (add/get/list/update/delete)"),
-        ("brix__help_topic", "Manage help topics (add/get/list/update/delete)"),
-        ("brix__keyword", "Manage keyword taxonomies (add/list/delete)"),
-        ("brix__type_compat", "Manage type compatibility rules (add/list/delete)"),
-        ("brix__get_app_log", "Query structured application log (component/level/since filters)"),
-        ("brix__create_tip", "Create a new tip in the DB"),
-        ("brix__update_tip", "Update an existing tip"),
-        ("brix__delete_tip", "Delete a tip"),
-        ("brix__list_tips", "List tips with optional category filter"),
-    ]
+    """Register ALL MCP tool schemas from _HANDLERS that are missing in DB.
+
+    Dynamically reads _HANDLERS to ensure every handler has a DB schema.
+    This prevents the problem where new handlers are added in code but
+    never registered in the DB — making them invisible to MCP clients.
+    """
+    from brix.mcp_server import _HANDLERS
+
     with db._connect() as conn:
-        for name, desc in tools:
-            existing = conn.execute(
-                "SELECT name FROM mcp_tool_schema WHERE name = ?", (name,)
-            ).fetchone()
-            if not existing:
+        db_tools = {r[0] for r in conn.execute("SELECT name FROM mcp_tool_schema").fetchall()}
+        registered = 0
+        for name in sorted(_HANDLERS.keys()):
+            if name not in db_tools:
                 conn.execute(
                     "INSERT INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at) "
                     "VALUES (?, ?, '{}', datetime('now'), datetime('now'))",
-                    (name, desc),
+                    (name, f"MCP tool: {name}"),
                 )
                 logger.info("migration v67: registered tool '%s'", name)
+                registered += 1
+        if registered:
+            logger.info("migration v67: registered %d missing tool schemas", registered)
 
 
 def _create_plural_compat_views(db: "BrixDB") -> None:

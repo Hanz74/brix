@@ -85,15 +85,33 @@ _TEST_PIPELINE_PREFIXES = (
 
 
 def _sync_builtin_bricks(db: "BrixDB") -> int:
-    """No-op — brick definitions live exclusively in the DB (T-BRIX-DBF-02).
-
-    Previously this function synced bricks from builtins.py into the DB on every
-    startup, making code the source of truth.  Now the DB is the sole authority;
-    initial population is handled by seed.py (seed_if_empty).
-
-    The function signature is kept so callers don't break, but it always returns 0.
-    """
+    """No-op — brick definitions live exclusively in the DB (T-BRIX-DBF-02)."""
     return 0
+
+
+def _sync_tool_schemas(db: "BrixDB") -> int:
+    """Ensure every _HANDLERS entry has a corresponding mcp_tool_schema row.
+
+    This runs on every startup so that new handlers added in code are
+    immediately visible to MCP clients. Only INSERTS missing schemas —
+    never overwrites existing ones (DB is source of truth for descriptions
+    and input_schemas).
+    """
+    from brix.mcp_server import _HANDLERS
+
+    with db._connect() as conn:
+        db_tools = {r[0] for r in conn.execute("SELECT name FROM mcp_tool_schema").fetchall()}
+        synced = 0
+        for name in _HANDLERS:
+            if name not in db_tools:
+                conn.execute(
+                    "INSERT INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at) "
+                    "VALUES (?, ?, '{}', datetime('now'), datetime('now'))",
+                    (name, f"MCP tool: {name}"),
+                )
+                logger.info("startup_sync: registered tool schema '%s'", name)
+                synced += 1
+    return synced
 
 
 def _is_test_helper(name: str) -> bool:
@@ -159,6 +177,7 @@ def run_startup_sync(db: "BrixDB") -> dict:
     """
     summary = {
         "bricks_synced": 0,
+        "tool_schemas_synced": 0,
         "helpers_registered": 0,
         "pipelines_imported": 0,
         "descriptions_backfilled": 0,
@@ -171,6 +190,11 @@ def run_startup_sync(db: "BrixDB") -> dict:
         summary["bricks_synced"] = _sync_builtin_bricks(db)
     except Exception as exc:
         logger.warning("startup_sync: brick sync failed: %s", exc)
+
+    try:
+        summary["tool_schemas_synced"] = _sync_tool_schemas(db)
+    except Exception as exc:
+        logger.warning("startup_sync: tool schema sync failed: %s", exc)
 
     try:
         summary["helpers_registered"] = _sync_helpers(db)
