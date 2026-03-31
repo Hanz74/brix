@@ -583,6 +583,32 @@ _DDL = [
     """,
 ]
 
+# ---------------------------------------------------------------------------
+# Table-name allowlist — derived from _DDL at import time (T-BRIX-SEC-01)
+# ---------------------------------------------------------------------------
+import re as _re
+
+_KNOWN_TABLES: frozenset[str] = frozenset(
+    _re.findall(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", " ".join(_DDL))
+)
+
+
+def _safe_table(name: str) -> str:
+    """Validate *name* against the allowlist of known tables.
+
+    Returns *name* unchanged when valid; raises ``ValueError`` for anything
+    else.  This is defence-in-depth — callers already resolve table names via
+    internal dicts, but the explicit check silences static-analysis warnings
+    about SQL string interpolation **and** adds a hard runtime guard.
+    """
+    if name not in _KNOWN_TABLES:
+        raise ValueError(
+            f"Unknown table '{name}'. "
+            f"Allowed tables: {', '.join(sorted(_KNOWN_TABLES))}"
+        )
+    return name
+
+
 # Valid registry type names → table names mapping (T-BRIX-V7-10)
 REGISTRY_TYPES: dict[str, str] = {
     "templates": "registry_templates",
@@ -621,7 +647,7 @@ class BrixDB:
     @staticmethod
     def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
         """Check if a column exists in a table."""
-        cursor = conn.execute(f"PRAGMA table_info({table})")
+        cursor = conn.execute(f"PRAGMA table_info({_safe_table(table)})")
         return any(row[1] == column for row in cursor.fetchall())
 
     def _init_schema(self) -> None:
@@ -3002,7 +3028,7 @@ class BrixDB:
             raise ValueError(
                 f"Unknown registry_type '{registry_type}'. Valid types: {valid}"
             )
-        return table
+        return _safe_table(table)
 
     def registry_add(
         self,
