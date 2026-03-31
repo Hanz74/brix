@@ -183,8 +183,28 @@ async def _handle_add_step(arguments: dict) -> dict:
 
     # Build step dict — start with id + type
     step: dict = {"id": step_id, "type": step_type}
-    if arguments.get("params"):
-        step["params"] = arguments["params"]
+
+    # T-BRIX-BUG-12: Parse params if passed as JSON string, then promote
+    # known Step model fields from params to top-level step attributes.
+    raw_params = arguments.get("params")
+    if raw_params:
+        if isinstance(raw_params, str):
+            import json as _json
+            try:
+                raw_params = _json.loads(raw_params)
+            except (ValueError, TypeError):
+                raw_params = {"_raw": raw_params}
+        if isinstance(raw_params, dict):
+            from brix.models import Step as _StepModel
+            _step_fields = set(_StepModel.model_fields.keys()) - {"id", "type"}
+            for pkey, pval in list(raw_params.items()):
+                if pkey in _step_fields:
+                    step[pkey] = pval
+                else:
+                    step.setdefault("params", {})[pkey] = pval
+        else:
+            step["params"] = raw_params
+
     if arguments.get("on_error"):
         step["on_error"] = arguments["on_error"]
     if arguments.get("parallel"):
