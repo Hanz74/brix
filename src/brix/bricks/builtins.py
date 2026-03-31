@@ -1187,8 +1187,8 @@ SYSTEM_FLOW_WAIT = BrickSchema(
 SYSTEM_FLOW_DEDUP = BrickSchema(
     name="flow.dedup",
     type="dedup",
-    description="Deduplicate a list of items (Brick-First canonical name for the dedup runner).",
-    when_to_use="Use to remove duplicate items from a list based on a key.",
+    description="Deduplicate a list of items by Jinja2 key expression or content-hash (field + algorithm).",
+    when_to_use="Use to remove duplicate items from a list based on a key expression or content hash (md5/sha256).",
     runner="dedup",
     system=True,
     namespace="flow",
@@ -1209,8 +1209,8 @@ SYSTEM_FLOW_AGGREGATE = BrickSchema(
 SYSTEM_FLOW_FLATTEN = BrickSchema(
     name="flow.flatten",
     type="flatten",
-    description="Flatten a list of lists into a single list (Brick-First canonical name for the flatten runner).",
-    when_to_use="Use after foreach or parallel steps that produce nested lists.",
+    description="Flatten nested lists into a single list, optionally extracting a field first.",
+    when_to_use="Use after foreach or parallel steps that produce nested lists, or to flatten a field in each item.",
     runner="flatten",
     system=True,
     namespace="flow",
@@ -1312,6 +1312,67 @@ SYSTEM_FILE_LOAD_JSON = BrickSchema(
     output_description="The parsed JSON content directly (dict or list)",
 )
 
+# Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
+SYSTEM_FILTER_KEYWORD = BrickSchema(
+    name="filter.keyword",
+    type="keyword_filter",
+    description="Filter items by keyword matching on specified fields (any/all mode, case-insensitive by default).",
+    when_to_use="Use to filter a list of dicts by checking if keywords appear in specified text fields.",
+    when_NOT_to_use="Use flow.filter for complex Jinja2 conditions, filter.keyword is for simple keyword matching.",
+    runner="keyword_filter",
+    system=True,
+    namespace="filter",
+    category="system",
+    config_schema={
+        "input": BrickParam(type="array", description="List of dicts to filter", required=True),
+        "fields": BrickParam(type="array", description="Field names to search in each item", required=True),
+        "keywords": BrickParam(type="array", description="Keywords to match against", required=True),
+        "mode": BrickParam(type="string", description="Match mode: 'any' or 'all'", default="any", enum=["any", "all"]),
+        "case_sensitive": BrickParam(type="boolean", description="Case-sensitive matching", default=False),
+    },
+    input_type="list[dict]",
+    output_type="dict",
+    output_description='{"items": [...matching], "count": N, "filtered_out": N}',
+)
+
+SYSTEM_EXTRACT_URL = BrickSchema(
+    name="extract.url",
+    type="extract_url",
+    description="Extract URLs from text fields in input items (list of dicts or single dict).",
+    when_to_use="Use to find and collect all URLs from text content in pipeline data.",
+    runner="extract_url",
+    system=True,
+    namespace="extract",
+    category="system",
+    config_schema={
+        "input": BrickParam(type="array", description="List of dicts or single dict", required=True),
+        "field": BrickParam(type="string", description="Field name to extract URLs from", required=True),
+        "pattern": BrickParam(type="string", description="Custom regex for URL matching (optional)"),
+    },
+    input_type="list[dict] | dict",
+    output_type="dict",
+    output_description='{"urls": [...], "count": N}',
+)
+
+SYSTEM_EXTRACT_ICS = BrickSchema(
+    name="extract.ics",
+    type="extract_ics",
+    description="Parse ICS/iCal files and extract calendar events (stdlib only, no external dependencies).",
+    when_to_use="Use to extract events from .ics calendar files for processing in pipelines.",
+    runner="extract_ics",
+    system=True,
+    namespace="extract",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Path to the .ics file"),
+        "content": BrickParam(type="string", description="Raw ICS content (alternative to path)"),
+        "event_types": BrickParam(type="array", description="Optional filter by event type/status"),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"events": [{"summary": "...", "start": "...", "end": "...", ...}], "count": N}',
+)
+
 # All system bricks (one per runner)
 SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_SCRIPT_PYTHON,
@@ -1347,6 +1408,10 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_FILE_WRITE,
     SYSTEM_FILE_LIST,
     SYSTEM_FILE_LOAD_JSON,
+    # Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
+    SYSTEM_FILTER_KEYWORD,
+    SYSTEM_EXTRACT_URL,
+    SYSTEM_EXTRACT_ICS,
 ]
 
 

@@ -8,7 +8,8 @@ from brix.runners.base import BaseRunner
 class FlattenRunner(BaseRunner):
     """Flattens nested lists to a configurable depth.
 
-    Pipeline YAML example:
+    Pipeline YAML example::
+
         - id: flat_list
           type: flatten
           params:
@@ -40,6 +41,16 @@ class FlattenRunner(BaseRunner):
             },
             "required": [],
         }
+
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        depth = config.get("depth")
+        if depth is not None:
+            try:
+                int(depth)
+            except (TypeError, ValueError):
+                errors.append("'depth' must be an integer")
+        return errors
 
     def input_type(self) -> str:
         return "list"
@@ -85,7 +96,10 @@ class FlattenRunner(BaseRunner):
         self.report_progress(100.0, "done", done=len(result), total=len(input_data))
         return {
             "success": True,
-            "data": result,
+            "data": {
+                "items": result,
+                "count": len(result),
+            },
             "duration": duration,
             "items_count": len(result),
         }

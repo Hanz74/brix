@@ -138,6 +138,9 @@ class Step(BaseModel):
         "source.fetch",
         # File I/O bricks (T-BRIX-BRICK-02)
         "file.read_base64", "file.write", "file.list", "file.load_json",
+        # Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
+        "keyword_filter", "extract_url", "extract_ics",
+        "filter.keyword", "extract.url", "extract.ics",
     ]
 
     # Step enablement — disabled steps are unconditionally skipped

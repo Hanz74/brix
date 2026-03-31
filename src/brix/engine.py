@@ -77,6 +77,10 @@ LEGACY_ALIASES: dict[str, str] = {
     "file_write": "file.write",
     "file_list": "file.list",
     "file_load_json": "file.load_json",
+    # Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
+    "keyword_filter": "filter.keyword",
+    "extract_url": "extract.url",
+    "extract_ics": "extract.ics",
 }
 
 # ---------------------------------------------------------------------------
