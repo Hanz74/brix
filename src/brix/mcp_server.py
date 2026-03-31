@@ -873,7 +873,12 @@ async def _handle_pipeline_tool(pipeline_name: str, arguments: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _load_mcp_tools_from_db() -> list[types.Tool]:
-    """Load MCP tool schemas from DB (DB-First — no code fallback)."""
+    """Load MCP tool schemas from DB (DB-First — no code fallback).
+
+    Only includes tools with a real input_schema (not empty '{}').
+    Tools with empty schemas are still callable via call_tool but
+    not advertised in list_tools to keep the response size manageable.
+    """
     try:
         db = BrixDB()
         rows = db.mcp_tool_schemas_list()
@@ -889,6 +894,10 @@ def _load_mcp_tools_from_db() -> list[types.Tool]:
                         input_schema = {}
                 else:
                     input_schema = raw_schema or {}
+                # Skip tools with empty schemas — they bloat the response
+                # but provide no useful parameter info to clients
+                if not input_schema or input_schema == {}:
+                    continue
                 tools.append(types.Tool(
                     name=row["name"],
                     description=row.get("description", ""),
