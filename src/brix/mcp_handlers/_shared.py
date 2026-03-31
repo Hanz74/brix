@@ -472,7 +472,7 @@ async def _background_run_watchdog() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Schema-consultation helpers (T-BRIX-V8-09)
+# Schema-consultation helper (T-BRIX-V8-09)
 # ---------------------------------------------------------------------------
 
 def _source_key(source: "dict | None") -> str:

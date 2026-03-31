@@ -246,7 +246,7 @@ class DbUpsertRunner(BaseRunner):
 
 
 # ---------------------------------------------------------------------------
-# SQL generation helpers (module-level, pure functions — easy to unit-test)
+# SQL generation helper (module-level, pure functions — easy to unit-test)
 # ---------------------------------------------------------------------------
 
 

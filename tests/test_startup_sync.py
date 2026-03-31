@@ -189,8 +189,8 @@ class TestDescriptionBackfill:
         # Ensure description is empty
         import sqlite3
         with sync_db._connect() as conn:
-            if sync_db._column_exists(conn, "pipelines", "description"):
-                conn.execute("UPDATE pipelines SET description='' WHERE name='bp1'")
+            if sync_db._column_exists(conn, "pipeline", "description"):
+                conn.execute("UPDATE pipeline SET description='' WHERE name='bp1'")
 
         count = _backfill_descriptions(sync_db)
         assert count == 1
@@ -203,8 +203,8 @@ class TestDescriptionBackfill:
         sync_db.upsert_pipeline(name="bp2", path="/p.yaml", yaml_content=yaml_content)
         import sqlite3
         with sync_db._connect() as conn:
-            if sync_db._column_exists(conn, "pipelines", "description"):
-                conn.execute("UPDATE pipelines SET description='Already set' WHERE name='bp2'")
+            if sync_db._column_exists(conn, "pipeline", "description"):
+                conn.execute("UPDATE pipeline SET description='Already set' WHERE name='bp2'")
 
         count = _backfill_descriptions(sync_db)
         assert count == 0

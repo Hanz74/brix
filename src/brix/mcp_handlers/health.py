@@ -111,7 +111,7 @@ def _check_pipelines() -> dict:
             db = BrixDB()
             with db._connect() as conn:
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM runs WHERE started_at >= datetime('now', '-1 day')"
+                    "SELECT COUNT(*) FROM run WHERE started_at >= datetime('now', '-1 day')"
                 ).fetchone()
                 recent_runs = row[0] if row else 0
         except Exception:

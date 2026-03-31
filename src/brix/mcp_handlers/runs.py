@@ -188,7 +188,7 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
         try:
             with _audit_db._connect() as _conn:
                 _conn.execute(
-                    "UPDATE runs SET triggered_by=? WHERE run_id=?",
+                    "UPDATE run SET triggered_by=? WHERE run_id=?",
                     (triggered_by_value, result.run_id),
                 )
         except Exception:
@@ -503,7 +503,7 @@ async def _handle_diff_runs(arguments: dict) -> dict:
     step_diffs: list[dict] = []
     all_step_ids = sorted(set(list(steps_a.keys()) + list(steps_b.keys())))
 
-    # Load persisted step outputs (from step_outputs table) for both runs
+    # Load persisted step outputs (from step_output table) for both runs
     so_a_list = db.get_step_outputs(run_id_a)
     so_b_list = db.get_step_outputs(run_id_b)
     so_a = {row["step_id"]: row for row in so_a_list}

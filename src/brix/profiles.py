@@ -76,7 +76,7 @@ class ProfileManager:
         Priority (highest to lowest):
         1. ``override`` argument (e.g. from --profile CLI flag)
         2. ``BRIX_PROFILE`` environment variable
-        3. ``default_profile`` from profiles.yaml
+        3. ``default_profile`` from profile.yaml
         4. ``None`` (no profile active)
         """
         if override:

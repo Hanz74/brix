@@ -69,7 +69,7 @@ async def _handle_list_bricks(arguments: dict) -> dict:
         _ldb = _BrixDB()
         _lconn = _ldb._connect()
         for row in _lconn.execute(
-            "SELECT name, namespace, org_tags, project, group_name FROM brick_definitions"
+            "SELECT name, namespace, org_tags, project, group_name FROM brick_definition"
         ).fetchall():
             raw_tags = row[2]
             try:

@@ -120,7 +120,7 @@ async def _handle_get_insights(arguments: dict) -> dict:
     with db._connect() as conn:
         # slow_steps: per-pipeline/step combos with avg_duration > 3x median
         rows = conn.execute(
-            "SELECT pipeline, steps_data FROM runs "
+            "SELECT pipeline, steps_data FROM run "
             "WHERE finished_at IS NOT NULL AND steps_data IS NOT NULL"
         ).fetchall()
 
@@ -172,7 +172,7 @@ async def _handle_get_insights(arguments: dict) -> dict:
 
         # failure_patterns: common errors grouped by pipeline
         fail_rows = conn.execute(
-            "SELECT pipeline, steps_data FROM runs "
+            "SELECT pipeline, steps_data FROM run "
             "WHERE finished_at IS NOT NULL AND success=0 AND steps_data IS NOT NULL"
         ).fetchall()
 
@@ -203,9 +203,9 @@ async def _handle_get_insights(arguments: dict) -> dict:
 
         # dead_helpers: helpers in registry not referenced by any pipeline
         all_helpers = conn.execute(
-            "SELECT h.id, h.name FROM helpers h "
+            "SELECT h.id, h.name FROM helper h "
             "WHERE NOT EXISTS ("
-            "  SELECT 1 FROM pipeline_helpers ph WHERE ph.helper_id = h.id"
+            "  SELECT 1 FROM pipeline_helper ph WHERE ph.helper_id = h.id"
             ")"
         ).fetchall()
 

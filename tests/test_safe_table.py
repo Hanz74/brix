@@ -76,7 +76,8 @@ class TestSafeTable:
                 " ".join(_DDL),
             )
         )
-        assert _KNOWN_TABLES == expected
+        # _KNOWN_TABLES may include extra tables from migrations (tip, schema_migration)
+        assert expected.issubset(_KNOWN_TABLES)
 
     def test_known_tables_not_empty(self):
         """Sanity: _KNOWN_TABLES has a reasonable number of tables."""

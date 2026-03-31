@@ -68,7 +68,7 @@ def _normalize_helper_ref(ref: str) -> str:
 
 _DDL = [
     """
-    CREATE TABLE IF NOT EXISTS runs (
+    CREATE TABLE IF NOT EXISTS run (
         run_id       TEXT PRIMARY KEY,
         pipeline     TEXT NOT NULL,
         version      TEXT,
@@ -80,21 +80,33 @@ _DDL = [
         steps_data   TEXT,
         result_summary TEXT,
         triggered_by TEXT DEFAULT 'cli',
-        notes        TEXT
+        notes        TEXT,
+        cost_usd     REAL,
+        idempotency_key TEXT,
+        cancel_reason TEXT,
+        cancelled_by TEXT,
+        environment_json TEXT,
+        container_id TEXT,
+        project      TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS pipelines (
+    CREATE TABLE IF NOT EXISTS pipeline (
         id           TEXT PRIMARY KEY,
         name         TEXT NOT NULL UNIQUE,
         path         TEXT NOT NULL,
         created_at   TEXT NOT NULL,
         updated_at   TEXT NOT NULL,
-        requirements_json TEXT DEFAULT '[]'
+        requirements_json TEXT DEFAULT '[]',
+        yaml_content TEXT DEFAULT '',
+        project      TEXT DEFAULT '',
+        tags         TEXT DEFAULT '[]',
+        group_name   TEXT DEFAULT '',
+        description  TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS helpers (
+    CREATE TABLE IF NOT EXISTS helper (
         id               TEXT PRIMARY KEY,
         name             TEXT NOT NULL UNIQUE,
         script_path      TEXT NOT NULL,
@@ -103,20 +115,24 @@ _DDL = [
         input_schema_json TEXT DEFAULT '{}',
         output_schema_json TEXT DEFAULT '{}',
         created_at       TEXT NOT NULL,
-        updated_at       TEXT NOT NULL
+        updated_at       TEXT NOT NULL,
+        code             TEXT DEFAULT '',
+        project          TEXT DEFAULT '',
+        tags             TEXT DEFAULT '[]',
+        group_name       TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS pipeline_helpers (
+    CREATE TABLE IF NOT EXISTS pipeline_helper (
         pipeline_id  TEXT NOT NULL,
         helper_id    TEXT NOT NULL,
         PRIMARY KEY (pipeline_id, helper_id),
-        FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE,
-        FOREIGN KEY (helper_id)   REFERENCES helpers(id)   ON DELETE CASCADE
+        FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE CASCADE,
+        FOREIGN KEY (helper_id)   REFERENCES helper(id)   ON DELETE CASCADE
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS object_versions (
+    CREATE TABLE IF NOT EXISTS object_version (
         id          TEXT PRIMARY KEY,
         type        TEXT NOT NULL,
         name        TEXT NOT NULL,
@@ -138,7 +154,7 @@ _DDL = [
     """,
     # V6-10: Agent-Kontext-Persistenz
     """
-    CREATE TABLE IF NOT EXISTS agent_sessions (
+    CREATE TABLE IF NOT EXISTS agent_session (
         session_id            TEXT PRIMARY KEY,
         summary               TEXT NOT NULL DEFAULT '',
         active_pipeline       TEXT,
@@ -149,7 +165,7 @@ _DDL = [
     """,
     # V6-11: Resource-Claims (distributed locking)
     """
-    CREATE TABLE IF NOT EXISTS resource_locks (
+    CREATE TABLE IF NOT EXISTS resource_lock (
         resource_id TEXT PRIMARY KEY,
         run_id      TEXT NOT NULL,
         claimed_at  TEXT NOT NULL,
@@ -176,7 +192,7 @@ _DDL = [
     """,
     # V7-04: Step Outputs — persisted execution data per step
     """
-    CREATE TABLE IF NOT EXISTS step_outputs (
+    CREATE TABLE IF NOT EXISTS step_output (
         id                   TEXT PRIMARY KEY,
         run_id               TEXT NOT NULL,
         step_id              TEXT NOT NULL,
@@ -189,14 +205,18 @@ _DDL = [
     """,
     # T-BRIX-MOD-02: Alert rules and history (consolidated from alerting.py)
     """
-    CREATE TABLE IF NOT EXISTS alert_rules (
+    CREATE TABLE IF NOT EXISTS alert_rule (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         condition   TEXT NOT NULL,
         channel     TEXT NOT NULL,
         config      TEXT NOT NULL DEFAULT '{}',
         enabled     INTEGER NOT NULL DEFAULT 1,
-        created_at  TEXT NOT NULL
+        created_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        tags        TEXT DEFAULT '[]',
+        group_name  TEXT DEFAULT '',
+        description TEXT DEFAULT ''
     )
     """,
     """
@@ -212,9 +232,9 @@ _DDL = [
         fired_at    TEXT NOT NULL
     )
     """,
-    # T-BRIX-MOD-02: Trigger tables (consolidated from triggers/store.py)
+    # T-BRIX-MOD-02: Trigger tables (consolidated from trigger/store.py)
     """
-    CREATE TABLE IF NOT EXISTS triggers (
+    CREATE TABLE IF NOT EXISTS trigger (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         type        TEXT NOT NULL,
@@ -225,21 +245,28 @@ _DDL = [
         updated_at  TEXT NOT NULL,
         last_fired_at TEXT,
         last_run_id   TEXT,
-        last_status   TEXT
+        last_status   TEXT,
+        project     TEXT DEFAULT '',
+        tags        TEXT DEFAULT '[]',
+        group_name  TEXT DEFAULT '',
+        description TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS trigger_groups (
+    CREATE TABLE IF NOT EXISTS trigger_group (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT NOT NULL DEFAULT '',
         triggers_json TEXT NOT NULL DEFAULT '[]',
         enabled     INTEGER NOT NULL DEFAULT 1,
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        tags        TEXT DEFAULT '[]',
+        group_name  TEXT DEFAULT ''
     )
     """,
-    # T-BRIX-MOD-03: Trigger state tables (consolidated from triggers/state.py)
+    # T-BRIX-MOD-03: Trigger state tables (consolidated from trigger/state.py)
     """
     CREATE TABLE IF NOT EXISTS trigger_state (
         trigger_id TEXT NOT NULL,
@@ -251,7 +278,7 @@ _DDL = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS pipeline_events (
+    CREATE TABLE IF NOT EXISTS pipeline_event (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id        TEXT NOT NULL,
         pipeline_name TEXT NOT NULL,
@@ -270,74 +297,86 @@ _DDL = [
     """,
     # T-BRIX-V7-10: Registry System — 6 knowledge registries
     """
-    CREATE TABLE IF NOT EXISTS registry_templates (
+    CREATE TABLE IF NOT EXISTS registry_template (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT '',
         content     TEXT NOT NULL DEFAULT '{}',
         tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        group_name  TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS registry_patterns (
+    CREATE TABLE IF NOT EXISTS registry_pattern (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT '',
         content     TEXT NOT NULL DEFAULT '{}',
         tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        group_name  TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS registry_schemas (
+    CREATE TABLE IF NOT EXISTS registry_schema (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT '',
         content     TEXT NOT NULL DEFAULT '{}',
         tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        group_name  TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS registry_error_patterns (
+    CREATE TABLE IF NOT EXISTS registry_error_pattern (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT '',
         content     TEXT NOT NULL DEFAULT '{}',
         tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        group_name  TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS registry_best_practices (
+    CREATE TABLE IF NOT EXISTS registry_best_practice (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT '',
         content     TEXT NOT NULL DEFAULT '{}',
         tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        group_name  TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS registry_lessons_learned (
+    CREATE TABLE IF NOT EXISTS registry_lesson_learned (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         description TEXT DEFAULT '',
         content     TEXT NOT NULL DEFAULT '{}',
         tags        TEXT NOT NULL DEFAULT '[]',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        project     TEXT DEFAULT '',
+        group_name  TEXT DEFAULT ''
     )
     """,
     # T-BRIX-DB-05b: Named DB-Connections
     """
-    CREATE TABLE IF NOT EXISTS connections (
+    CREATE TABLE IF NOT EXISTS connection (
         id                TEXT PRIMARY KEY,
         name              TEXT UNIQUE NOT NULL,
         driver            TEXT NOT NULL DEFAULT 'postgresql',
@@ -345,7 +384,10 @@ _DDL = [
         env_var           TEXT,
         description       TEXT DEFAULT '',
         created_at        TEXT NOT NULL,
-        updated_at        TEXT
+        updated_at        TEXT,
+        project           TEXT DEFAULT '',
+        tags              TEXT DEFAULT '[]',
+        group_name        TEXT DEFAULT ''
     )
     """,
     # T-BRIX-DB-05d: Deprecated Step-Type Usage Tracking
@@ -361,7 +403,7 @@ _DDL = [
     """,
     # T-BRIX-DB-06: DB-First — brick_definitions
     """
-    CREATE TABLE IF NOT EXISTS brick_definitions (
+    CREATE TABLE IF NOT EXISTS brick_definition (
         name TEXT PRIMARY KEY,
         runner TEXT NOT NULL,
         namespace TEXT DEFAULT '',
@@ -377,12 +419,16 @@ _DDL = [
         related_connector TEXT DEFAULT '',
         system BOOLEAN DEFAULT 0,
         created_at TEXT NOT NULL,
-        updated_at TEXT
+        updated_at TEXT,
+        org_tags TEXT DEFAULT '[]',
+        project TEXT DEFAULT '',
+        group_name TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]'
     )
     """,
     # T-BRIX-DB-06: DB-First — connector_definitions
     """
-    CREATE TABLE IF NOT EXISTS connector_definitions (
+    CREATE TABLE IF NOT EXISTS connector_definition (
         name TEXT PRIMARY KEY,
         type TEXT NOT NULL,
         description TEXT DEFAULT '',
@@ -393,12 +439,15 @@ _DDL = [
         related_pipelines TEXT DEFAULT '[]',
         related_helpers TEXT DEFAULT '[]',
         created_at TEXT NOT NULL,
-        updated_at TEXT
+        updated_at TEXT,
+        project TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]',
+        group_name TEXT DEFAULT ''
     )
     """,
     # T-BRIX-DB-06: DB-First — mcp_tool_schemas
     """
-    CREATE TABLE IF NOT EXISTS mcp_tool_schemas (
+    CREATE TABLE IF NOT EXISTS mcp_tool_schema (
         name TEXT PRIMARY KEY,
         description TEXT DEFAULT '',
         input_schema TEXT DEFAULT '{}',
@@ -408,7 +457,7 @@ _DDL = [
     """,
     # T-BRIX-DB-06: DB-First — help_topics
     """
-    CREATE TABLE IF NOT EXISTS help_topics (
+    CREATE TABLE IF NOT EXISTS help_topic (
         name TEXT PRIMARY KEY,
         title TEXT DEFAULT '',
         content TEXT DEFAULT '',
@@ -418,7 +467,7 @@ _DDL = [
     """,
     # T-BRIX-DB-06: DB-First — keyword_taxonomies
     """
-    CREATE TABLE IF NOT EXISTS keyword_taxonomies (
+    CREATE TABLE IF NOT EXISTS keyword_taxonomy (
         category TEXT NOT NULL,
         keyword TEXT NOT NULL,
         language TEXT DEFAULT 'de',
@@ -436,7 +485,7 @@ _DDL = [
     """,
     # T-BRIX-DB-07: Run-Persistenz — vollständige Execution-Daten
     """
-    CREATE TABLE IF NOT EXISTS step_executions (
+    CREATE TABLE IF NOT EXISTS step_execution (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL,
         step_id TEXT NOT NULL,
@@ -450,11 +499,12 @@ _DDL = [
         ended_at TEXT,
         duration_ms INTEGER DEFAULT 0,
         persist_data BOOLEAN DEFAULT 1,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        last_progress TEXT DEFAULT ''
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS foreach_item_executions (
+    CREATE TABLE IF NOT EXISTS foreach_item_execution (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL,
         step_id TEXT NOT NULL,
@@ -468,7 +518,7 @@ _DDL = [
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS run_inputs (
+    CREATE TABLE IF NOT EXISTS run_input (
         run_id TEXT PRIMARY KEY,
         input_params TEXT DEFAULT '{}',
         trigger_data TEXT DEFAULT '{}',
@@ -477,12 +527,16 @@ _DDL = [
     """,
     # T-BRIX-DB-13: Managed Variables
     """
-    CREATE TABLE IF NOT EXISTS variables (
+    CREATE TABLE IF NOT EXISTS variable (
         name TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         description TEXT DEFAULT '',
         created_at TEXT NOT NULL,
-        updated_at TEXT
+        updated_at TEXT,
+        secret INTEGER DEFAULT 0,
+        project TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]',
+        group_name TEXT DEFAULT ''
     )
     """,
     # T-BRIX-DB-13: Persistent Data Store
@@ -491,7 +545,10 @@ _DDL = [
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         pipeline_name TEXT DEFAULT '',
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        project TEXT DEFAULT '',
+        tags TEXT DEFAULT '[]',
+        group_name TEXT DEFAULT ''
     )
     """,
     # T-BRIX-DB-21: Resilience — Circuit Breaker state
@@ -550,17 +607,20 @@ _DDL = [
     """,
     # T-BRIX-DB-23: Brick-Komposition Profiles/Mixins
     """
-    CREATE TABLE IF NOT EXISTS profiles (
+    CREATE TABLE IF NOT EXISTS profile (
         name        TEXT PRIMARY KEY,
         config      TEXT NOT NULL DEFAULT '{}',
         description TEXT DEFAULT '',
         created_at  TEXT NOT NULL,
-        updated_at  TEXT
+        updated_at  TEXT,
+        project     TEXT DEFAULT '',
+        tags        TEXT DEFAULT '[]',
+        group_name  TEXT DEFAULT ''
     )
     """,
     # T-BRIX-DB-24: Step Pins — Mock-Daten für Testing
     """
-    CREATE TABLE IF NOT EXISTS step_pins (
+    CREATE TABLE IF NOT EXISTS step_pin (
         pipeline_name   TEXT NOT NULL,
         step_id         TEXT NOT NULL,
         pinned_data     TEXT NOT NULL,
@@ -590,7 +650,10 @@ import re as _re
 
 _KNOWN_TABLES: frozenset[str] = frozenset(
     _re.findall(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", " ".join(_DDL))
-)
+) | frozenset({
+    # Tables created via migrations (not in _DDL)
+    "tip", "schema_migration",
+})
 
 
 def _safe_table(name: str) -> str:
@@ -611,12 +674,12 @@ def _safe_table(name: str) -> str:
 
 # Valid registry type names → table names mapping (T-BRIX-V7-10)
 REGISTRY_TYPES: dict[str, str] = {
-    "templates": "registry_templates",
-    "patterns": "registry_patterns",
-    "schemas": "registry_schemas",
-    "error_patterns": "registry_error_patterns",
-    "best_practices": "registry_best_practices",
-    "lessons_learned": "registry_lessons_learned",
+    "templates": "registry_template",
+    "patterns": "registry_pattern",
+    "schemas": "registry_schema",
+    "error_patterns": "registry_error_pattern",
+    "best_practices": "registry_best_practice",
+    "lessons_learned": "registry_lesson_learned",
 }
 
 
@@ -650,85 +713,139 @@ class BrixDB:
         cursor = conn.execute(f"PRAGMA table_info({_safe_table(table)})")
         return any(row[1] == column for row in cursor.fetchall())
 
+    # T-BRIX-DEBT-01: new singular → old plural mapping for DDL skip logic
+    _SINGULAR_TO_PLURAL: dict[str, str] = {
+        "agent_session": "agent_sessions",
+        "alert_rule": "alert_rules",
+        "brick_definition": "brick_definitions",
+        "connection": "connections",
+        "connector_definition": "connector_definitions",
+        "foreach_item_execution": "foreach_item_executions",
+        "help_topic": "help_topics",
+        "helper": "helpers",
+        "keyword_taxonomy": "keyword_taxonomies",
+        "mcp_tool_schema": "mcp_tool_schemas",
+        "object_version": "object_versions",
+        "pipeline_event": "pipeline_events",
+        "pipeline_helper": "pipeline_helpers",
+        "pipeline": "pipelines",
+        "profile": "profiles",
+        "registry_best_practice": "registry_best_practices",
+        "registry_error_pattern": "registry_error_patterns",
+        "registry_lesson_learned": "registry_lessons_learned",
+        "registry_pattern": "registry_patterns",
+        "registry_schema": "registry_schemas",
+        "registry_template": "registry_templates",
+        "resource_lock": "resource_locks",
+        "run_input": "run_inputs",
+        "run": "runs",
+        "step_execution": "step_executions",
+        "step_output": "step_outputs",
+        "step_pin": "step_pins",
+        "trigger_group": "trigger_groups",
+        "trigger": "triggers",
+        "variable": "variables",
+    }
+
     def _init_schema(self) -> None:
         with self._connect() as conn:
+            # T-BRIX-DEBT-01: Detect pre-v63 DB (has old plural table names).
+            # If old tables exist, skip creating new singular ones — migration v63
+            # will rename old -> new.  On fresh DB, old tables don't exist so DDL
+            # creates the new singular tables directly.
+            _pre_v63 = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='runs'"
+            ).fetchone()[0] > 0
+
             for ddl in _DDL:
+                if _pre_v63:
+                    m = _re.search(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", ddl)
+                    if m:
+                        new_name = m.group(1)
+                        old_name = self._SINGULAR_TO_PLURAL.get(new_name)
+                        if old_name:
+                            old_exists = conn.execute(
+                                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                                (old_name,),
+                            ).fetchone()[0] > 0
+                            if old_exists:
+                                continue  # Skip — migration v63 will rename the old table
                 conn.execute(ddl)
             # Idempotent migration: add notes column if not present (v5.1+)
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN notes TEXT")
+                conn.execute("ALTER TABLE run ADD COLUMN notes TEXT")
             except Exception:
                 pass  # Column already exists — ignore
             # Idempotent migration: add cost_usd column if not present (v6.21+)
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN cost_usd REAL")
+                conn.execute("ALTER TABLE run ADD COLUMN cost_usd REAL")
             except Exception:
                 pass  # Column already exists — ignore
             # Idempotent migration: add idempotency_key column (T-BRIX-V6-22)
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN idempotency_key TEXT")
+                conn.execute("ALTER TABLE run ADD COLUMN idempotency_key TEXT")
             except Exception:
                 pass  # Column already exists — ignore
             try:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_runs_idempotency_key "
-                    "ON runs (idempotency_key, started_at)"
+                    "ON run (idempotency_key, started_at)"
                 )
             except Exception:
                 pass
             # Idempotent migration: add cancel columns (T-BRIX-V6-BUG-03)
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN cancel_reason TEXT")
+                conn.execute("ALTER TABLE run ADD COLUMN cancel_reason TEXT")
             except Exception:
                 pass  # Column already exists — ignore
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN cancelled_by TEXT")
+                conn.execute("ALTER TABLE run ADD COLUMN cancelled_by TEXT")
             except Exception:
                 pass  # Column already exists — ignore
             # Idempotent migration: step_outputs index (T-BRIX-V7-04)
             try:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_step_outputs_run_id "
-                    "ON step_outputs (run_id)"
+                    "ON step_output (run_id)"
                 )
             except Exception:
                 pass
             # Idempotent migration: environment_json column (T-BRIX-V7-05)
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN environment_json TEXT")
+                conn.execute("ALTER TABLE run ADD COLUMN environment_json TEXT")
             except Exception:
                 pass  # Column already exists — ignore
             # Idempotent migration: container_id column (T-BRIX-V7-07)
             try:
-                conn.execute("ALTER TABLE runs ADD COLUMN container_id TEXT")
+                conn.execute("ALTER TABLE run ADD COLUMN container_id TEXT")
             except Exception:
                 pass  # Column already exists — ignore
             # Idempotent migration: T-BRIX-DB-07 indexes
             try:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_step_executions_run_id "
-                    "ON step_executions (run_id)"
+                    "ON step_execution (run_id)"
                 )
             except Exception:
                 pass
             try:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_foreach_item_executions_run_step "
-                    "ON foreach_item_executions (run_id, step_id)"
+                    "ON foreach_item_execution (run_id, step_id)"
                 )
             except Exception:
                 pass
             # Idempotent migration: last_progress column for step_executions (T-BRIX-DB-14)
             try:
                 conn.execute(
-                    "ALTER TABLE step_executions ADD COLUMN last_progress TEXT DEFAULT ''"
+                    "ALTER TABLE step_execution ADD COLUMN last_progress TEXT DEFAULT ''"
                 )
             except Exception:
                 pass  # Column already exists — ignore
             # Idempotent migration: secret column for variables (T-BRIX-DB-26)
             try:
                 conn.execute(
-                    "ALTER TABLE variables ADD COLUMN secret INTEGER DEFAULT 0"
+                    "ALTER TABLE variable ADD COLUMN secret INTEGER DEFAULT 0"
                 )
             except Exception:
                 pass  # Column already exists — ignore
@@ -820,7 +937,7 @@ class BrixDB:
 
         with self._connect() as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO step_outputs
+                """INSERT OR REPLACE INTO step_output
                    (id, run_id, step_id, output_json, rendered_params_json,
                     stderr_text, context_json, created_at)
                    VALUES (?,?,?,?,?,?,?,?)""",
@@ -841,7 +958,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM step_outputs WHERE run_id=? AND step_id=? ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM step_output WHERE run_id=? AND step_id=? ORDER BY created_at DESC LIMIT 1",
                 (run_id, step_id),
             ).fetchone()
         if row is None:
@@ -853,7 +970,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM step_outputs WHERE run_id=? ORDER BY created_at ASC",
+                "SELECT * FROM step_output WHERE run_id=? ORDER BY created_at ASC",
                 (run_id,),
             ).fetchall()
         return [self._deserialize_step_output(dict(r)) for r in rows]
@@ -886,7 +1003,7 @@ class BrixDB:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT r.steps_data
-                   FROM runs r
+                   FROM run r
                    WHERE r.pipeline = ?
                      AND r.success = 1
                      AND r.finished_at IS NOT NULL
@@ -1041,7 +1158,7 @@ class BrixDB:
         try:
             with self._connect() as conn:
                 conn.execute(
-                    """INSERT OR REPLACE INTO step_executions
+                    """INSERT OR REPLACE INTO step_execution
                        (id, run_id, step_id, step_type, status, input_data, output_data,
                         error_detail, data_source, started_at, ended_at, duration_ms,
                         persist_data, created_at)
@@ -1083,7 +1200,7 @@ class BrixDB:
         try:
             with self._connect() as conn:
                 conn.execute(
-                    """INSERT INTO foreach_item_executions
+                    """INSERT INTO foreach_item_execution
                        (id, run_id, step_id, item_index, item_input, item_output,
                         status, error_detail, duration_ms, created_at)
                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -1113,7 +1230,7 @@ class BrixDB:
         try:
             with self._connect() as conn:
                 conn.execute(
-                    """INSERT OR REPLACE INTO run_inputs (run_id, input_params, trigger_data, created_at)
+                    """INSERT OR REPLACE INTO run_input (run_id, input_params, trigger_data, created_at)
                        VALUES (?,?,?,?)""",
                     (run_id, params_str, trigger_str, now),
                 )
@@ -1126,12 +1243,12 @@ class BrixDB:
             conn.row_factory = sqlite3.Row
             if step_id is not None:
                 rows = conn.execute(
-                    "SELECT * FROM step_executions WHERE run_id=? AND step_id=? ORDER BY created_at ASC",
+                    "SELECT * FROM step_execution WHERE run_id=? AND step_id=? ORDER BY created_at ASC",
                     (run_id, step_id),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM step_executions WHERE run_id=? ORDER BY created_at ASC",
+                    "SELECT * FROM step_execution WHERE run_id=? ORDER BY created_at ASC",
                     (run_id,),
                 ).fetchall()
         result = []
@@ -1173,11 +1290,11 @@ class BrixDB:
         try:
             with self._connect() as conn:
                 conn.execute(
-                    """UPDATE step_executions
+                    """UPDATE step_execution
                        SET last_progress = ?
                        WHERE run_id = ? AND step_id = ?
                          AND id = (
-                             SELECT id FROM step_executions
+                             SELECT id FROM step_execution
                              WHERE run_id = ? AND step_id = ?
                              ORDER BY created_at DESC LIMIT 1
                          )""",
@@ -1197,7 +1314,7 @@ class BrixDB:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     """SELECT step_id, last_progress, started_at
-                       FROM step_executions
+                       FROM step_execution
                        WHERE run_id = ? AND last_progress != ''
                        ORDER BY created_at ASC""",
                     (run_id,),
@@ -1220,7 +1337,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM foreach_item_executions WHERE run_id=? AND step_id=? ORDER BY item_index ASC",
+                "SELECT * FROM foreach_item_execution WHERE run_id=? AND step_id=? ORDER BY item_index ASC",
                 (run_id, step_id),
             ).fetchall()
         result = []
@@ -1241,7 +1358,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM run_inputs WHERE run_id=?",
+                "SELECT * FROM run_input WHERE run_id=?",
                 (run_id,),
             ).fetchone()
         if row is None:
@@ -1256,7 +1373,7 @@ class BrixDB:
         return d
 
     # ------------------------------------------------------------------
-    # Migration helpers (idempotent)
+    # Migration helper (idempotent)
     # ------------------------------------------------------------------
 
     def migrate_from_history_db(self, history_db_path: Optional[Path] = None) -> int:
@@ -1271,7 +1388,7 @@ class BrixDB:
         try:
             src_conn = sqlite3.connect(str(src))
             src_conn.row_factory = sqlite3.Row
-            rows = src_conn.execute("SELECT * FROM runs").fetchall()
+            rows = src_conn.execute("SELECT * FROM run").fetchall()
             src_conn.close()
         except Exception:
             return 0
@@ -1281,7 +1398,7 @@ class BrixDB:
             for row in rows:
                 try:
                     conn.execute(
-                        """INSERT OR IGNORE INTO runs
+                        """INSERT OR IGNORE INTO run
                            (run_id, pipeline, version, started_at, finished_at,
                             duration, success, input_data, steps_data,
                             result_summary, triggered_by)
@@ -1332,7 +1449,7 @@ class BrixDB:
                     continue
                 try:
                     conn.execute(
-                        """INSERT OR IGNORE INTO helpers
+                        """INSERT OR IGNORE INTO helper
                            (id, name, script_path, description,
                             requirements_json, input_schema_json, output_schema_json,
                             created_at, updated_at)
@@ -1400,14 +1517,14 @@ class BrixDB:
                 with self._connect() as conn:
                     # Preserve existing id if already indexed
                     existing = conn.execute(
-                        "SELECT id, created_at FROM pipelines WHERE name=?", (name,)
+                        "SELECT id, created_at FROM pipeline WHERE name=?", (name,)
                     ).fetchone()
                     if existing:
                         pipeline_id = existing[0]
                         created_at = existing[1]
 
                     conn.execute(
-                        """INSERT INTO pipelines (id, name, path, created_at, updated_at, requirements_json)
+                        """INSERT INTO pipeline (id, name, path, created_at, updated_at, requirements_json)
                            VALUES (?,?,?,?,?,?)
                            ON CONFLICT(name) DO UPDATE SET
                              path=excluded.path,
@@ -1488,7 +1605,7 @@ class BrixDB:
     def _sync_pipeline_helpers(
         self, conn: sqlite3.Connection, pipeline_id: str, raw: dict
     ) -> None:
-        """Update pipeline_helpers for a single pipeline.
+        """Update pipeline_helper for a single pipeline.
 
         Scans all steps (recursively) for helper/script references and
         inserts the corresponding join-table rows.
@@ -1501,31 +1618,31 @@ class BrixDB:
 
         # Always delete old links (even when no helpers found — handles removal)
         conn.execute(
-            "DELETE FROM pipeline_helpers WHERE pipeline_id=?", (pipeline_id,)
+            "DELETE FROM pipeline_helper WHERE pipeline_id=?", (pipeline_id,)
         )
 
         for hname in helper_names:
             row = conn.execute(
-                "SELECT id FROM helpers WHERE name=?", (hname,)
+                "SELECT id FROM helper WHERE name=?", (hname,)
             ).fetchone()
             if row:
                 try:
                     conn.execute(
-                        "INSERT OR IGNORE INTO pipeline_helpers (pipeline_id, helper_id) VALUES (?,?)",
+                        "INSERT OR IGNORE INTO pipeline_helper (pipeline_id, helper_id) VALUES (?,?)",
                         (pipeline_id, row[0]),
                     )
                 except Exception:
                     pass
 
     def refresh_pipeline_deps(self, pipeline_name: str) -> None:
-        """Re-scan a pipeline's YAML and update pipeline_helpers.
+        """Re-scan a pipeline's YAML and update pipeline_helper.
 
         Reads the pipeline's yaml_content from DB, extracts helper refs,
         and refreshes the join table.  Safe to call after any mutation.
         """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, yaml_content FROM pipelines WHERE name=?",
+                "SELECT id, yaml_content FROM pipeline WHERE name=?",
                 (pipeline_name,),
             ).fetchone()
             if not row:
@@ -1535,7 +1652,7 @@ class BrixDB:
             if not yaml_content:
                 # No YAML stored — clear any stale links
                 conn.execute(
-                    "DELETE FROM pipeline_helpers WHERE pipeline_id=?",
+                    "DELETE FROM pipeline_helper WHERE pipeline_id=?",
                     (pipeline_id,),
                 )
                 return
@@ -1603,7 +1720,7 @@ class BrixDB:
                 pass
         with self._connect() as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO runs
+                """INSERT OR REPLACE INTO run
                    (run_id, pipeline, version, started_at, input_data, triggered_by,
                     idempotency_key, environment_json, container_id, project)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -1632,7 +1749,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                """SELECT * FROM runs
+                """SELECT * FROM run
                    WHERE idempotency_key = ?
                      AND finished_at IS NOT NULL
                      AND success = 1
@@ -1654,7 +1771,7 @@ class BrixDB:
     ) -> None:
         with self._connect() as conn:
             conn.execute(
-                """UPDATE runs SET finished_at=?, duration=?, success=?,
+                """UPDATE run SET finished_at=?, duration=?, success=?,
                    steps_data=?, result_summary=?, cost_usd=? WHERE run_id=?""",
                 (
                     _now_iso(), duration, int(success),
@@ -1669,7 +1786,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM runs WHERE run_id=?", (run_id,)
+                "SELECT * FROM run WHERE run_id=?", (run_id,)
             ).fetchone()
             return dict(row) if row else None
 
@@ -1690,7 +1807,7 @@ class BrixDB:
             env_json = json.dumps(str(environment))
         with self._connect() as conn:
             conn.execute(
-                "UPDATE runs SET environment_json=? WHERE run_id=?",
+                "UPDATE run SET environment_json=? WHERE run_id=?",
                 (env_json, run_id),
             )
 
@@ -1698,7 +1815,7 @@ class BrixDB:
         """Return the environment snapshot for a run, or None if not recorded."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT environment_json FROM runs WHERE run_id=?", (run_id,)
+                "SELECT environment_json FROM run WHERE run_id=?", (run_id,)
             ).fetchone()
         if row is None or row[0] is None:
             return None
@@ -1711,20 +1828,20 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM runs ORDER BY started_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM run ORDER BY started_at DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
 
     def delete_run(self, run_id: str) -> bool:
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM runs WHERE run_id=?", (run_id,))
+            cursor = conn.execute("DELETE FROM run WHERE run_id=?", (run_id,))
             return cursor.rowcount > 0
 
     def annotate_run(self, run_id: str, notes: str) -> bool:
         """Attach or replace notes on a run. Returns True if the run was found."""
         with self._connect() as conn:
             cursor = conn.execute(
-                "UPDATE runs SET notes=? WHERE run_id=?", (notes, run_id)
+                "UPDATE run SET notes=? WHERE run_id=?", (notes, run_id)
             )
             return cursor.rowcount > 0
 
@@ -1786,7 +1903,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?",
+                f"SELECT * FROM run {where} ORDER BY started_at DESC LIMIT ?",
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
@@ -1794,7 +1911,7 @@ class BrixDB:
     def cleanup_runs(self, older_than_days: int = 30) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM runs WHERE started_at < datetime('now', ?)",
+                "DELETE FROM run WHERE started_at < datetime('now', ?)",
                 (f"-{older_than_days} days",),
             )
             return cursor.rowcount
@@ -1812,7 +1929,7 @@ class BrixDB:
         """
         with self._connect() as conn:
             cursor = conn.execute(
-                """UPDATE runs
+                """UPDATE run
                    SET finished_at=?, success=0, cancel_reason=?, cancelled_by=?
                    WHERE run_id=? AND finished_at IS NULL""",
                 (_now_iso(), reason, cancelled_by, run_id),
@@ -1828,7 +1945,7 @@ class BrixDB:
         """
         with self._connect() as conn:
             cursor = conn.execute(
-                """UPDATE runs
+                """UPDATE run
                    SET finished_at=?, success=0,
                        cancel_reason='orphaned (no heartbeat)',
                        cancelled_by='brix-cleanup'
@@ -1851,7 +1968,7 @@ class BrixDB:
         month_prefix = f"{y:04d}-{m:02d}"
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM runs WHERE started_at LIKE ?",
+                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM run WHERE started_at LIKE ?",
                 (f"{month_prefix}%",),
             ).fetchone()
         return float(row[0]) if row else 0.0
@@ -1875,7 +1992,7 @@ class BrixDB:
         now = _now_iso()
         with self._connect() as conn:
             existing = conn.execute(
-                "SELECT id, created_at FROM pipelines WHERE name=?", (name,)
+                "SELECT id, created_at FROM pipeline WHERE name=?", (name,)
             ).fetchone()
             if existing:
                 pid = existing[0]
@@ -1885,10 +2002,10 @@ class BrixDB:
                 created_at = now
 
             # Build dynamic column list based on which optional columns exist
-            has_yaml_content = self._column_exists(conn, "pipelines", "yaml_content")
-            has_project = self._column_exists(conn, "pipelines", "project")
-            has_tags = self._column_exists(conn, "pipelines", "tags")
-            has_group = self._column_exists(conn, "pipelines", "group_name")
+            has_yaml_content = self._column_exists(conn, "pipeline", "yaml_content")
+            has_project = self._column_exists(conn, "pipeline", "project")
+            has_tags = self._column_exists(conn, "pipeline", "tags")
+            has_group = self._column_exists(conn, "pipeline", "group_name")
 
             cols = ["id", "name", "path", "created_at", "updated_at", "requirements_json"]
             vals: list = [pid, name, path, created_at, now, json.dumps(requirements or [])]
@@ -1923,7 +2040,7 @@ class BrixDB:
             update_str = ",".join(updates)
 
             conn.execute(
-                f"""INSERT INTO pipelines ({col_str})
+                f"""INSERT INTO pipeline ({col_str})
                    VALUES ({placeholders})
                    ON CONFLICT(name) DO UPDATE SET {update_str}
                 """,
@@ -1933,14 +2050,14 @@ class BrixDB:
 
     def delete_pipeline(self, name: str) -> bool:
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM pipelines WHERE name=?", (name,))
+            cursor = conn.execute("DELETE FROM pipeline WHERE name=?", (name,))
             return cursor.rowcount > 0
 
     def get_pipeline(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM pipelines WHERE name=?", (name,)
+                "SELECT * FROM pipeline WHERE name=?", (name,)
             ).fetchone()
             if not row:
                 return None
@@ -1958,12 +2075,12 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM pipelines ORDER BY name"
+                "SELECT * FROM pipeline ORDER BY name"
             ).fetchall()
             out = []
-            has_project = self._column_exists(conn, "pipelines", "project")
-            has_tags = self._column_exists(conn, "pipelines", "tags")
-            has_group = self._column_exists(conn, "pipelines", "group_name")
+            has_project = self._column_exists(conn, "pipeline", "project")
+            has_tags = self._column_exists(conn, "pipeline", "tags")
+            has_group = self._column_exists(conn, "pipeline", "group_name")
 
         for row in rows:
             d = dict(row)
@@ -1995,20 +2112,20 @@ class BrixDB:
     def pipeline_set_project(self, name: str, project: str) -> bool:
         """Update the project field for a pipeline. Returns True if updated."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "pipelines", "project"):
+            if not self._column_exists(conn, "pipeline", "project"):
                 return False
             cursor = conn.execute(
-                "UPDATE pipelines SET project=? WHERE name=?", (project, name)
+                "UPDATE pipeline SET project=? WHERE name=?", (project, name)
             )
             return cursor.rowcount > 0
 
     def delete_pipelines_by_project(self, project: str) -> int:
         """Delete all pipelines with the given project. Returns count deleted."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "pipelines", "project"):
+            if not self._column_exists(conn, "pipeline", "project"):
                 return 0
             cursor = conn.execute(
-                "DELETE FROM pipelines WHERE project=?", (project,)
+                "DELETE FROM pipeline WHERE project=?", (project,)
             )
             return cursor.rowcount
 
@@ -2020,13 +2137,13 @@ class BrixDB:
         stats: dict[str, dict] = {}
 
         with self._connect() as conn:
-            has_p_project = self._column_exists(conn, "pipelines", "project")
-            has_h_project = self._column_exists(conn, "helpers", "project")
+            has_p_project = self._column_exists(conn, "pipeline", "project")
+            has_h_project = self._column_exists(conn, "helper", "project")
 
             if has_p_project:
                 rows = conn.execute(
                     "SELECT COALESCE(project,'') as proj, COUNT(*) as cnt "
-                    "FROM pipelines GROUP BY proj"
+                    "FROM pipeline GROUP BY proj"
                 ).fetchall()
                 for row in rows:
                     proj = row[0] or ""
@@ -2036,7 +2153,7 @@ class BrixDB:
             if has_h_project:
                 rows = conn.execute(
                     "SELECT COALESCE(project,'') as proj, COUNT(*) as cnt "
-                    "FROM helpers GROUP BY proj"
+                    "FROM helper GROUP BY proj"
                 ).fetchall()
                 for row in rows:
                     proj = row[0] or ""
@@ -2161,7 +2278,7 @@ class BrixDB:
         now = _now_iso()
         with self._connect() as conn:
             existing = conn.execute(
-                "SELECT id, created_at FROM helpers WHERE name=?", (name,)
+                "SELECT id, created_at FROM helper WHERE name=?", (name,)
             ).fetchone()
             if existing:
                 hid = existing[0]
@@ -2170,10 +2287,10 @@ class BrixDB:
                 hid = helper_id or str(uuid4())
                 created_at = now
 
-            has_code_col = self._column_exists(conn, "helpers", "code")
-            has_project = self._column_exists(conn, "helpers", "project")
-            has_tags = self._column_exists(conn, "helpers", "tags")
-            has_group = self._column_exists(conn, "helpers", "group_name")
+            has_code_col = self._column_exists(conn, "helper", "code")
+            has_project = self._column_exists(conn, "helper", "project")
+            has_tags = self._column_exists(conn, "helper", "tags")
+            has_group = self._column_exists(conn, "helper", "group_name")
 
             # Build dynamic column list
             cols = [
@@ -2221,7 +2338,7 @@ class BrixDB:
             col_str = ",".join(cols)
             update_str = ",".join(updates)
             conn.execute(
-                f"""INSERT INTO helpers ({col_str})
+                f"""INSERT INTO helper ({col_str})
                    VALUES ({placeholders})
                    ON CONFLICT(name) DO UPDATE SET {update_str}
                 """,
@@ -2231,7 +2348,7 @@ class BrixDB:
 
     def delete_helper(self, name: str) -> bool:
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM helpers WHERE name=?", (name,))
+            cursor = conn.execute("DELETE FROM helper WHERE name=?", (name,))
             return cursor.rowcount > 0
 
     def get_helper(self, name: str) -> Optional[dict]:
@@ -2239,12 +2356,12 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM helpers WHERE name=?", (name,)
+                "SELECT * FROM helper WHERE name=?", (name,)
             ).fetchone()
             if not row:
                 # UUID fallback
                 row = conn.execute(
-                    "SELECT * FROM helpers WHERE id=?", (name,)
+                    "SELECT * FROM helper WHERE id=?", (name,)
                 ).fetchone()
             if not row:
                 return None
@@ -2260,11 +2377,11 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM helpers ORDER BY name"
+                "SELECT * FROM helper ORDER BY name"
             ).fetchall()
-            has_project = self._column_exists(conn, "helpers", "project")
-            has_tags = self._column_exists(conn, "helpers", "tags")
-            has_group = self._column_exists(conn, "helpers", "group_name")
+            has_project = self._column_exists(conn, "helper", "project")
+            has_tags = self._column_exists(conn, "helper", "tags")
+            has_group = self._column_exists(conn, "helper", "group_name")
 
         out = []
         for row in rows:
@@ -2296,20 +2413,20 @@ class BrixDB:
     def helper_set_project(self, name: str, project: str) -> bool:
         """Update the project field for a helper. Returns True if updated."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "helpers", "project"):
+            if not self._column_exists(conn, "helper", "project"):
                 return False
             cursor = conn.execute(
-                "UPDATE helpers SET project=? WHERE name=?", (project, name)
+                "UPDATE helper SET project=? WHERE name=?", (project, name)
             )
             return cursor.rowcount > 0
 
     def delete_helpers_by_project(self, project: str) -> int:
         """Delete all helpers with the given project. Returns count deleted."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "helpers", "project"):
+            if not self._column_exists(conn, "helper", "project"):
                 return 0
             cursor = conn.execute(
-                "DELETE FROM helpers WHERE project=?", (project,)
+                "DELETE FROM helper WHERE project=?", (project,)
             )
             return cursor.rowcount
 
@@ -2323,10 +2440,10 @@ class BrixDB:
     def get_pipeline_yaml_content(self, name: str) -> Optional[str]:
         """Return the stored YAML content for a pipeline, or None if not stored."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "pipelines", "yaml_content"):
+            if not self._column_exists(conn, "pipeline", "yaml_content"):
                 return None
             row = conn.execute(
-                "SELECT yaml_content FROM pipelines WHERE name=?", (name,)
+                "SELECT yaml_content FROM pipeline WHERE name=?", (name,)
             ).fetchone()
             if row and row[0]:
                 return row[0]
@@ -2335,15 +2452,15 @@ class BrixDB:
     def get_helper_code(self, name: str) -> Optional[str]:
         """Return the stored code for a helper, or None if not stored."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "helpers", "code"):
+            if not self._column_exists(conn, "helper", "code"):
                 return None
             row = conn.execute(
-                "SELECT code FROM helpers WHERE name=?", (name,)
+                "SELECT code FROM helper WHERE name=?", (name,)
             ).fetchone()
             if not row:
                 # UUID fallback
                 row = conn.execute(
-                    "SELECT code FROM helpers WHERE id=?", (name,)
+                    "SELECT code FROM helper WHERE id=?", (name,)
                 ).fetchone()
             if row and row[0]:
                 return row[0]
@@ -2352,20 +2469,20 @@ class BrixDB:
     def count_pipelines_with_content(self) -> int:
         """Count pipelines that have yaml_content stored."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "pipelines", "yaml_content"):
+            if not self._column_exists(conn, "pipeline", "yaml_content"):
                 return 0
             row = conn.execute(
-                "SELECT COUNT(*) FROM pipelines WHERE yaml_content IS NOT NULL AND yaml_content != ''"
+                "SELECT COUNT(*) FROM pipeline WHERE yaml_content IS NOT NULL AND yaml_content != ''"
             ).fetchone()
             return row[0] if row else 0
 
     def count_helpers_with_code(self) -> int:
         """Count helpers that have code stored."""
         with self._connect() as conn:
-            if not self._column_exists(conn, "helpers", "code"):
+            if not self._column_exists(conn, "helper", "code"):
                 return 0
             row = conn.execute(
-                "SELECT COUNT(*) FROM helpers WHERE code IS NOT NULL AND code != ''"
+                "SELECT COUNT(*) FROM helper WHERE code IS NOT NULL AND code != ''"
             ).fetchone()
             return row[0] if row else 0
 
@@ -2378,9 +2495,9 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """SELECT h.* FROM helpers h
-                   JOIN pipeline_helpers ph ON ph.helper_id = h.id
-                   JOIN pipelines p ON p.id = ph.pipeline_id
+                """SELECT h.* FROM helper h
+                   JOIN pipeline_helper ph ON ph.helper_id = h.id
+                   JOIN pipeline p ON p.id = ph.pipeline_id
                    WHERE p.name = ?
                    ORDER BY h.name""",
                 (pipeline_name,),
@@ -2402,7 +2519,7 @@ class BrixDB:
         vid = version_id or str(uuid4())
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO object_versions (id, type, name, version_id, content, created_at)
+                """INSERT INTO object_version (id, type, name, version_id, content, created_at)
                    VALUES (?,?,?,?,?,?)""",
                 (
                     str(uuid4()),
@@ -2418,7 +2535,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """SELECT * FROM object_versions
+                """SELECT * FROM object_version
                    WHERE type=? AND name=?
                    ORDER BY created_at DESC""",
                 (obj_type, name),
@@ -2430,7 +2547,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM object_versions WHERE version_id=?",
+                "SELECT * FROM object_version WHERE version_id=?",
                 (version_id,),
             ).fetchone()
             return dict(row) if row else None
@@ -2448,7 +2565,7 @@ class BrixDB:
         with self._connect() as conn:
             # Find the created_at threshold: keep the newest *keep* rows
             rows = conn.execute(
-                """SELECT created_at FROM object_versions
+                """SELECT created_at FROM object_version
                    WHERE type=? AND name=?
                    ORDER BY created_at DESC
                    LIMIT 1 OFFSET ?""",
@@ -2459,7 +2576,7 @@ class BrixDB:
                 return 0
             threshold = rows[0]
             cursor = conn.execute(
-                """DELETE FROM object_versions
+                """DELETE FROM object_version
                    WHERE type=? AND name=? AND created_at < ?""",
                 (obj_type, name, threshold),
             )
@@ -2473,7 +2590,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             pairs = conn.execute(
-                "SELECT DISTINCT type, name FROM object_versions"
+                "SELECT DISTINCT type, name FROM object_version"
             ).fetchall()
 
         total_deleted = 0
@@ -2552,7 +2669,7 @@ class BrixDB:
         """Upsert an agent session context record."""
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO agent_sessions
+                """INSERT INTO agent_session
                    (session_id, summary, active_pipeline, last_run_id,
                     pending_decisions_json, updated_at)
                    VALUES (?,?,?,?,?,?)
@@ -2578,7 +2695,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM agent_sessions WHERE session_id=?", (session_id,)
+                "SELECT * FROM agent_session WHERE session_id=?", (session_id,)
             ).fetchone()
             if not row:
                 return None
@@ -2593,7 +2710,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM agent_sessions ORDER BY updated_at DESC"
+                "SELECT * FROM agent_session ORDER BY updated_at DESC"
             ).fetchall()
             out = []
             for row in rows:
@@ -2606,7 +2723,7 @@ class BrixDB:
         """Delete an agent session. Returns True if it existed."""
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM agent_sessions WHERE session_id=?", (session_id,)
+                "DELETE FROM agent_session WHERE session_id=?", (session_id,)
             )
             return cursor.rowcount > 0
 
@@ -2636,13 +2753,13 @@ class BrixDB:
         with self._connect() as conn:
             # Clean up any expired lock for this resource first
             conn.execute(
-                "DELETE FROM resource_locks WHERE resource_id=? AND expires_at < ?",
+                "DELETE FROM resource_lock WHERE resource_id=? AND expires_at < ?",
                 (resource_id, now),
             )
             # Try to insert the new lock
             try:
                 conn.execute(
-                    """INSERT INTO resource_locks (resource_id, run_id, claimed_at, expires_at)
+                    """INSERT INTO resource_lock (resource_id, run_id, claimed_at, expires_at)
                        VALUES (?,?,?,?)""",
                     (resource_id, run_id, now, expires),
                 )
@@ -2651,7 +2768,7 @@ class BrixDB:
                 # Lock already held by someone else
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
-                    "SELECT * FROM resource_locks WHERE resource_id=?", (resource_id,)
+                    "SELECT * FROM resource_lock WHERE resource_id=?", (resource_id,)
                 ).fetchone()
                 if row:
                     return {
@@ -2662,7 +2779,7 @@ class BrixDB:
                     }
                 # Race: expired between delete and insert — retry once
                 conn.execute(
-                    """INSERT OR IGNORE INTO resource_locks (resource_id, run_id, claimed_at, expires_at)
+                    """INSERT OR IGNORE INTO resource_lock (resource_id, run_id, claimed_at, expires_at)
                        VALUES (?,?,?,?)""",
                     (resource_id, run_id, now, expires),
                 )
@@ -2678,7 +2795,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM resource_locks WHERE resource_id=? AND expires_at >= ?",
+                "SELECT * FROM resource_lock WHERE resource_id=? AND expires_at >= ?",
                 (resource_id, now),
             ).fetchone()
             if row:
@@ -2695,7 +2812,7 @@ class BrixDB:
         """Release a lock on *resource_id*. Returns True if a lock existed."""
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM resource_locks WHERE resource_id=?", (resource_id,)
+                "DELETE FROM resource_lock WHERE resource_id=?", (resource_id,)
             )
             return cursor.rowcount > 0
 
@@ -2705,7 +2822,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM resource_locks WHERE expires_at >= ? ORDER BY claimed_at",
+                "SELECT * FROM resource_lock WHERE expires_at >= ? ORDER BY claimed_at",
                 (now,),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -2886,7 +3003,7 @@ class BrixDB:
         with self._connect() as conn:
             # Collect run_ids to be deleted so we can cascade to execution tables
             old_run_rows = conn.execute(
-                "SELECT run_id FROM runs WHERE started_at < datetime('now', ?)",
+                "SELECT run_id FROM run WHERE started_at < datetime('now', ?)",
                 (f"-{max_days} days",),
             ).fetchall()
             old_run_ids = [r[0] for r in old_run_rows]
@@ -2894,12 +3011,12 @@ class BrixDB:
             # Delete execution data BEFORE deleting runs (T-BRIX-DB-07)
             if old_run_ids:
                 ph = ",".join("?" * len(old_run_ids))
-                conn.execute(f"DELETE FROM step_executions WHERE run_id IN ({ph})", old_run_ids)
-                conn.execute(f"DELETE FROM foreach_item_executions WHERE run_id IN ({ph})", old_run_ids)
-                conn.execute(f"DELETE FROM run_inputs WHERE run_id IN ({ph})", old_run_ids)
+                conn.execute(f"DELETE FROM step_execution WHERE run_id IN ({ph})", old_run_ids)
+                conn.execute(f"DELETE FROM foreach_item_execution WHERE run_id IN ({ph})", old_run_ids)
+                conn.execute(f"DELETE FROM run_input WHERE run_id IN ({ph})", old_run_ids)
 
             cursor = conn.execute(
-                "DELETE FROM runs WHERE started_at < datetime('now', ?)",
+                "DELETE FROM run WHERE started_at < datetime('now', ?)",
                 (f"-{max_days} days",),
             )
             runs_deleted_age = cursor.rowcount
@@ -2912,7 +3029,7 @@ class BrixDB:
 
             # Cleanup orphaned deprecated_usage entries
             conn.execute(
-                "DELETE FROM deprecated_usage WHERE pipeline_name NOT IN (SELECT name FROM pipelines)"
+                "DELETE FROM deprecated_usage WHERE pipeline_name NOT IN (SELECT name FROM pipeline)"
             )
 
         # Pass 2: size-based FIFO deletion
@@ -2925,7 +3042,7 @@ class BrixDB:
                 with self._connect() as conn:
                     # Find the 100 oldest finished runs
                     rows = conn.execute(
-                        """SELECT run_id FROM runs
+                        """SELECT run_id FROM run
                            WHERE finished_at IS NOT NULL
                            ORDER BY started_at ASC
                            LIMIT 100"""
@@ -2935,11 +3052,11 @@ class BrixDB:
                     run_ids = [r[0] for r in rows]
                     placeholders = ",".join("?" * len(run_ids))
                     # Delete execution data BEFORE deleting runs (T-BRIX-DB-07)
-                    conn.execute(f"DELETE FROM step_executions WHERE run_id IN ({placeholders})", run_ids)
-                    conn.execute(f"DELETE FROM foreach_item_executions WHERE run_id IN ({placeholders})", run_ids)
-                    conn.execute(f"DELETE FROM run_inputs WHERE run_id IN ({placeholders})", run_ids)
+                    conn.execute(f"DELETE FROM step_execution WHERE run_id IN ({placeholders})", run_ids)
+                    conn.execute(f"DELETE FROM foreach_item_execution WHERE run_id IN ({placeholders})", run_ids)
+                    conn.execute(f"DELETE FROM run_input WHERE run_id IN ({placeholders})", run_ids)
                     cursor = conn.execute(
-                        f"DELETE FROM runs WHERE run_id IN ({placeholders})",
+                        f"DELETE FROM run WHERE run_id IN ({placeholders})",
                         run_ids,
                     )
                     runs_deleted_size += cursor.rowcount
@@ -2958,7 +3075,7 @@ class BrixDB:
         zombie_cleaned = 0
         with self._connect() as conn:
             cursor_z = conn.execute(
-                """UPDATE runs
+                """UPDATE run
                    SET finished_at = datetime('now'),
                        success = 0,
                        notes = COALESCE(notes || ' | ', '') || 'zombie_cleaned by retention'
@@ -2973,7 +3090,7 @@ class BrixDB:
         with self._connect() as conn:
             # Find test pipeline names
             tp_rows = conn.execute(
-                "SELECT name FROM pipelines WHERE name LIKE 'test-%' OR name LIKE 'xtest-%'"
+                "SELECT name FROM pipeline WHERE name LIKE 'test-%' OR name LIKE 'xtest-%'"
             ).fetchall()
             tp_names = [r[0] for r in tp_rows]
 
@@ -2981,24 +3098,24 @@ class BrixDB:
                 ph = ",".join("?" * len(tp_names))
                 # Collect run_ids belonging to these pipelines
                 run_rows = conn.execute(
-                    f"SELECT run_id FROM runs WHERE pipeline IN ({ph})", tp_names
+                    f"SELECT run_id FROM run WHERE pipeline IN ({ph})", tp_names
                 ).fetchall()
                 run_ids = [r[0] for r in run_rows]
 
                 if run_ids:
                     rph = ",".join("?" * len(run_ids))
-                    conn.execute(f"DELETE FROM step_outputs WHERE run_id IN ({rph})", run_ids)
-                    conn.execute(f"DELETE FROM step_executions WHERE run_id IN ({rph})", run_ids)
-                    conn.execute(f"DELETE FROM foreach_item_executions WHERE run_id IN ({rph})", run_ids)
-                    conn.execute(f"DELETE FROM run_inputs WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM step_output WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM step_execution WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM foreach_item_execution WHERE run_id IN ({rph})", run_ids)
+                    conn.execute(f"DELETE FROM run_input WHERE run_id IN ({rph})", run_ids)
 
                 cursor_tr = conn.execute(
-                    f"DELETE FROM runs WHERE pipeline IN ({ph})", tp_names
+                    f"DELETE FROM run WHERE pipeline IN ({ph})", tp_names
                 )
                 test_runs_deleted = cursor_tr.rowcount
 
                 cursor_tp = conn.execute(
-                    f"DELETE FROM pipelines WHERE name IN ({ph})", tp_names
+                    f"DELETE FROM pipeline WHERE name IN ({ph})", tp_names
                 )
                 test_pipelines_deleted = cursor_tp.rowcount
 
@@ -3227,18 +3344,18 @@ class BrixDB:
         with self._connect() as conn:
             cols = ["id", "name", "condition", "channel", "config", "enabled", "created_at"]
             vals: list = [rid, name, condition, channel, cfg_json, 1, now]
-            if project is not None and self._column_exists(conn, "alert_rules", "project"):
+            if project is not None and self._column_exists(conn, "alert_rule", "project"):
                 cols.append("project")
                 vals.append(project)
-            if tags is not None and self._column_exists(conn, "alert_rules", "tags"):
+            if tags is not None and self._column_exists(conn, "alert_rule", "tags"):
                 cols.append("tags")
                 vals.append(json.dumps(tags))
-            if group_name is not None and self._column_exists(conn, "alert_rules", "group_name"):
+            if group_name is not None and self._column_exists(conn, "alert_rule", "group_name"):
                 cols.append("group_name")
                 vals.append(group_name)
             placeholders = ",".join("?" * len(cols))
             conn.execute(
-                f"INSERT INTO alert_rules ({','.join(cols)}) VALUES ({placeholders})",
+                f"INSERT INTO alert_rule ({','.join(cols)}) VALUES ({placeholders})",
                 vals,
             )
         return self.alert_rule_get(rid)  # type: ignore[return-value]
@@ -3248,7 +3365,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM alert_rules WHERE id=?", (rule_id,)
+                "SELECT * FROM alert_rule WHERE id=?", (rule_id,)
             ).fetchone()
         if not row:
             return None
@@ -3259,7 +3376,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM alert_rules ORDER BY created_at"
+                "SELECT * FROM alert_rule ORDER BY created_at"
             ).fetchall()
         return [self._alert_rule_row_to_dict(dict(r)) for r in rows]
 
@@ -3301,14 +3418,14 @@ class BrixDB:
         set_clause = ", ".join(f"{k}=?" for k in updates)
         values = list(updates.values()) + [rule_id]
         with self._connect() as conn:
-            conn.execute(f"UPDATE alert_rules SET {set_clause} WHERE id=?", values)
+            conn.execute(f"UPDATE alert_rule SET {set_clause} WHERE id=?", values)
         return self.alert_rule_get(rule_id)
 
     def alert_rule_delete(self, rule_id: str) -> bool:
         """Delete an alert rule by ID. Returns True if deleted."""
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM alert_rules WHERE id=?", (rule_id,)
+                "DELETE FROM alert_rule WHERE id=?", (rule_id,)
             )
             return cursor.rowcount > 0
 
@@ -3388,9 +3505,9 @@ class BrixDB:
         tid = trigger_id or str(uuid4())
         now = _now_iso()
         with self._connect() as conn:
-            has_project = self._column_exists(conn, "triggers", "project")
-            has_tags = self._column_exists(conn, "triggers", "tags")
-            has_group = self._column_exists(conn, "triggers", "group_name")
+            has_project = self._column_exists(conn, "trigger", "project")
+            has_tags = self._column_exists(conn, "trigger", "tags")
+            has_group = self._column_exists(conn, "trigger", "group_name")
 
             cols = ["id", "name", "type", "config_json", "pipeline", "enabled", "created_at", "updated_at"]
             vals: list = [tid, name, type, json.dumps(config), pipeline, int(enabled), now, now]
@@ -3408,7 +3525,7 @@ class BrixDB:
             placeholders = ",".join("?" * len(cols))
             try:
                 conn.execute(
-                    f"INSERT INTO triggers ({','.join(cols)}) VALUES ({placeholders})",
+                    f"INSERT INTO trigger ({','.join(cols)}) VALUES ({placeholders})",
                     vals,
                 )
             except sqlite3.IntegrityError:
@@ -3420,11 +3537,11 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM triggers WHERE name=?", (name,)
+                "SELECT * FROM trigger WHERE name=?", (name,)
             ).fetchone()
             if not row:
                 row = conn.execute(
-                    "SELECT * FROM triggers WHERE id=?", (name,)
+                    "SELECT * FROM trigger WHERE id=?", (name,)
                 ).fetchone()
             return self._trigger_row_to_dict(dict(row)) if row else None
 
@@ -3433,7 +3550,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM triggers ORDER BY name"
+                "SELECT * FROM trigger ORDER BY name"
             ).fetchall()
         return [self._trigger_row_to_dict(dict(r)) for r in rows]
 
@@ -3463,17 +3580,17 @@ class BrixDB:
             updates["description"] = description
 
         with self._connect() as conn:
-            if project is not None and self._column_exists(conn, "triggers", "project"):
+            if project is not None and self._column_exists(conn, "trigger", "project"):
                 updates["project"] = project
-            if tags is not None and self._column_exists(conn, "triggers", "tags"):
+            if tags is not None and self._column_exists(conn, "trigger", "tags"):
                 updates["tags"] = json.dumps(tags)
-            if group_name is not None and self._column_exists(conn, "triggers", "group_name"):
+            if group_name is not None and self._column_exists(conn, "trigger", "group_name"):
                 updates["group_name"] = group_name
 
             set_clause = ", ".join(f"{k}=?" for k in updates)
             values = list(updates.values()) + [existing["id"]]
             conn.execute(
-                f"UPDATE triggers SET {set_clause} WHERE id=?", values
+                f"UPDATE trigger SET {set_clause} WHERE id=?", values
             )
         return self.trigger_get(existing["id"])
 
@@ -3484,7 +3601,7 @@ class BrixDB:
             return False
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM triggers WHERE id=?", (existing["id"],)
+                "DELETE FROM trigger WHERE id=?", (existing["id"],)
             )
             return cursor.rowcount > 0
 
@@ -3500,7 +3617,7 @@ class BrixDB:
             return
         with self._connect() as conn:
             conn.execute(
-                """UPDATE triggers
+                """UPDATE trigger
                    SET last_fired_at=?, last_run_id=?, last_status=?, updated_at=?
                    WHERE id=?""",
                 (_now_iso(), run_id, status, _now_iso(), existing["id"]),
@@ -3542,19 +3659,19 @@ class BrixDB:
         with self._connect() as conn:
             cols = ["id", "name", "description", "triggers_json", "enabled", "created_at", "updated_at"]
             vals: list = [gid, name, description, json.dumps(triggers), int(enabled), now, now]
-            if project is not None and self._column_exists(conn, "trigger_groups", "project"):
+            if project is not None and self._column_exists(conn, "trigger_group", "project"):
                 cols.append("project")
                 vals.append(project)
-            if tags is not None and self._column_exists(conn, "trigger_groups", "tags"):
+            if tags is not None and self._column_exists(conn, "trigger_group", "tags"):
                 cols.append("tags")
                 vals.append(json.dumps(tags))
-            if group_name is not None and self._column_exists(conn, "trigger_groups", "group_name"):
+            if group_name is not None and self._column_exists(conn, "trigger_group", "group_name"):
                 cols.append("group_name")
                 vals.append(group_name)
             placeholders = ",".join("?" * len(cols))
             try:
                 conn.execute(
-                    f"INSERT INTO trigger_groups ({','.join(cols)}) VALUES ({placeholders})",
+                    f"INSERT INTO trigger_group ({','.join(cols)}) VALUES ({placeholders})",
                     vals,
                 )
             except sqlite3.IntegrityError:
@@ -3566,11 +3683,11 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM trigger_groups WHERE name=?", (name,)
+                "SELECT * FROM trigger_group WHERE name=?", (name,)
             ).fetchone()
             if not row:
                 row = conn.execute(
-                    "SELECT * FROM trigger_groups WHERE id=?", (name,)
+                    "SELECT * FROM trigger_group WHERE id=?", (name,)
                 ).fetchone()
             return self._trigger_group_row_to_dict(dict(row)) if row else None
 
@@ -3579,7 +3696,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM trigger_groups ORDER BY name"
+                "SELECT * FROM trigger_group ORDER BY name"
             ).fetchall()
         return [self._trigger_group_row_to_dict(dict(r)) for r in rows]
 
@@ -3614,7 +3731,7 @@ class BrixDB:
         values = list(updates.values()) + [existing["id"]]
         with self._connect() as conn:
             conn.execute(
-                f"UPDATE trigger_groups SET {set_clause} WHERE id=?", values
+                f"UPDATE trigger_group SET {set_clause} WHERE id=?", values
             )
         return self.trigger_group_get(existing["id"])
 
@@ -3625,7 +3742,7 @@ class BrixDB:
             return False
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM trigger_groups WHERE id=?", (existing["id"],)
+                "DELETE FROM trigger_group WHERE id=?", (existing["id"],)
             )
             return cursor.rowcount > 0
 
@@ -3647,7 +3764,7 @@ class BrixDB:
         return row
 
     # ------------------------------------------------------------------
-    # Trigger State (T-BRIX-MOD-03 — migrated from triggers/state.py)
+    # Trigger State (T-BRIX-MOD-03 — migrated from trigger/state.py)
     # ------------------------------------------------------------------
 
     def trigger_state_is_deduped(self, trigger_id: str, dedupe_key: str) -> bool:
@@ -3688,7 +3805,7 @@ class BrixDB:
         input_json = json.dumps(input, default=str) if input is not None else None
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO pipeline_events "
+                "INSERT INTO pipeline_event "
                 "(run_id, pipeline_name, status, result_json, input_json, fired_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, pipeline_name, status, result_json, input_json, _time.time()),
@@ -3706,7 +3823,7 @@ class BrixDB:
         import time as _time
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO pipeline_events "
+                "INSERT INTO pipeline_event "
                 "(run_id, pipeline_name, status, result_json, input_json, fired_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, pipeline_name, status, result_json, input_json, _time.time()),
@@ -3720,7 +3837,7 @@ class BrixDB:
         """Return all unprocessed pipeline events, optionally filtered."""
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM pipeline_events WHERE processed=0"
+            query = "SELECT * FROM pipeline_event WHERE processed=0"
             params: list[Any] = []
             if pipeline_name:
                 query += " AND pipeline_name=?"
@@ -3734,7 +3851,7 @@ class BrixDB:
         """Mark a pipeline event as processed."""
         with self._connect() as conn:
             conn.execute(
-                "UPDATE pipeline_events SET processed=1 WHERE id=?", (event_id,)
+                "UPDATE pipeline_event SET processed=1 WHERE id=?", (event_id,)
             )
 
     def trigger_meta_get_last_check(self, trigger_id: str) -> Optional[float]:
@@ -3801,12 +3918,12 @@ class BrixDB:
 
             # pipeline_events
             try:
-                rows = src_conn.execute("SELECT * FROM pipeline_events").fetchall()
+                rows = src_conn.execute("SELECT * FROM pipeline_event").fetchall()
                 with self._connect() as conn:
                     for row in rows:
                         try:
                             conn.execute(
-                                "INSERT OR IGNORE INTO pipeline_events "
+                                "INSERT OR IGNORE INTO pipeline_event "
                                 "(id, run_id, pipeline_name, status, result_json, input_json, fired_at, processed) "
                                 "VALUES (?,?,?,?,?,?,?,?)",
                                 (
@@ -3852,7 +3969,7 @@ class BrixDB:
 
     def brick_definitions_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM brick_definitions").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM brick_definition").fetchone()
         return row[0] if row else 0
 
     @staticmethod
@@ -3874,14 +3991,14 @@ class BrixDB:
     def brick_definitions_list(self) -> list[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM brick_definitions ORDER BY name").fetchall()
+            rows = conn.execute("SELECT * FROM brick_definition ORDER BY name").fetchall()
         return [self._brick_row_enrich_org(dict(r)) for r in rows]
 
     def brick_definitions_get(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM brick_definitions WHERE name = ?", (name,)
+                "SELECT * FROM brick_definition WHERE name = ?", (name,)
             ).fetchone()
         if row is None:
             return None
@@ -3890,7 +4007,7 @@ class BrixDB:
     def brick_definitions_upsert(self, record: dict) -> None:
         now = _now_iso()
         with self._connect() as conn:
-            has_org_tags = self._column_exists(conn, "brick_definitions", "org_tags")
+            has_org_tags = self._column_exists(conn, "brick_definition", "org_tags")
 
             cols = [
                 "name", "runner", "namespace", "category", "description", "when_to_use",
@@ -3937,8 +4054,8 @@ class BrixDB:
                 vals.append(json.dumps(record["org_tags"]))
                 updates.append("org_tags=excluded.org_tags")
 
-            has_project = self._column_exists(conn, "brick_definitions", "project")
-            has_group = self._column_exists(conn, "brick_definitions", "group_name")
+            has_project = self._column_exists(conn, "brick_definition", "project")
+            has_group = self._column_exists(conn, "brick_definition", "group_name")
             if has_project and record.get("project") is not None:
                 cols.append("project")
                 vals.append(record["project"])
@@ -3951,7 +4068,7 @@ class BrixDB:
             placeholders = ",".join("?" * len(cols))
             update_str = ",".join(updates)
             conn.execute(
-                f"""INSERT INTO brick_definitions ({','.join(cols)})
+                f"""INSERT INTO brick_definition ({','.join(cols)})
                    VALUES ({placeholders})
                    ON CONFLICT(name) DO UPDATE SET {update_str}""",
                 vals,
@@ -3960,7 +4077,7 @@ class BrixDB:
     def brick_definitions_delete(self, name: str) -> bool:
         """Delete a brick_definition by name. Returns True if deleted."""
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM brick_definitions WHERE name=?", (name,))
+            cursor = conn.execute("DELETE FROM brick_definition WHERE name=?", (name,))
             return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
@@ -3969,20 +4086,20 @@ class BrixDB:
 
     def connector_definitions_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM connector_definitions").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM connector_definition").fetchone()
         return row[0] if row else 0
 
     def connector_definitions_list(self) -> list[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM connector_definitions ORDER BY name").fetchall()
+            rows = conn.execute("SELECT * FROM connector_definition ORDER BY name").fetchall()
         return [dict(r) for r in rows]
 
     def connector_definitions_get(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM connector_definitions WHERE name = ?", (name,)
+                "SELECT * FROM connector_definition WHERE name = ?", (name,)
             ).fetchone()
         return dict(row) if row else None
 
@@ -3990,7 +4107,7 @@ class BrixDB:
         now = _now_iso()
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO connector_definitions
+                """INSERT INTO connector_definition
                    (name, type, description, required_mcp_server, required_mcp_tools,
                     output_schema, parameters, related_pipelines, related_helpers,
                     created_at, updated_at)
@@ -4026,20 +4143,20 @@ class BrixDB:
 
     def mcp_tool_schemas_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM mcp_tool_schemas").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM mcp_tool_schema").fetchone()
         return row[0] if row else 0
 
     def mcp_tool_schemas_list(self) -> list[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM mcp_tool_schemas ORDER BY name").fetchall()
+            rows = conn.execute("SELECT * FROM mcp_tool_schema ORDER BY name").fetchall()
         return [dict(r) for r in rows]
 
     def mcp_tool_schemas_get(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM mcp_tool_schemas WHERE name = ?", (name,)
+                "SELECT * FROM mcp_tool_schema WHERE name = ?", (name,)
             ).fetchone()
         return dict(row) if row else None
 
@@ -4047,7 +4164,7 @@ class BrixDB:
         now = _now_iso()
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO mcp_tool_schemas (name, description, input_schema, created_at, updated_at)
+                """INSERT INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at)
                    VALUES (?,?,?,?,?)
                    ON CONFLICT(name) DO UPDATE SET
                        description=excluded.description,
@@ -4068,20 +4185,20 @@ class BrixDB:
 
     def help_topics_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM help_topics").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM help_topic").fetchone()
         return row[0] if row else 0
 
     def help_topics_list(self) -> list[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM help_topics ORDER BY name").fetchall()
+            rows = conn.execute("SELECT * FROM help_topic ORDER BY name").fetchall()
         return [dict(r) for r in rows]
 
     def help_topics_get(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM help_topics WHERE name = ?", (name,)
+                "SELECT * FROM help_topic WHERE name = ?", (name,)
             ).fetchone()
         return dict(row) if row else None
 
@@ -4089,7 +4206,7 @@ class BrixDB:
         now = _now_iso()
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO help_topics (name, title, content, created_at, updated_at)
+                """INSERT INTO help_topic (name, title, content, created_at, updated_at)
                    VALUES (?,?,?,?,?)
                    ON CONFLICT(name) DO UPDATE SET
                        title=excluded.title,
@@ -4115,7 +4232,7 @@ class BrixDB:
         tip_id = str(uuid4())
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO tips (id, category, title, content, priority, is_active, created_at, updated_at)
+                """INSERT INTO tip (id, category, title, content, priority, is_active, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (tip_id, category, title, content, priority, 1 if is_active else 0, now, now),
             )
@@ -4127,7 +4244,7 @@ class BrixDB:
         """Get a single tip by ID."""
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM tips WHERE id = ?", (tip_id,)).fetchone()
+            row = conn.execute("SELECT * FROM tip WHERE id = ?", (tip_id,)).fetchone()
         return dict(row) if row else None
 
     def tip_update(self, tip_id: str, **fields) -> Optional[dict]:
@@ -4142,13 +4259,13 @@ class BrixDB:
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [tip_id]
         with self._connect() as conn:
-            conn.execute(f"UPDATE tips SET {set_clause} WHERE id = ?", values)
+            conn.execute(f"UPDATE tip SET {set_clause} WHERE id = ?", values)
         return self.tip_get(tip_id)
 
     def tip_delete(self, tip_id: str) -> bool:
         """Delete a tip by ID. Returns True if deleted."""
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM tips WHERE id = ?", (tip_id,))
+            cursor = conn.execute("DELETE FROM tip WHERE id = ?", (tip_id,))
         return cursor.rowcount > 0
 
     def tip_list(self, category: Optional[str] = None, active_only: bool = True) -> list[dict]:
@@ -4164,7 +4281,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                f"SELECT * FROM tips{where} ORDER BY priority DESC, category, title",
+                f"SELECT * FROM tip{where} ORDER BY priority DESC, category, title",
                 params,
             ).fetchall()
         return [dict(r) for r in rows]
@@ -4175,7 +4292,7 @@ class BrixDB:
 
     def keyword_taxonomies_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM keyword_taxonomies").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM keyword_taxonomy").fetchone()
         return row[0] if row else 0
 
     def keyword_taxonomies_list(self, category: Optional[str] = None) -> list[dict]:
@@ -4183,19 +4300,19 @@ class BrixDB:
             conn.row_factory = sqlite3.Row
             if category:
                 rows = conn.execute(
-                    "SELECT * FROM keyword_taxonomies WHERE category = ? ORDER BY keyword",
+                    "SELECT * FROM keyword_taxonomy WHERE category = ? ORDER BY keyword",
                     (category,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM keyword_taxonomies ORDER BY category, keyword"
+                    "SELECT * FROM keyword_taxonomy ORDER BY category, keyword"
                 ).fetchall()
         return [dict(r) for r in rows]
 
     def keyword_taxonomies_upsert(self, category: str, keyword: str, language: str = "de", mapped_to: str = "") -> None:
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO keyword_taxonomies (category, keyword, language, mapped_to)
+                """INSERT INTO keyword_taxonomy (category, keyword, language, mapped_to)
                    VALUES (?,?,?,?)
                    ON CONFLICT(category, keyword) DO UPDATE SET
                        language=excluded.language,
@@ -4275,12 +4392,12 @@ class BrixDB:
         stored_value = _encrypt(value) if secret else value
         now = _now_iso()
         with self._connect() as conn:
-            has_project = self._column_exists(conn, "variables", "project")
-            has_tags = self._column_exists(conn, "variables", "tags")
-            has_group = self._column_exists(conn, "variables", "group_name")
+            has_project = self._column_exists(conn, "variable", "project")
+            has_tags = self._column_exists(conn, "variable", "tags")
+            has_group = self._column_exists(conn, "variable", "group_name")
 
             existing = conn.execute(
-                "SELECT created_at FROM variables WHERE name=?", (name,)
+                "SELECT created_at FROM variable WHERE name=?", (name,)
             ).fetchone()
             if existing:
                 sets = ["value=?", "description=?", "updated_at=?", "secret=?"]
@@ -4296,7 +4413,7 @@ class BrixDB:
                     vals.append(group_name)
                 vals.append(name)
                 conn.execute(
-                    f"UPDATE variables SET {', '.join(sets)} WHERE name=?",
+                    f"UPDATE variable SET {', '.join(sets)} WHERE name=?",
                     vals,
                 )
             else:
@@ -4313,7 +4430,7 @@ class BrixDB:
                     vals2.append(group_name)
                 placeholders = ",".join("?" * len(cols))
                 conn.execute(
-                    f"INSERT INTO variables ({','.join(cols)}) VALUES ({placeholders})",
+                    f"INSERT INTO variable ({','.join(cols)}) VALUES ({placeholders})",
                     vals2,
                 )
 
@@ -4322,7 +4439,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT value, secret FROM variables WHERE name=?", (name,)
+                "SELECT value, secret FROM variable WHERE name=?", (name,)
             ).fetchone()
         if row is None:
             return None
@@ -4339,7 +4456,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM variables WHERE name=?", (name,)
+                "SELECT * FROM variable WHERE name=?", (name,)
             ).fetchone()
         if row is None:
             return None
@@ -4370,7 +4487,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM variables ORDER BY name"
+                "SELECT * FROM variable ORDER BY name"
             ).fetchall()
         result = []
         for r in rows:
@@ -4402,7 +4519,7 @@ class BrixDB:
     def variable_delete(self, name: str) -> bool:
         """Delete a managed variable. Returns True if it existed."""
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM variables WHERE name=?", (name,))
+            cursor = conn.execute("DELETE FROM variable WHERE name=?", (name,))
             return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
@@ -4592,9 +4709,9 @@ class BrixDB:
         now = _now_iso()
         config_json = json.dumps(config)
         with self._connect() as conn:
-            has_project = self._column_exists(conn, "profiles", "project")
-            has_tags = self._column_exists(conn, "profiles", "tags")
-            has_group = self._column_exists(conn, "profiles", "group_name")
+            has_project = self._column_exists(conn, "profile", "project")
+            has_tags = self._column_exists(conn, "profile", "tags")
+            has_group = self._column_exists(conn, "profile", "group_name")
 
             cols = ["name", "config", "description", "created_at", "updated_at"]
             vals: list = [name, config_json, description, now, now]
@@ -4620,7 +4737,7 @@ class BrixDB:
             placeholders = ",".join("?" * len(cols))
             update_str = ",".join(updates)
             conn.execute(
-                f"""INSERT INTO profiles ({','.join(cols)})
+                f"""INSERT INTO profile ({','.join(cols)})
                    VALUES ({placeholders})
                    ON CONFLICT(name) DO UPDATE SET {update_str}""",
                 vals,
@@ -4649,7 +4766,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM profiles WHERE name=?", (name,)
+                "SELECT * FROM profile WHERE name=?", (name,)
             ).fetchone()
         if not row:
             return None
@@ -4660,14 +4777,14 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM profiles ORDER BY name"
+                "SELECT * FROM profile ORDER BY name"
             ).fetchall()
         return [self._profile_enrich_org(dict(row)) for row in rows]
 
     def profile_delete(self, name: str) -> bool:
         """Delete a profile by name. Returns True if found and deleted."""
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM profiles WHERE name=?", (name,))
+            cursor = conn.execute("DELETE FROM profile WHERE name=?", (name,))
             return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
@@ -4702,7 +4819,7 @@ class BrixDB:
         data_json = json.dumps(data)
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO step_pins (pipeline_name, step_id, pinned_data, pinned_from_run, created_at)
+                """INSERT INTO step_pin (pipeline_name, step_id, pinned_data, pinned_from_run, created_at)
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(pipeline_name, step_id) DO UPDATE SET
                        pinned_data=excluded.pinned_data,
@@ -4722,7 +4839,7 @@ class BrixDB:
         """Remove a pin. Returns True if found and deleted."""
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM step_pins WHERE pipeline_name=? AND step_id=?",
+                "DELETE FROM step_pin WHERE pipeline_name=? AND step_id=?",
                 (pipeline_name, step_id),
             )
             return cursor.rowcount > 0
@@ -4732,7 +4849,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM step_pins WHERE pipeline_name=? AND step_id=?",
+                "SELECT * FROM step_pin WHERE pipeline_name=? AND step_id=?",
                 (pipeline_name, step_id),
             ).fetchone()
         if not row:
@@ -4749,7 +4866,7 @@ class BrixDB:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM step_pins WHERE pipeline_name=? ORDER BY step_id",
+                "SELECT * FROM step_pin WHERE pipeline_name=? ORDER BY step_id",
                 (pipeline_name,),
             ).fetchall()
         out = []

@@ -256,7 +256,78 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_seed_tips_from_hardcoded",
         "down": "DELETE FROM tips",
     },
+    # T-BRIX-DEBT-01: Rename all plural table names to singular
+    {
+        "version": 63,
+        "name": "rename_tables_plural_to_singular",
+        "up": "",
+        "up_fn": "_rename_tables_to_singular",
+        "down": "",
+    },
 ]
+
+
+def _rename_tables_to_singular(db: "BrixDB") -> None:
+    """T-BRIX-DEBT-01: Rename all plural DB table names to singular.
+
+    Idempotent: skips tables that have already been renamed
+    (old name does not exist or new name already exists).
+    schema_migrations is NOT renamed here because it is the migration
+    tracking table itself and renaming it mid-migration would break
+    the INSERT that records this migration as applied.
+    """
+    rename_map = {
+        "agent_sessions": "agent_session",
+        "alert_rules": "alert_rule",
+        "brick_definitions": "brick_definition",
+        "connections": "connection",
+        "connector_definitions": "connector_definition",
+        "foreach_item_executions": "foreach_item_execution",
+        "help_topics": "help_topic",
+        "helpers": "helper",
+        "keyword_taxonomies": "keyword_taxonomy",
+        "mcp_tool_schemas": "mcp_tool_schema",
+        "object_versions": "object_version",
+        "pipeline_events": "pipeline_event",
+        "pipeline_helpers": "pipeline_helper",
+        "pipelines": "pipeline",
+        "profiles": "profile",
+        "registry_best_practices": "registry_best_practice",
+        "registry_error_patterns": "registry_error_pattern",
+        "registry_lessons_learned": "registry_lesson_learned",
+        "registry_patterns": "registry_pattern",
+        "registry_schemas": "registry_schema",
+        "registry_templates": "registry_template",
+        "resource_locks": "resource_lock",
+        "run_inputs": "run_input",
+        "runs": "run",
+        "step_executions": "step_execution",
+        "step_outputs": "step_output",
+        "step_pins": "step_pin",
+        "tips": "tip",
+        "trigger_groups": "trigger_group",
+        "triggers": "trigger",
+        "variables": "variable",
+    }
+
+    with db._connect() as conn:
+        for old_name, new_name in rename_map.items():
+            # Check if old table exists
+            if not _table_exists(conn, old_name):
+                logger.info(
+                    "rename_tables: '%s' does not exist (already renamed or fresh DB), skipping",
+                    old_name,
+                )
+                continue
+            # Check if new table already exists (shouldn't on existing DB, but be safe)
+            if _table_exists(conn, new_name):
+                logger.warning(
+                    "rename_tables: both '%s' and '%s' exist — skipping rename",
+                    old_name, new_name,
+                )
+                continue
+            conn.execute(f"ALTER TABLE [{old_name}] RENAME TO [{new_name}]")
+            logger.info("rename_tables: renamed '%s' → '%s'", old_name, new_name)
 
 
 def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
@@ -345,10 +416,16 @@ def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
     ]
 
     now = _now_iso()
+    # Try new singular name first, fall back to old plural for compat
+    table = "tip"
     with db._connect() as conn:
+        try:
+            conn.execute("SELECT 1 FROM tip LIMIT 1")
+        except Exception:
+            table = "tips"
         for category, title, content, priority in tips:
             conn.execute(
-                """INSERT INTO tips (id, category, title, content, priority, is_active, created_at, updated_at)
+                f"""INSERT INTO {table} (id, category, title, content, priority, is_active, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
                 (str(uuid4()), category, title, content, priority, now, now),
             )
@@ -358,9 +435,15 @@ def _backfill_pipeline_helpers(db: "BrixDB") -> None:
     """Backfill pipeline_helpers join table for all pipelines with yaml_content."""
     import yaml as _yaml
     with db._connect() as conn:
-        rows = conn.execute(
-            "SELECT id, name, yaml_content FROM pipelines WHERE yaml_content IS NOT NULL AND yaml_content != ''"
-        ).fetchall()
+        # Try new singular name first, fall back to old plural for compat
+        try:
+            rows = conn.execute(
+                "SELECT id, name, yaml_content FROM pipeline WHERE yaml_content IS NOT NULL AND yaml_content != ''"
+            ).fetchall()
+        except Exception:
+            rows = conn.execute(
+                "SELECT id, name, yaml_content FROM pipelines WHERE yaml_content IS NOT NULL AND yaml_content != ''"
+            ).fetchall()
         for row in rows:
             pipeline_id, pipeline_name, yaml_content = row[0], row[1], row[2]
             try:
@@ -387,16 +470,29 @@ def _table_exists(conn, table_name: str) -> bool:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _migrations_table_name(conn) -> str:
+    """Return the actual name of the migrations tracking table.
+
+    Checks for both old ('schema_migrations') and new ('schema_migration')
+    names to support the transition period during T-BRIX-DEBT-01.
+    """
+    if _table_exists(conn, "schema_migration"):
+        return "schema_migration"
+    return "schema_migrations"
+
+
 def ensure_migrations_table(db: "BrixDB") -> None:
-    """Create the schema_migrations tracking table if it does not exist.
+    """Create the schema_migration tracking table if it does not exist.
 
     The table stores one row per applied migration with the version number,
     migration name, and ISO-8601 timestamp of when it was applied.
+    Supports both old ('schema_migrations') and new ('schema_migration') names.
     """
     with db._connect() as conn:
+        name = _migrations_table_name(conn)
         conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS schema_migrations (
+            f"""
+            CREATE TABLE IF NOT EXISTS {name} (
                 version     INTEGER PRIMARY KEY,
                 name        TEXT NOT NULL,
                 applied_at  TEXT NOT NULL
@@ -408,14 +504,15 @@ def ensure_migrations_table(db: "BrixDB") -> None:
 def get_current_version(db: "BrixDB") -> int:
     """Return the highest applied migration version (0 if none applied yet).
 
-    Returns 0 when the schema_migrations table is empty or does not exist,
+    Returns 0 when the schema_migration table is empty or does not exist,
     meaning the database is at the baseline state.
     """
     with db._connect() as conn:
-        if not _table_exists(conn, "schema_migrations"):
+        name = _migrations_table_name(conn)
+        if not _table_exists(conn, name):
             return 0
         row = conn.execute(
-            "SELECT MAX(version) FROM schema_migrations"
+            f"SELECT MAX(version) FROM {name}"
         ).fetchone()
     if row is None or row[0] is None:
         return 0
@@ -448,9 +545,14 @@ def run_pending_migrations(db: "BrixDB") -> list[dict]:
                     try:
                         conn.execute(up_sql)
                     except Exception as sql_exc:
+                        err_msg = str(sql_exc).lower()
                         # Idempotent: skip "duplicate column" errors from ALTER TABLE
-                        if "duplicate column" in str(sql_exc).lower():
+                        if "duplicate column" in err_msg:
                             logger.info("Migration v%d: column already exists, skipping", version)
+                        # T-BRIX-DEBT-01: skip "no such table" errors from old migrations
+                        # targeting plural table names that have been renamed to singular
+                        elif "no such table" in err_msg:
+                            logger.info("Migration v%d: table not found (likely renamed), skipping", version)
                         else:
                             raise
 
@@ -463,8 +565,9 @@ def run_pending_migrations(db: "BrixDB") -> list[dict]:
 
                 from brix.db import _now_iso  # avoid circular at module level
                 applied_at = _now_iso()
+                mig_table = _migrations_table_name(conn)
                 conn.execute(
-                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                    f"INSERT INTO {mig_table} (version, name, applied_at) VALUES (?, ?, ?)",
                     (version, name, applied_at),
                 )
         except Exception as exc:
@@ -474,7 +577,19 @@ def run_pending_migrations(db: "BrixDB") -> list[dict]:
         applied.append({"version": version, "name": name, "applied_at": applied_at})
         logger.info("Migration v%d applied successfully", version)
 
+    # T-BRIX-DEBT-01: After all migrations, rename schema_migrations → schema_migration
+    # This must happen LAST because the migration loop above writes to schema_migrations.
+    _rename_schema_migrations_table(db)
+
     return applied
+
+
+def _rename_schema_migrations_table(db: "BrixDB") -> None:
+    """Rename schema_migrations to schema_migration if not already done."""
+    with db._connect() as conn:
+        if _table_exists(conn, "schema_migrations") and not _table_exists(conn, "schema_migration"):
+            conn.execute("ALTER TABLE schema_migrations RENAME TO schema_migration")
+            logger.info("rename_tables: renamed 'schema_migrations' → 'schema_migration'")
 
 
 def rollback_migration(db: "BrixDB", version: int) -> bool:
@@ -499,8 +614,9 @@ def rollback_migration(db: "BrixDB", version: int) -> bool:
 
     # Check it's actually applied
     with db._connect() as conn:
+        mig_table = _migrations_table_name(conn)
         row = conn.execute(
-            "SELECT version FROM schema_migrations WHERE version = ?", (version,)
+            f"SELECT version FROM {mig_table} WHERE version = ?", (version,)
         ).fetchone()
     if row is None:
         logger.warning("rollback_migration: version %d was not applied", version)
@@ -510,10 +626,11 @@ def rollback_migration(db: "BrixDB", version: int) -> bool:
     logger.info("Rolling back migration v%d: %s", version, migration["name"])
     try:
         with db._connect() as conn:
+            mig_table = _migrations_table_name(conn)
             if down_sql:
                 conn.execute(down_sql)
             conn.execute(
-                "DELETE FROM schema_migrations WHERE version = ?", (version,)
+                f"DELETE FROM {mig_table} WHERE version = ?", (version,)
             )
     except Exception as exc:
         logger.error("Rollback of v%d failed: %s", version, exc)
@@ -532,8 +649,9 @@ def get_migration_status(db: "BrixDB") -> dict:
     ensure_migrations_table(db)
 
     with db._connect() as conn:
+        mig_table = _migrations_table_name(conn)
         rows = conn.execute(
-            "SELECT version, name, applied_at FROM schema_migrations ORDER BY version"
+            f"SELECT version, name, applied_at FROM {mig_table} ORDER BY version"
         ).fetchall()
 
     applied_versions = {row[0] for row in rows}

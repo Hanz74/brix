@@ -285,7 +285,7 @@ async def _handle_get_pipeline(arguments: dict) -> dict:
         _odb = _OrgDB()
         _oconn = _odb._connect()
         _orow = _oconn.execute(
-            "SELECT project, tags, group_name FROM pipelines WHERE name = ?", (name,)
+            "SELECT project, tags, group_name FROM pipeline WHERE name = ?", (name,)
         ).fetchone()
         if _orow:
             result["project"] = _orow[0] or ""
@@ -700,7 +700,7 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
             import json as _list_json
             _ldb = _ListDB()
             _lconn = _ldb._connect()
-            for row in _lconn.execute("SELECT name, project, tags, group_name FROM pipelines").fetchall():
+            for row in _lconn.execute("SELECT name, project, tags, group_name FROM pipeline").fetchall():
                 try:
                     _tags = _list_json.loads(row[1 + 1]) if row[1 + 1] else []
                 except (ValueError, TypeError):

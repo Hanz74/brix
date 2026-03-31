@@ -28,7 +28,7 @@ SYSTEM_PIPELINES: list[dict] = [
                 "type": "db.query",
                 "config": {
                     "connection": "brix-internal",
-                    "query": "SELECT * FROM alert_rules WHERE enabled = 1",
+                    "query": "SELECT * FROM alert_rule WHERE enabled = 1",
                 },
             },
             {
@@ -58,7 +58,7 @@ SYSTEM_PIPELINES: list[dict] = [
                 "config": {
                     "connection": "brix-internal",
                     "query": (
-                        "SELECT count(*) as old_runs FROM runs "
+                        "SELECT count(*) as old_runs FROM run "
                         "WHERE started_at < datetime('now', '-30 days')"
                     ),
                 },
@@ -95,7 +95,7 @@ SYSTEM_PIPELINES: list[dict] = [
                 "type": "db.query",
                 "config": {
                     "connection": "brix-internal",
-                    "query": "SELECT count(*) as total_runs FROM runs",
+                    "query": "SELECT count(*) as total_runs FROM run",
                 },
             },
             {
@@ -103,7 +103,7 @@ SYSTEM_PIPELINES: list[dict] = [
                 "type": "db.query",
                 "config": {
                     "connection": "brix-internal",
-                    "query": "SELECT count(*) as total_pipelines FROM pipelines",
+                    "query": "SELECT count(*) as total_pipelines FROM pipeline",
                 },
             },
             {

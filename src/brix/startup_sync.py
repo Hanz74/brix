@@ -236,9 +236,9 @@ def _set_pipeline_description(db: "BrixDB", name: str, description: str) -> None
     """Set the description column on a pipeline row."""
     import sqlite3
     with db._connect() as conn:
-        if db._column_exists(conn, "pipelines", "description"):
+        if db._column_exists(conn, "pipeline", "description"):
             conn.execute(
-                "UPDATE pipelines SET description=? WHERE name=?",
+                "UPDATE pipeline SET description=? WHERE name=?",
                 (description, name),
             )
 
@@ -248,14 +248,14 @@ def _backfill_descriptions(db: "BrixDB") -> int:
     import sqlite3
 
     with db._connect() as conn:
-        if not db._column_exists(conn, "pipelines", "description"):
+        if not db._column_exists(conn, "pipeline", "description"):
             return 0
-        if not db._column_exists(conn, "pipelines", "yaml_content"):
+        if not db._column_exists(conn, "pipeline", "yaml_content"):
             return 0
 
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            """SELECT name, yaml_content FROM pipelines
+            """SELECT name, yaml_content FROM pipeline
                WHERE (description IS NULL OR description = '')
                  AND yaml_content IS NOT NULL AND yaml_content != ''"""
         ).fetchall()
@@ -284,7 +284,7 @@ def _detect_orphans(db: "BrixDB") -> dict:
     with db._connect() as conn:
         conn.row_factory = sqlite3.Row
         try:
-            triggers = conn.execute("SELECT name, pipeline FROM triggers").fetchall()
+            triggers = conn.execute("SELECT name, pipeline FROM trigger").fetchall()
         except sqlite3.OperationalError:
             triggers = []
 

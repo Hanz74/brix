@@ -1882,7 +1882,7 @@ class PipelineEngine:
         return self._build_foreach_result(processed, step, pipeline)
 
     # ------------------------------------------------------------------
-    # DAG execution helpers (T-BRIX-V6-19)
+    # DAG execution helper (T-BRIX-V6-19)
     # ------------------------------------------------------------------
 
     @staticmethod

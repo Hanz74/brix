@@ -193,20 +193,20 @@ class ConnectionManager:
             cols = ["id", "name", "driver", "dsn_credential_id", "env_var", "description", "created_at", "updated_at"]
             vals = [conn_id, name, driver, dsn_cred_id, env_var, description, now, now]
 
-            if project is not None and self._db._column_exists(conn, "connections", "project"):
+            if project is not None and self._db._column_exists(conn, "connection", "project"):
                 cols.append("project")
                 vals.append(project)
-            if tags is not None and self._db._column_exists(conn, "connections", "tags"):
+            if tags is not None and self._db._column_exists(conn, "connection", "tags"):
                 import json as _json
                 cols.append("tags")
                 vals.append(_json.dumps(tags))
-            if group_name is not None and self._db._column_exists(conn, "connections", "group_name"):
+            if group_name is not None and self._db._column_exists(conn, "connection", "group_name"):
                 cols.append("group_name")
                 vals.append(group_name)
 
             placeholders = ",".join("?" * len(cols))
             conn.execute(
-                f"INSERT INTO connections ({','.join(cols)}) VALUES ({placeholders})",
+                f"INSERT INTO connection ({','.join(cols)}) VALUES ({placeholders})",
                 vals,
             )
 
@@ -270,7 +270,7 @@ class ConnectionManager:
         with self._db._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM connections ORDER BY name"
+                "SELECT * FROM connection ORDER BY name"
             ).fetchall()
         result = []
         for r in rows:
@@ -331,7 +331,7 @@ class ConnectionManager:
         values = list(updates.values()) + [name]
         with self._db._connect() as conn:
             conn.execute(
-                f"UPDATE connections SET {set_clause} WHERE name=?", values
+                f"UPDATE connection SET {set_clause} WHERE name=?", values
             )
 
         # Re-fetch updated row
@@ -367,7 +367,7 @@ class ConnectionManager:
             self._cred_store.delete(row["dsn_credential_id"])
 
         with self._db._connect() as conn:
-            conn.execute("DELETE FROM connections WHERE id = ?", (row["id"],))
+            conn.execute("DELETE FROM connection WHERE id = ?", (row["id"],))
         return True
 
     def test(self, name: str) -> dict:
@@ -389,7 +389,7 @@ class ConnectionManager:
         with self._db._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT * FROM connections WHERE name = ?", (name,)
+                "SELECT * FROM connection WHERE name = ?", (name,)
             ).fetchone()
         return row
 

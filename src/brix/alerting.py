@@ -280,7 +280,7 @@ class AlertManager:
         with self._db._connect() as conn:
             conn.row_factory = __import__("sqlite3").Row
             rows = conn.execute(
-                """SELECT success FROM runs
+                """SELECT success FROM run
                    WHERE pipeline=?
                    ORDER BY started_at DESC
                    LIMIT 20""",

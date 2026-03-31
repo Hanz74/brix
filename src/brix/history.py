@@ -208,12 +208,12 @@ class RunHistory:
         with self._connect() as conn:
             if pipeline:
                 rows = conn.execute(
-                    "SELECT success, duration FROM runs WHERE pipeline=? AND finished_at IS NOT NULL",
+                    "SELECT success, duration FROM run WHERE pipeline=? AND finished_at IS NOT NULL",
                     (pipeline,)
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT success, duration FROM runs WHERE finished_at IS NOT NULL"
+                    "SELECT success, duration FROM run WHERE finished_at IS NOT NULL"
                 ).fetchall()
 
             if not rows:
@@ -241,7 +241,7 @@ class RunHistory:
         """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT steps_data FROM runs WHERE pipeline=? AND finished_at IS NOT NULL AND steps_data IS NOT NULL",
+                "SELECT steps_data FROM run WHERE pipeline=? AND finished_at IS NOT NULL AND steps_data IS NOT NULL",
                 (pipeline,),
             ).fetchall()
 
@@ -324,7 +324,7 @@ class RunHistory:
             with self._connect() as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
-                    "SELECT * FROM runs WHERE pipeline=? AND success=0 AND finished_at IS NOT NULL "
+                    "SELECT * FROM run WHERE pipeline=? AND success=0 AND finished_at IS NOT NULL "
                     "ORDER BY started_at DESC LIMIT ?",
                     (pipeline, last),
                 ).fetchall()
@@ -404,7 +404,7 @@ class RunHistory:
         Returns True if a row was deleted, False if no matching run was found.
         """
         with self._connect() as conn:
-            cursor = conn.execute("DELETE FROM runs WHERE run_id=?", (run_id,))
+            cursor = conn.execute("DELETE FROM run WHERE run_id=?", (run_id,))
             return cursor.rowcount > 0
 
     def annotate(self, run_id: str, notes: str) -> bool:
@@ -453,7 +453,7 @@ class RunHistory:
         """Delete runs older than N days. Returns count deleted."""
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM runs WHERE started_at < datetime('now', ?)",
+                "DELETE FROM run WHERE started_at < datetime('now', ?)",
                 (f"-{older_than_days} days",)
             )
             return cursor.rowcount
