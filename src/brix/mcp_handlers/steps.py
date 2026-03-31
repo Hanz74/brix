@@ -13,6 +13,7 @@ from brix.mcp_handlers._shared import (
     _pipeline_dir,
     record_schema_consultation,
     was_schema_consulted,
+    _normalize_step_config,
 )
 from brix.bricks.types import is_compatible, suggest_converter
 from brix.pipeline_store import PipelineStore
@@ -193,6 +194,9 @@ async def _handle_add_step(arguments: dict) -> dict:
     for key, value in arguments.items():
         if key not in _ENVELOPE_KEYS and key not in step:
             step[key] = value
+
+    # Normalize: map 'config' → 'params' for non-specialist steps (T-BRIX-BUG-11)
+    _normalize_step_config(step)
 
     # Insert at position or append
     steps: list = data.get("steps", [])

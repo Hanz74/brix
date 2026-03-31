@@ -34,6 +34,7 @@ from brix.mcp_handlers._shared import (
     _find_similar_pipelines,
     _scan_pipelines_for_sub_pipeline,
     _now_iso_helper,
+    _normalize_steps,
 )
 from brix.bricks.types import is_compatible, suggest_converter
 from brix.pipeline_store import PipelineStore
@@ -106,6 +107,11 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
+
+    # Normalize step dicts: map 'config' → 'params' for non-specialist steps
+    # (T-BRIX-BUG-11)
+    if steps_raw:
+        _normalize_steps(steps_raw)
 
     # Build pipeline dict
     pipeline_data: dict = {
