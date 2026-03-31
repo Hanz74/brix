@@ -7,6 +7,7 @@ from typing import Optional
 from brix.triggers.models import TriggerConfig
 from brix.triggers.state import TriggerState
 from brix.runners.cli import parse_timeout
+from brix.app_logging import log_event
 
 TRIGGERS_CONFIG_PATH = Path.home() / ".brix" / "triggers.yaml"
 
@@ -41,6 +42,7 @@ class TriggerService:
             try:
                 await self._check_trigger(trigger)
             except Exception as e:
+                log_event("ERROR", "trigger", f"Trigger error: {trigger.id}: {e}", {"trigger_id": trigger.id, "error": str(e)})
                 print(f"[trigger:{trigger.id}] Error: {e}")
             await asyncio.sleep(interval_seconds)
 
@@ -56,7 +58,11 @@ class TriggerService:
         events = await runner.poll()
         new_events = runner.dedupe(events)
 
+        if not new_events and events:
+            log_event("INFO", "trigger", f"Trigger condition not met (all deduped): {trigger.id}", {"trigger_id": trigger.id, "total_events": len(events), "new_events": 0})
+
         for event in new_events:
+            log_event("INFO", "trigger", f"Trigger fired: {trigger.id}", {"trigger_id": trigger.id, "pipeline": trigger.pipeline})
             print(f"[trigger:{trigger.id}] Firing for event")
             await runner.fire(event)
 

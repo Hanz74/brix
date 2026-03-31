@@ -158,6 +158,10 @@ def run_startup_sync(db: "BrixDB") -> dict:
         summary["test_artifacts_cleaned"],
     )
 
+    # Structured event logging (T-BRIX-LOG-01)
+    from brix.app_logging import log_event
+    log_event("INFO", "startup_sync", "Startup sync completed", summary)
+
     return summary
 
 

@@ -9,6 +9,7 @@ import yaml
 from brix.pipeline_store import PipelineStore
 from brix.engine import PipelineEngine
 from brix.config import config
+from brix.app_logging import log_event
 
 SCHEDULES_PATH = Path.home() / ".brix" / "schedules.yaml"
 
@@ -58,10 +59,16 @@ class BrixScheduler:
         params = schedule.get("params", {})
 
         try:
+            log_event("INFO", "scheduler", f"Pipeline started: {pipeline_name}", {"pipeline": pipeline_name})
             pipeline = self.store.load(pipeline_name)
             result = await self.engine.run(pipeline, params)
+            if result.success:
+                log_event("INFO", "scheduler", f"Pipeline completed: {pipeline_name}", {"pipeline": pipeline_name, "run_id": result.run_id})
+            else:
+                log_event("WARNING", "scheduler", f"Pipeline failed: {pipeline_name}", {"pipeline": pipeline_name, "run_id": result.run_id})
             return result.success
         except Exception as e:
+            log_event("ERROR", "scheduler", f"Pipeline error: {pipeline_name}: {e}", {"pipeline": pipeline_name, "error": str(e)})
             print(f"[scheduler] Error running {pipeline_name}: {e}")
             return False
 
@@ -73,6 +80,7 @@ class BrixScheduler:
             return
 
         self._running = True
+        log_event("INFO", "scheduler", f"Scheduler started with {len(self._schedules)} schedules", {"schedule_count": len(self._schedules)})
         print(f"[scheduler] Starting with {len(self._schedules)} schedules")
 
         tasks = []
@@ -81,6 +89,7 @@ class BrixScheduler:
             if interval:
                 tasks.append(self._schedule_loop(schedule, interval))
             else:
+                log_event("WARNING", "scheduler", f"Invalid interval for pipeline '{schedule.get('pipeline')}', skipping", {"pipeline": schedule.get("pipeline"), "interval": schedule.get("interval")})
                 print(f"[scheduler] Invalid interval for pipeline '{schedule.get('pipeline')}', skipping")
 
         # Add periodic retention-policy task (runs once per day)
@@ -99,6 +108,7 @@ class BrixScheduler:
                 from brix.db import BrixDB
                 db = BrixDB()
                 result = db.clean_retention()
+                log_event("INFO", "scheduler", "Retention applied", result)
                 print(
                     f"[scheduler] Retention applied: "
                     f"{result['runs_deleted_age']} runs (age), "
@@ -107,6 +117,7 @@ class BrixScheduler:
                     f"DB: {result['db_size_mb']} MB"
                 )
             except Exception as e:
+                log_event("ERROR", "scheduler", f"Retention error: {e}", {"error": str(e)})
                 print(f"[scheduler] Retention error: {e}")
 
     async def _schedule_loop(self, schedule: dict, interval: timedelta) -> None:
@@ -115,6 +126,7 @@ class BrixScheduler:
         while self._running:
             print(f"[scheduler] Running {pipeline_name}")
             await self.run_once(schedule)
+            log_event("INFO", "scheduler", f"Next scheduled run in {interval}", {"pipeline": pipeline_name, "interval_seconds": interval.total_seconds()})
             print(f"[scheduler] Next run in {interval}")
             await asyncio.sleep(interval.total_seconds())
 

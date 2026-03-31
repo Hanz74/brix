@@ -264,6 +264,14 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_rename_tables_to_singular",
         "down": "",
     },
+    # T-BRIX-LOG-01: Register get_app_log MCP tool schema
+    {
+        "version": 64,
+        "name": "register_get_app_log_tool",
+        "up": "",
+        "up_fn": "_register_get_app_log_tool",
+        "down": "DELETE FROM mcp_tool_schema WHERE name = 'brix__get_app_log'",
+    },
 ]
 
 
@@ -328,6 +336,52 @@ def _rename_tables_to_singular(db: "BrixDB") -> None:
                 continue
             conn.execute(f"ALTER TABLE [{old_name}] RENAME TO [{new_name}]")
             logger.info("rename_tables: renamed '%s' → '%s'", old_name, new_name)
+
+
+def _register_get_app_log_tool(db: "BrixDB") -> None:
+    """T-BRIX-LOG-01: Register brix__get_app_log tool schema."""
+    import json as _json
+    schema = {
+        "type": "object",
+        "properties": {
+            "component": {
+                "type": "string",
+                "description": "Filter by component name (e.g. 'scheduler', 'trigger', 'watchdog', 'startup_sync')."
+            },
+            "level": {
+                "type": "string",
+                "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                "description": "Filter by log level."
+            },
+            "since": {
+                "type": "string",
+                "description": "ISO-8601 timestamp — only entries at or after this time."
+            },
+            "limit": {
+                "type": "integer",
+                "default": 50,
+                "description": "Maximum number of entries to return (default 50)."
+            },
+        },
+    }
+    with db._connect() as conn:
+        from brix.db import _now_iso
+        conn.execute(
+            """INSERT INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT(name) DO UPDATE SET
+                   description=excluded.description,
+                   input_schema=excluded.input_schema,
+                   updated_at=excluded.updated_at""",
+            (
+                "brix__get_app_log",
+                "Query the structured application event log. Returns scheduler, trigger, watchdog, and startup events. Filter by component, level, or time range.",
+                _json.dumps(schema),
+                _now_iso(),
+                _now_iso(),
+            ),
+        )
+    logger.info("Registered brix__get_app_log tool schema")
 
 
 def _seed_tips_from_hardcoded(db: "BrixDB") -> None:

@@ -223,6 +223,39 @@ def _aggregate_overall(subsystems: dict) -> str:
 # MCP handler
 # ---------------------------------------------------------------------------
 
+async def _handle_get_app_log(arguments: dict) -> dict:
+    """Query structured application event log — T-BRIX-LOG-01.
+
+    Supports filtering by component, level, and time range.
+    Returns entries in reverse chronological order.
+    """
+    component = arguments.get("component")
+    level = arguments.get("level")
+    since = arguments.get("since")
+    limit = arguments.get("limit", 50)
+
+    try:
+        db = BrixDB()
+        entries = db.get_app_log(
+            component=component,
+            level=level,
+            since=since,
+            limit=limit,
+        )
+        return {
+            "entries": entries,
+            "count": len(entries),
+            "filters": {
+                "component": component,
+                "level": level,
+                "since": since,
+                "limit": limit,
+            },
+        }
+    except Exception as exc:
+        return {"error": str(exc), "entries": [], "count": 0}
+
+
 async def _handle_health(arguments: dict) -> dict:
     """Return Gesamt-Status of Brix on one call — T-BRIX-DB-25.
 

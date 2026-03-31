@@ -438,6 +438,7 @@ async def _background_run_watchdog() -> None:
     """Periodically cancel stale background runs."""
     import time as _time_mod
     from brix.context import WORKDIR_BASE
+    from brix.app_logging import log_event
 
     while True:
         await asyncio.sleep(_WATCHDOG_INTERVAL_SECONDS)
@@ -462,6 +463,7 @@ async def _background_run_watchdog() -> None:
                         run_id,
                         age,
                     )
+                    log_event("WARNING", "watchdog", f"Stale run detected and cancelled: {run_id}", {"run_id": run_id, "age_seconds": round(age)})
                     task.cancel()
                     stale.append(run_id)
             except (FileNotFoundError, OSError, ValueError):
