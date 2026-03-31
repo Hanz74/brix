@@ -121,8 +121,9 @@ class Step(BaseModel):
         "flatten", "diff", "respond",
         # Advanced flow runners (T-BRIX-DB-22)
         "queue", "emit",
-        # File I/O bricks (T-BRIX-BUG-15)
+        # File I/O bricks (T-BRIX-BUG-15 / T-BRIX-BRICK-02)
         "file_read", "file_write",
+        "file_read_base64", "file_list", "file_load_json",
         # Brick-First dot-notation names (T-BRIX-DB-05c)
         "script.python", "http.request", "mcp.call", "script.cli",
         "flow.filter", "flow.transform", "flow.set", "flow.repeat",
@@ -135,6 +136,8 @@ class Step(BaseModel):
         "llm.batch",
         "markitdown.convert",
         "source.fetch",
+        # File I/O bricks (T-BRIX-BRICK-02)
+        "file.read_base64", "file.write", "file.list", "file.load_json",
     ]
 
     # Step enablement — disabled steps are unconditionally skipped

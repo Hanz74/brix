@@ -72,6 +72,11 @@ LEGACY_ALIASES: dict[str, str] = {
     "flatten": "flow.flatten",
     "diff": "flow.diff",
     "respond": "action.respond",
+    # File I/O bricks (T-BRIX-BRICK-02)
+    "file_read_base64": "file.read_base64",
+    "file_write": "file.write",
+    "file_list": "file.list",
+    "file_load_json": "file.load_json",
 }
 
 # ---------------------------------------------------------------------------

@@ -1239,6 +1239,79 @@ SYSTEM_ACTION_RESPOND = BrickSchema(
     category="system",
 )
 
+# File I/O bricks (T-BRIX-BRICK-02)
+SYSTEM_FILE_READ_BASE64 = BrickSchema(
+    name="file.read_base64",
+    type="file_read_base64",
+    description="Read a file and return its content as a base64-encoded string.",
+    when_to_use="Use when you need to read binary files (PDFs, images) and pass them as base64 to downstream steps.",
+    runner="file_read_base64",
+    system=True,
+    namespace="file",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Absolute path to the file to read", required=True),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"base64": "...", "size": N, "name": "filename"}',
+)
+
+SYSTEM_FILE_WRITE = BrickSchema(
+    name="file.write",
+    type="file_write",
+    description="Write content to a file (text or binary via base64).",
+    when_to_use="Use to save results, export data, or create output files.",
+    runner="file_write",
+    system=True,
+    namespace="file",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Absolute path to the file to write", required=True),
+        "content": BrickParam(type="string", description="Content to write (text or base64 when mode=binary)", required=True),
+        "mode": BrickParam(type="string", description="Write mode: 'text' (default) or 'binary'", default="text"),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"path": "...", "size": N, "success": true}',
+)
+
+SYSTEM_FILE_LIST = BrickSchema(
+    name="file.list",
+    type="file_list",
+    description="List files in a directory with metadata (name, path, size, modified).",
+    when_to_use="Use to discover files before processing, or to build a file inventory.",
+    runner="file_list",
+    system=True,
+    namespace="file",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Directory path to list", required=True),
+        "pattern": BrickParam(type="string", description="Glob pattern to filter files", default="*"),
+        "recursive": BrickParam(type="boolean", description="Search subdirectories recursively", default=False),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"files": [{"name": "...", "path": "...", "size": N, "modified": "..."}], "count": N}',
+)
+
+SYSTEM_FILE_LOAD_JSON = BrickSchema(
+    name="file.load_json",
+    type="file_load_json",
+    description="Read a JSON file and return parsed content (dict or list).",
+    when_to_use="Use to load configuration files, seed data, or any JSON input.",
+    runner="file_load_json",
+    system=True,
+    namespace="file",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Absolute path to the JSON file to read", required=True),
+    },
+    input_type="none",
+    output_type="any",
+    output_description="The parsed JSON content directly (dict or list)",
+)
+
 # All system bricks (one per runner)
 SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_SCRIPT_PYTHON,
@@ -1269,6 +1342,11 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_FLOW_FLATTEN,
     SYSTEM_FLOW_DIFF,
     SYSTEM_ACTION_RESPOND,
+    # File I/O bricks (T-BRIX-BRICK-02)
+    SYSTEM_FILE_READ_BASE64,
+    SYSTEM_FILE_WRITE,
+    SYSTEM_FILE_LIST,
+    SYSTEM_FILE_LOAD_JSON,
 ]
 
 
