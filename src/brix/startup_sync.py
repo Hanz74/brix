@@ -84,6 +84,41 @@ _TEST_PIPELINE_PREFIXES = (
 )
 
 
+def _sync_builtin_bricks(db: "BrixDB") -> int:
+    """Ensure all built-in bricks from builtins.py are registered in the DB."""
+    from brix.bricks.builtins import SYSTEM_BRICKS
+
+    with db._connect() as conn:
+        db_names = {r[0] for r in conn.execute("SELECT name FROM brick_definition").fetchall()}
+
+        synced = 0
+        for brick in SYSTEM_BRICKS:
+            if brick.name in db_names:
+                continue
+            try:
+                conn.execute(
+                    """INSERT INTO brick_definition
+                    (name, runner, namespace, category, description, when_to_use, when_NOT_to_use,
+                     aliases, input_type, output_type, config_schema, examples, system,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))""",
+                    (
+                        brick.name, brick.runner or "", brick.namespace or "",
+                        brick.category or "", brick.description or "",
+                        brick.when_to_use or "", brick.when_NOT_to_use or "",
+                        str(brick.aliases or []), brick.input_type or "",
+                        brick.output_type or "", str(brick.config_schema or {}),
+                        str(brick.examples or []),
+                    ),
+                )
+                logger.info("startup_sync: registered brick '%s'", brick.name)
+                synced += 1
+            except Exception as exc:
+                logger.warning("startup_sync: failed to register brick '%s': %s", brick.name, exc)
+
+    return synced
+
+
 def _is_test_helper(name: str) -> bool:
     """Return True if a helper filename (stem) looks like a test artifact."""
     name_lower = name.lower().replace("-", "_")
@@ -146,6 +181,7 @@ def run_startup_sync(db: "BrixDB") -> dict:
     This function is idempotent and safe to call on every container start.
     """
     summary = {
+        "bricks_synced": 0,
         "helpers_registered": 0,
         "pipelines_imported": 0,
         "descriptions_backfilled": 0,
@@ -153,6 +189,11 @@ def run_startup_sync(db: "BrixDB") -> dict:
         "orphan_helpers": 0,
         "test_artifacts_cleaned": 0,
     }
+
+    try:
+        summary["bricks_synced"] = _sync_builtin_bricks(db)
+    except Exception as exc:
+        logger.warning("startup_sync: brick sync failed: %s", exc)
 
     try:
         summary["helpers_registered"] = _sync_helpers(db)
