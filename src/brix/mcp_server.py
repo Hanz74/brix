@@ -963,6 +963,11 @@ def create_server(store: PipelineStore = None) -> Server:
 
 async def run_mcp_server() -> None:
     """Run the Brix MCP server using stdio transport."""
+    # CRITICAL: Route ALL logging to stderr before stdio transport starts.
+    # Any output to stdout breaks the MCP JSON-RPC protocol.
+    import sys
+    logging.basicConfig(stream=sys.stderr, level=logging.WARNING, force=True)
+
     # T-BRIX-DB-06: Seed DB tables on first start
     try:
         from brix.seed import seed_if_empty
