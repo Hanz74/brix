@@ -4179,6 +4179,12 @@ class BrixDB:
                 ),
             )
 
+    def mcp_tool_schemas_delete(self, name: str) -> bool:
+        """Delete a tool schema by name. Returns True if deleted."""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM mcp_tool_schema WHERE name = ?", (name,))
+        return cursor.rowcount > 0
+
     # ------------------------------------------------------------------
     # T-BRIX-DB-06: DB-First — help_topics
     # ------------------------------------------------------------------
@@ -4188,10 +4194,16 @@ class BrixDB:
             row = conn.execute("SELECT COUNT(*) FROM help_topic").fetchone()
         return row[0] if row else 0
 
-    def help_topics_list(self) -> list[dict]:
+    def help_topics_list(self, category: Optional[str] = None) -> list[dict]:
         with self._connect() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM help_topic ORDER BY name").fetchall()
+            if category:
+                rows = conn.execute(
+                    "SELECT * FROM help_topic WHERE category = ? ORDER BY name",
+                    (category,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM help_topic ORDER BY name").fetchall()
         return [dict(r) for r in rows]
 
     def help_topics_get(self, name: str) -> Optional[dict]:
@@ -4206,20 +4218,28 @@ class BrixDB:
         now = _now_iso()
         with self._connect() as conn:
             conn.execute(
-                """INSERT INTO help_topic (name, title, content, created_at, updated_at)
-                   VALUES (?,?,?,?,?)
+                """INSERT INTO help_topic (name, title, content, category, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?)
                    ON CONFLICT(name) DO UPDATE SET
                        title=excluded.title,
                        content=excluded.content,
+                       category=excluded.category,
                        updated_at=excluded.updated_at""",
                 (
                     record["name"],
                     record.get("title", record["name"]),
                     record.get("content", ""),
+                    record.get("category", ""),
                     now,
                     now,
                 ),
             )
+
+    def help_topics_delete(self, name: str) -> bool:
+        """Delete a help topic by name. Returns True if deleted."""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM help_topic WHERE name = ?", (name,))
+        return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
     # T-BRIX-TIPS-01: Tips — DB-managed tips for get_tips
@@ -4335,6 +4355,15 @@ class BrixDB:
             result[cat][mapped].append(kw)
         return result
 
+    def keyword_taxonomies_delete(self, category: str, keyword: str) -> bool:
+        """Delete a keyword taxonomy entry. Returns True if deleted."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM keyword_taxonomy WHERE category = ? AND keyword = ?",
+                (category, keyword),
+            )
+        return cursor.rowcount > 0
+
     # ------------------------------------------------------------------
     # T-BRIX-DB-06: DB-First — type_compatibility
     # ------------------------------------------------------------------
@@ -4358,6 +4387,15 @@ class BrixDB:
                 "INSERT OR IGNORE INTO type_compatibility (output_type, compatible_input) VALUES (?,?)",
                 (output_type, compatible_input),
             )
+
+    def type_compatibility_delete(self, output_type: str, compatible_input: str) -> bool:
+        """Delete a type compatibility entry. Returns True if deleted."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM type_compatibility WHERE output_type = ? AND compatible_input = ?",
+                (output_type, compatible_input),
+            )
+        return cursor.rowcount > 0
 
     def type_compatibility_as_dict(self) -> dict[str, list[str]]:
         """Return type_compatibility as {output_type: [compatible_inputs]}."""

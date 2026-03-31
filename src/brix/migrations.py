@@ -280,6 +280,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_create_plural_compat_views",
         "down": "",
     },
+    # T-BRIX-DBF-04: Add category column to help_topic for MCP CRUD
+    {
+        "version": 66,
+        "name": "add_category_to_help_topic",
+        "up": "ALTER TABLE help_topic ADD COLUMN category TEXT DEFAULT ''",
+        "down": "",
+    },
 ]
 
 

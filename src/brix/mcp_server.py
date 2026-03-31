@@ -353,6 +353,13 @@ from brix.mcp_handlers.testing import (
     _handle_unpin_step_data,
     _handle_list_pins,
 )
+# T-BRIX-DBF-04: DB-First CRUD for tool_schema, help_topic, keyword, type_compat
+from brix.mcp_handlers.dbfirst_crud import (
+    _handle_tool_schema,
+    _handle_help_topic,
+    _handle_keyword,
+    _handle_type_compat,
+)
 # Re-export shared utilities so that existing imports/monkeypatches on
 # brix.mcp_server continue to work (e.g. from brix.mcp_server import _load_pipeline_yaml)
 from brix.mcp_handlers._shared import (
@@ -750,6 +757,11 @@ _HANDLERS = {
     "brix__trigger_group_update": _handle_trigger_group_update,
     "brix__search_trigger_groups": _handle_search_trigger_groups,
     "brix__search_triggers": _handle_search_triggers,
+    # T-BRIX-DBF-04: DB-First CRUD — consolidated action-based
+    "brix__tool_schema": _handle_tool_schema,
+    "brix__help_topic": _handle_help_topic,
+    "brix__keyword": _handle_keyword,
+    "brix__type_compat": _handle_type_compat,
 }
 
 

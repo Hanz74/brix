@@ -4619,12 +4619,21 @@
           "action": {
             "type": "string",
             "description": "CRUD action: create/list/delete/seed",
-            "enum": ["create", "list", "delete", "seed"]
+            "enum": [
+              "create",
+              "list",
+              "delete",
+              "seed"
+            ]
           },
           "type": {
             "type": "string",
             "description": "Entity type (required for create/delete, optional filter for list)",
-            "enum": ["project", "tag", "group"]
+            "enum": [
+              "project",
+              "tag",
+              "group"
+            ]
           },
           "name": {
             "type": "string",
@@ -4636,7 +4645,9 @@
           },
           "pipelines": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "List of pipeline names belonging to this group (only for type=group, used with create)"
           }
         },
@@ -4663,13 +4674,21 @@
             "type": "object",
             "description": "Optional caller identity for audit logging.",
             "properties": {
-              "session": { "type": "string" },
-              "model": { "type": "string" },
-              "agent": { "type": "string" }
+              "session": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              }
             }
           }
         },
-        "required": ["project"]
+        "required": [
+          "project"
+        ]
       }
     },
     {
@@ -4688,20 +4707,31 @@
           },
           "on_conflict": {
             "type": "string",
-            "enum": ["skip", "overwrite"],
+            "enum": [
+              "skip",
+              "overwrite"
+            ],
             "description": "Conflict resolution: 'skip' (default) skips existing entities, 'overwrite' updates them."
           },
           "source": {
             "type": "object",
             "description": "Optional caller identity for audit logging.",
             "properties": {
-              "session": { "type": "string" },
-              "model": { "type": "string" },
-              "agent": { "type": "string" }
+              "session": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              }
             }
           }
         },
-        "required": ["archive"]
+        "required": [
+          "archive"
+        ]
       }
     },
     {
@@ -6133,14 +6163,24 @@
             "type": "object",
             "description": "Optional caller identity.",
             "properties": {
-              "session": {"type": "string"},
-              "model": {"type": "string"},
-              "agent": {"type": "string"}
+              "session": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              }
             },
             "additionalProperties": true
           }
         },
-        "required": ["category", "title", "content"]
+        "required": [
+          "category",
+          "title",
+          "content"
+        ]
       }
     },
     {
@@ -6177,14 +6217,22 @@
             "type": "object",
             "description": "Optional caller identity.",
             "properties": {
-              "session": {"type": "string"},
-              "model": {"type": "string"},
-              "agent": {"type": "string"}
+              "session": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              }
             },
             "additionalProperties": true
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       }
     },
     {
@@ -6201,14 +6249,22 @@
             "type": "object",
             "description": "Optional caller identity.",
             "properties": {
-              "session": {"type": "string"},
-              "model": {"type": "string"},
-              "agent": {"type": "string"}
+              "session": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              }
             },
             "additionalProperties": true
           }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       }
     },
     {
@@ -6230,13 +6286,83 @@
             "type": "object",
             "description": "Optional caller identity.",
             "properties": {
-              "session": {"type": "string"},
-              "model": {"type": "string"},
-              "agent": {"type": "string"}
+              "session": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              }
             },
             "additionalProperties": true
           }
         }
+      }
+    },
+    {
+      "name": "brix__tool_schema",
+      "description": "Tool Schema CRUD. action: add/get/list/update/delete. Manages MCP tool schemas in DB. Params: name, description, input_schema (JSON object).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/get/list/update/delete"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "brix__help_topic",
+      "description": "Help Topic CRUD. action: add/get/list/update/delete. Manages help topics in DB. Params: name, title, content, category.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/get/list/update/delete"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "brix__keyword",
+      "description": "Keyword Taxonomy CRUD. action: add/list/delete. Manages keyword taxonomies in DB. Params: keyword, category, language, mapped_to.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/list/delete"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "brix__type_compat",
+      "description": "Type Compatibility CRUD. action: add/list/delete. Manages type compatibility rules in DB. Params: source_type, target_type.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "CRUD action: add/list/delete"
+          }
+        },
+        "required": [
+          "action"
+        ]
       }
     }
   ],
