@@ -4079,6 +4079,71 @@ class BrixDB:
             )
 
     # ------------------------------------------------------------------
+    # T-BRIX-TIPS-01: Tips — DB-managed tips for get_tips
+    # ------------------------------------------------------------------
+
+    def tip_create(self, category: str, title: str, content: str,
+                   priority: int = 5, is_active: bool = True) -> dict:
+        """Create a new tip and return it."""
+        now = _now_iso()
+        tip_id = str(uuid4())
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO tips (id, category, title, content, priority, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (tip_id, category, title, content, priority, 1 if is_active else 0, now, now),
+            )
+        return {"id": tip_id, "category": category, "title": title,
+                "content": content, "priority": priority, "is_active": is_active,
+                "created_at": now, "updated_at": now}
+
+    def tip_get(self, tip_id: str) -> Optional[dict]:
+        """Get a single tip by ID."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM tips WHERE id = ?", (tip_id,)).fetchone()
+        return dict(row) if row else None
+
+    def tip_update(self, tip_id: str, **fields) -> Optional[dict]:
+        """Update a tip. Returns the updated tip or None if not found."""
+        allowed = {"category", "title", "content", "priority", "is_active"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return self.tip_get(tip_id)
+        if "is_active" in updates:
+            updates["is_active"] = 1 if updates["is_active"] else 0
+        updates["updated_at"] = _now_iso()
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [tip_id]
+        with self._connect() as conn:
+            conn.execute(f"UPDATE tips SET {set_clause} WHERE id = ?", values)
+        return self.tip_get(tip_id)
+
+    def tip_delete(self, tip_id: str) -> bool:
+        """Delete a tip by ID. Returns True if deleted."""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM tips WHERE id = ?", (tip_id,))
+        return cursor.rowcount > 0
+
+    def tip_list(self, category: Optional[str] = None, active_only: bool = True) -> list[dict]:
+        """List tips, optionally filtered by category and active status."""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if active_only:
+            clauses.append("is_active = 1")
+        if category:
+            clauses.append("category = ?")
+            params.append(category)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT * FROM tips{where} ORDER BY priority DESC, category, title",
+                params,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
     # T-BRIX-DB-06: DB-First — keyword_taxonomies
     # ------------------------------------------------------------------
 

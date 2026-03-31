@@ -6100,6 +6100,144 @@
           "pipeline_id"
         ]
       }
+    },
+    {
+      "name": "brix__create_tip",
+      "description": "Create a new tip that will be shown in get_tips output. Tips are organized by category and priority.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Tip category (e.g. 'KERN-REGEL', 'DEBUGGING', 'ANTI-PATTERNS')."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short title for the tip."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full tip content text."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority 0-10 (higher = shown first). Default: 5.",
+            "default": 5
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Whether the tip is active. Default: true.",
+            "default": true
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity.",
+            "properties": {
+              "session": {"type": "string"},
+              "model": {"type": "string"},
+              "agent": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": ["category", "title", "content"]
+      }
+    },
+    {
+      "name": "brix__update_tip",
+      "description": "Update an existing tip by ID. Only provided fields are changed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID of the tip to update."
+          },
+          "category": {
+            "type": "string",
+            "description": "New category."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "content": {
+            "type": "string",
+            "description": "New content."
+          },
+          "priority": {
+            "type": "integer",
+            "description": "New priority 0-10."
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "Activate or deactivate the tip."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity.",
+            "properties": {
+              "session": {"type": "string"},
+              "model": {"type": "string"},
+              "agent": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "brix__delete_tip",
+      "description": "Delete a tip by ID.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID of the tip to delete."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity.",
+            "properties": {
+              "session": {"type": "string"},
+              "model": {"type": "string"},
+              "agent": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "brix__list_tips",
+      "description": "List all tips, optionally filtered by category and active status.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Filter by category name."
+          },
+          "active_only": {
+            "type": "boolean",
+            "description": "Only return active tips. Default: true.",
+            "default": true
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity.",
+            "properties": {
+              "session": {"type": "string"},
+              "model": {"type": "string"},
+              "agent": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        }
+      }
     }
   ],
   "help_topics": [

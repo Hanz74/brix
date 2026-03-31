@@ -157,6 +157,10 @@ def _build_pipeline_tools(store: PipelineStore) -> list[types.Tool]:
 from brix.mcp_handlers.help import (
     _handle_get_tips,
     _handle_get_help,
+    _handle_create_tip,
+    _handle_update_tip,
+    _handle_delete_tip,
+    _handle_list_tips,
 )
 from brix.mcp_handlers.steps import (
     _handle_list_bricks,
@@ -588,6 +592,11 @@ async def _handle_trigger_group(arguments: dict) -> dict:
 _HANDLERS = {
     "brix__get_tips": _handle_get_tips,
     "brix__get_help": _handle_get_help,
+    # T-BRIX-TIPS-01: Tip CRUD
+    "brix__create_tip": _handle_create_tip,
+    "brix__update_tip": _handle_update_tip,
+    "brix__delete_tip": _handle_delete_tip,
+    "brix__list_tips": _handle_list_tips,
     "brix__list_bricks": _handle_list_bricks,
     "brix__search_bricks": _handle_search_bricks,
     "brix__get_brick_schema": _handle_get_brick_schema,

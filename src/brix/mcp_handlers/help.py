@@ -81,6 +81,39 @@ def _recent_and_custom_bricks(all_bricks: list) -> list[str]:
     return lines
 
 
+def _load_db_tips() -> list[str]:
+    """Load tips from the DB tips table and format them as lines.
+
+    Returns formatted lines: ## category / ### title / content
+    Grouped by category, ordered by priority DESC.
+    """
+    lines: list[str] = []
+    try:
+        from brix.db import BrixDB
+        db = BrixDB()
+        tips = db.tip_list(active_only=True)
+        if not tips:
+            return lines
+        current_category = None
+        for tip in tips:
+            cat = tip["category"]
+            if cat != current_category:
+                lines.append(f"## {cat}")
+                current_category = cat
+            # For single-tip categories, put content directly under ##
+            # For multi-tip categories, use ### title
+            same_cat_tips = [t for t in tips if t["category"] == cat]
+            if len(same_cat_tips) > 1:
+                lines.append(f"### {tip['title']}")
+            content_lines = tip["content"].split("\n")
+            for cl in content_lines:
+                lines.append(f"  {cl}" if cl.strip() else "")
+            lines.append("")
+    except Exception as e:
+        logger.debug("Could not load tips from DB: %s", e)
+    return lines
+
+
 async def _handle_get_tips(arguments: dict) -> dict:
     """Return usage tips and best practices for Brix."""
     # Gather brick categories
@@ -207,100 +240,16 @@ async def _handle_get_tips(arguments: dict) -> dict:
     except Exception:
         pass  # Never break get_tips
 
+    # T-BRIX-TIPS-01: Load static tips from DB instead of hardcoded lines
+    db_tip_lines = _load_db_tips()
+
     tips = [
         *integrity_alert_lines,
         *legacy_alert_lines,
         *project_overview_lines,
         "=== Brix Quick Reference ===",
         "",
-        "## BRICK-FIRST — HÖCHSTE PRIORITÄT",
-        "  Nutze Brick-Namen (db.query, flow.filter, llm.batch etc.) statt alte Runner-Namen",
-        "  (python, http, mcp). Alte Namen funktionieren noch aber sind deprecated.",
-        "  KEIN create_helper für Standardaufgaben — nutze bestehende Bricks:",
-        "    db.query         → Datenbankabfragen",
-        "    db.upsert        → Daten in DB schreiben",
-        "    llm.batch        → LLM-Extraktion über viele Dokumente",
-        "    markitdown.convert → Dokumente/PDFs in Markdown konvertieren",
-        "    extract.specialist → Regex-Extraktion mit Schema",
-        "    source.fetch     → Daten von Connectors holen (Outlook, OneDrive, ...)",
-        "    flow.filter      → Listen filtern",
-        "  discover() zeigt alle verfügbaren Brick-Kategorien.",
-        "",
-        "## COMPOSITOR-REGEL",
-        "  IMMER search_helpers + search_pipelines aufrufen BEVOR ein neuer Helper",
-        "  oder eine neue Pipeline erstellt wird.",
-        "  Bestehende Bausteine wiederverwenden statt duplizieren!",
-        "  1. search_helpers(query=...) — nach ähnlichen Helpers suchen",
-        "  2. search_pipelines(query=...) — nach ähnlichen Pipelines suchen",
-        "  3. Erst dann create_helper / create_pipeline aufrufen",
-        "",
-        "## PROFILES & VARIABLES",
-        "  Profiles nutzen statt Config duplizieren: create_profile → step.profile",
-        "  Variables für Runtime-Config: set_variable → {{ var.name }} in Pipelines",
-        "  Persistent Store für Run-übergreifende Daten: store.key",
-        "",
-        "## KERN-REGEL",
-        "  IMMER Brix MCP-Tools nutzen. KEINE Workarounds. KEINE manuellen Dateien.",
-        "  KEIN docker exec. KEIN YAML schreiben. KEIN Container rebuild.",
-        "  KEIN Bash(cat ~/.brix/...)       → nutze get_run_log / get_run_status",
-        "  KEIN Bash(python3 -c ...)        → nutze create_helper",
-        "  KEIN Bash(rm -f ...)             → nutze brix__delete_run / brix clean",
-        "",
-        "## HILFE VERFÜGBAR",
-        "  Für Details: brix__get_help(topic)",
-        "  Topics: 'quick-start', 'step-types', 'step-referenzen', 'helper-scripts',",
-        "          'debugging', 'credentials', 'versioning', 'alerting', 'triggers',",
-        "          'advanced-features', 'foreach', 'flow-control',",
-        "          'brick-first', 'db-bricks', 'llm-bricks', 'source-bricks',",
-        "          'resilience', 'variables', 'profiles', 'testing'",
-        "",
-        "## STEP-OUTPUT REFERENZIEREN",
-        "  {{ step_id.output }}        ✅  ganzer Step-Output",
-        "  {{ step_id.output.field }}  ✅  einzelnes Feld",
-        "  {{ input.param }}           ✅  Pipeline-Input-Parameter",
-        "  {{ item }} / {{ item.x }}   ✅  foreach-Element",
-        "  {{ step_id.results }}       ✅  foreach-Items (selectattr/map)",
-        "  {{ steps.step_id.data }}    ❌  FALSCH: kein 'steps.' Prefix, kein 'data'!",
-        "  {{ step_id.data }}          ❌  FALSCH: Feld heißt 'output', nicht 'data'!",
-        "",
-        "## COMPOSITOR-MODE (T-BRIX-V8-07)",
-        "  Pipelines mit compositor_mode: true erlauben KEIN python/cli.",
-        "  Nutze Bricks und mcp_call statt Custom-Code.",
-        "  Override möglich: allow_code: true auf Pipeline-Ebene.",
-        "  compose_pipeline(compositor_mode=true) → LLM-sichere Brick-only Pipeline.",
-        "",
-        "## TOP-5 ANTI-PATTERNS",
-        "  delete_pipeline + create_pipeline  →  update_step / update_pipeline / add_step",
-        "  YAML manuell schreiben             →  brix__create_pipeline mit steps inline",
-        "  brix run via Bash                  →  brix__run_pipeline",
-        "  base64 in foreach-Loops            →  Dateipfade als Strings übergeben",
-        "  concurrency: '{{ input.n }}'       →  concurrency muss int sein (kein Jinja2!)",
-        "",
-        "## DEBUGGING",
-        "  Bei Fehler: brix__get_run_errors(run_id) → LLM-optimierte Fehleranalyse",
-        "  Dann:       brix__diagnose_run(run_id)   → Schritt-für-Schritt-Diagnose",
-        "  Auto-Fix:   brix__auto_fix_step(run_id, step_id) → ModuleNotFoundError / Timeout / UndefinedError",
-        "",
-        "## TOOL-KATEGORIEN",
-        "  Standalone:  create_pipeline / update_pipeline / list_pipelines / get_pipeline / search_pipelines",
-        "               create_helper / update_helper / list_helpers / get_helper / search_helpers",
-        "               run_pipeline / get_run_status / get_run_errors / get_run_log / cancel_run",
-        "               add_step / get_step / update_step / remove_step",
-        "               compose_pipeline / plan_pipeline / get_tips / get_help / discover / health",
-        "  Konsolidiert (action-Parameter!):",
-        "    brix__trigger(action: add/get/list/update/delete/test)",
-        "    brix__alert(action: add/list/update/delete/history)",
-        "    brix__credential(action: add/get/list/update/delete/rotate/search)",
-        "    brix__server(action: add/list/update/remove/health/refresh)",
-        "    brix__state(action: get/set/list/delete)",
-        "    brix__trigger_group(action: add/get/list/start/stop/delete/update)",
-        "    brix__registry(action: add/get/list/update/delete/search)",
-        "    brix__org(action: create/list/delete/seed)",
-        "  WICHTIG: NICHT trigger_update sondern trigger(action='update')!",
-        "",
-        "## PFAD-KONVENTION",
-        "  Host /root/... → Brix /host/root/... (Container-Dateisystem-Präfix!)",
-        "",
+        *db_tip_lines,
         "## VERFÜGBARE BRICK-KATEGORIEN",
         *category_lines,
         f"  Total bricks: {len(all_bricks)}",
@@ -321,6 +270,62 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "pipeline_count": len(pipeline_names),
         "categories": list(categories.keys()),
     }
+
+
+# ------------------------------------------------------------------
+# T-BRIX-TIPS-01: Tip CRUD MCP handlers
+# ------------------------------------------------------------------
+
+async def _handle_create_tip(arguments: dict) -> dict:
+    """Create a new tip."""
+    from brix.db import BrixDB
+    category = arguments.get("category")
+    title = arguments.get("title")
+    content = arguments.get("content")
+    if not category or not title or not content:
+        return {"success": False, "error": "category, title, and content are required."}
+    priority = arguments.get("priority", 5)
+    is_active = arguments.get("is_active", True)
+    db = BrixDB()
+    tip = db.tip_create(category, title, content, priority, is_active)
+    return {"success": True, "tip": tip}
+
+
+async def _handle_update_tip(arguments: dict) -> dict:
+    """Update an existing tip."""
+    from brix.db import BrixDB
+    tip_id = arguments.get("id")
+    if not tip_id:
+        return {"success": False, "error": "id is required."}
+    fields = {k: v for k, v in arguments.items() if k != "id" and k != "source"}
+    db = BrixDB()
+    tip = db.tip_update(tip_id, **fields)
+    if tip is None:
+        return {"success": False, "error": f"Tip '{tip_id}' not found."}
+    return {"success": True, "tip": tip}
+
+
+async def _handle_delete_tip(arguments: dict) -> dict:
+    """Delete a tip."""
+    from brix.db import BrixDB
+    tip_id = arguments.get("id")
+    if not tip_id:
+        return {"success": False, "error": "id is required."}
+    db = BrixDB()
+    deleted = db.tip_delete(tip_id)
+    if not deleted:
+        return {"success": False, "error": f"Tip '{tip_id}' not found."}
+    return {"success": True, "deleted": tip_id}
+
+
+async def _handle_list_tips(arguments: dict) -> dict:
+    """List tips with optional filters."""
+    from brix.db import BrixDB
+    category = arguments.get("category")
+    active_only = arguments.get("active_only", True)
+    db = BrixDB()
+    tips = db.tip_list(category=category, active_only=active_only)
+    return {"success": True, "tips": tips, "count": len(tips)}
 
 
 async def _handle_get_help(arguments: dict) -> dict:

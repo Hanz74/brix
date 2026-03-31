@@ -233,7 +233,125 @@ MIGRATIONS: list[dict] = [
     {"version": 59, "name": "add_group_name_to_persistent_store", "up": "ALTER TABLE persistent_store ADD COLUMN group_name TEXT DEFAULT ''", "down": ""},
     # T-BRIX-DBQUAL-01: Backfill pipeline_helpers from all stored pipeline YAMLs
     {"version": 60, "name": "backfill_pipeline_helpers", "up": "", "up_fn": "_backfill_pipeline_helpers", "down": "DELETE FROM pipeline_helpers"},
+    # T-BRIX-TIPS-01: Tips table — move hardcoded get_tips content to DB
+    {
+        "version": 61,
+        "name": "create_tips_table",
+        "up": """CREATE TABLE IF NOT EXISTS tips (
+            id         TEXT PRIMARY KEY,
+            category   TEXT NOT NULL,
+            title      TEXT NOT NULL,
+            content    TEXT NOT NULL,
+            priority   INTEGER DEFAULT 5,
+            is_active  INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        "down": "DROP TABLE IF EXISTS tips",
+    },
+    {
+        "version": 62,
+        "name": "seed_tips_from_hardcoded",
+        "up": "",
+        "up_fn": "_seed_tips_from_hardcoded",
+        "down": "DELETE FROM tips",
+    },
 ]
+
+
+def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
+    """Seed the tips table with the previously hardcoded static tip blocks."""
+    from uuid import uuid4
+    from brix.db import _now_iso
+
+    tips = [
+        ("BRICK-FIRST", "BRICK-FIRST — HÖCHSTE PRIORITÄT",
+         "Nutze Brick-Namen (db.query, flow.filter, llm.batch etc.) statt alte Runner-Namen\n"
+         "(python, http, mcp). Alte Namen funktionieren noch aber sind deprecated.\n"
+         "KEIN create_helper für Standardaufgaben — nutze bestehende Bricks:\n"
+         "  db.query         → Datenbankabfragen\n"
+         "  db.upsert        → Daten in DB schreiben\n"
+         "  llm.batch        → LLM-Extraktion über viele Dokumente\n"
+         "  markitdown.convert → Dokumente/PDFs in Markdown konvertieren\n"
+         "  extract.specialist → Regex-Extraktion mit Schema\n"
+         "  source.fetch     → Daten von Connectors holen (Outlook, OneDrive, ...)\n"
+         "  flow.filter      → Listen filtern\n"
+         "discover() zeigt alle verfügbaren Brick-Kategorien.", 10),
+        ("COMPOSITOR-REGEL", "COMPOSITOR-REGEL",
+         "IMMER search_helpers + search_pipelines aufrufen BEVOR ein neuer Helper\n"
+         "oder eine neue Pipeline erstellt wird.\n"
+         "Bestehende Bausteine wiederverwenden statt duplizieren!\n"
+         "1. search_helpers(query=...) — nach ähnlichen Helpers suchen\n"
+         "2. search_pipelines(query=...) — nach ähnlichen Pipelines suchen\n"
+         "3. Erst dann create_helper / create_pipeline aufrufen", 9),
+        ("PROFILES & VARIABLES", "PROFILES & VARIABLES",
+         "Profiles nutzen statt Config duplizieren: create_profile → step.profile\n"
+         "Variables für Runtime-Config: set_variable → {{ var.name }} in Pipelines\n"
+         "Persistent Store für Run-übergreifende Daten: store.key", 7),
+        ("KERN-REGEL", "KERN-REGEL",
+         "IMMER Brix MCP-Tools nutzen. KEINE Workarounds. KEINE manuellen Dateien.\n"
+         "KEIN docker exec. KEIN YAML schreiben. KEIN Container rebuild.\n"
+         "KEIN Bash(cat ~/.brix/...)       → nutze get_run_log / get_run_status\n"
+         "KEIN Bash(python3 -c ...)        → nutze create_helper\n"
+         "KEIN Bash(rm -f ...)             → nutze brix__delete_run / brix clean", 10),
+        ("HILFE VERFÜGBAR", "HILFE VERFÜGBAR",
+         "Für Details: brix__get_help(topic)\n"
+         "Topics: 'quick-start', 'step-types', 'step-referenzen', 'helper-scripts',\n"
+         "        'debugging', 'credentials', 'versioning', 'alerting', 'triggers',\n"
+         "        'advanced-features', 'foreach', 'flow-control',\n"
+         "        'brick-first', 'db-bricks', 'llm-bricks', 'source-bricks',\n"
+         "        'resilience', 'variables', 'profiles', 'testing'", 6),
+        ("STEP-OUTPUT REFERENZIEREN", "STEP-OUTPUT REFERENZIEREN",
+         "{{ step_id.output }}        ✅  ganzer Step-Output\n"
+         "{{ step_id.output.field }}  ✅  einzelnes Feld\n"
+         "{{ input.param }}           ✅  Pipeline-Input-Parameter\n"
+         "{{ item }} / {{ item.x }}   ✅  foreach-Element\n"
+         "{{ step_id.results }}       ✅  foreach-Items (selectattr/map)\n"
+         "{{ steps.step_id.data }}    ❌  FALSCH: kein 'steps.' Prefix, kein 'data'!\n"
+         "{{ step_id.data }}          ❌  FALSCH: Feld heißt 'output', nicht 'data'!", 8),
+        ("COMPOSITOR-MODE", "COMPOSITOR-MODE (T-BRIX-V8-07)",
+         "Pipelines mit compositor_mode: true erlauben KEIN python/cli.\n"
+         "Nutze Bricks und mcp_call statt Custom-Code.\n"
+         "Override möglich: allow_code: true auf Pipeline-Ebene.\n"
+         "compose_pipeline(compositor_mode=true) → LLM-sichere Brick-only Pipeline.", 7),
+        ("TOP-5 ANTI-PATTERNS", "TOP-5 ANTI-PATTERNS",
+         "delete_pipeline + create_pipeline  →  update_step / update_pipeline / add_step\n"
+         "YAML manuell schreiben             →  brix__create_pipeline mit steps inline\n"
+         "brix run via Bash                  →  brix__run_pipeline\n"
+         "base64 in foreach-Loops            →  Dateipfade als Strings übergeben\n"
+         "concurrency: '{{ input.n }}'       →  concurrency muss int sein (kein Jinja2!)", 9),
+        ("DEBUGGING", "DEBUGGING",
+         "Bei Fehler: brix__get_run_errors(run_id) → LLM-optimierte Fehleranalyse\n"
+         "Dann:       brix__diagnose_run(run_id)   → Schritt-für-Schritt-Diagnose\n"
+         "Auto-Fix:   brix__auto_fix_step(run_id, step_id) → ModuleNotFoundError / Timeout / UndefinedError", 8),
+        ("TOOL-KATEGORIEN", "TOOL-KATEGORIEN",
+         "Standalone:  create_pipeline / update_pipeline / list_pipelines / get_pipeline / search_pipelines\n"
+         "             create_helper / update_helper / list_helpers / get_helper / search_helpers\n"
+         "             run_pipeline / get_run_status / get_run_errors / get_run_log / cancel_run\n"
+         "             add_step / get_step / update_step / remove_step\n"
+         "             compose_pipeline / plan_pipeline / get_tips / get_help / discover / health\n"
+         "Konsolidiert (action-Parameter!):\n"
+         "  brix__trigger(action: add/get/list/update/delete/test)\n"
+         "  brix__alert(action: add/list/update/delete/history)\n"
+         "  brix__credential(action: add/get/list/update/delete/rotate/search)\n"
+         "  brix__server(action: add/list/update/remove/health/refresh)\n"
+         "  brix__state(action: get/set/list/delete)\n"
+         "  brix__trigger_group(action: add/get/list/start/stop/delete/update)\n"
+         "  brix__registry(action: add/get/list/update/delete/search)\n"
+         "  brix__org(action: create/list/delete/seed)\n"
+         "WICHTIG: NICHT trigger_update sondern trigger(action='update')!", 8),
+        ("PFAD-KONVENTION", "PFAD-KONVENTION",
+         "Host /root/... → Brix /host/root/... (Container-Dateisystem-Präfix!)", 7),
+    ]
+
+    now = _now_iso()
+    with db._connect() as conn:
+        for category, title, content, priority in tips:
+            conn.execute(
+                """INSERT INTO tips (id, category, title, content, priority, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+                (str(uuid4()), category, title, content, priority, now, now),
+            )
 
 
 def _backfill_pipeline_helpers(db: "BrixDB") -> None:
