@@ -920,11 +920,12 @@ def create_server(store: PipelineStore = None) -> Server:
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        # Core tools — from DB if available, else from code
+        # Core tools — from DB
         core_tools = _load_mcp_tools_from_db()
-        # Dynamically built pipeline tools
-        pipeline_tools = _build_pipeline_tools(_pipeline_store)
-        return core_tools + pipeline_tools
+        # Pipeline tools excluded from list_tools to keep response size
+        # manageable (<150KB). Pipelines are callable via run_pipeline(name=...).
+        # Uncomment to re-enable: pipeline_tools = _build_pipeline_tools(_pipeline_store)
+        return core_tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
