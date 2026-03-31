@@ -4618,7 +4618,26 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "CRUD action: create/list/delete/seed"
+            "description": "CRUD action: create/list/delete/seed",
+            "enum": ["create", "list", "delete", "seed"]
+          },
+          "type": {
+            "type": "string",
+            "description": "Entity type (required for create/delete, optional filter for list)",
+            "enum": ["project", "tag", "group"]
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the project/tag/group (required for create/delete)"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description (used with create)"
+          },
+          "pipelines": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of pipeline names belonging to this group (only for type=group, used with create)"
           }
         },
         "required": [
