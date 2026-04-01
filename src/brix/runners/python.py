@@ -7,6 +7,7 @@ from typing import Any
 
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout, get_default_timeout
+from brix.runners._subprocess import _terminate_subprocess
 
 # Prefix that helper scripts write to stderr to emit intra-step progress
 BRIX_PROGRESS_PREFIX = "BRIX_PROGRESS:"
@@ -126,6 +127,10 @@ class PythonRunner(BaseRunner):
                     "error": f"Timeout after {timeout_seconds}s",
                     "duration": time.monotonic() - start,
                 }
+            except asyncio.CancelledError:
+                # Run was cancelled — kill the subprocess (INBOX-510)
+                await _terminate_subprocess(proc)
+                raise
 
         except FileNotFoundError:
             return {

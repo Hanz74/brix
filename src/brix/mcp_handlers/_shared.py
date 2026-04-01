@@ -24,9 +24,16 @@ from brix.pipeline_store import PipelineStore
 from brix.credential_store import CredentialStore, CredentialNotFoundError, CREDENTIAL_TYPES
 from brix.config import config
 
-# Shared singletons
-_registry = BrickRegistry(db=BrixDB())
+# Shared singletons (lazy-init to avoid circular imports during migration)
+_registry = None
 _loader = PipelineLoader()
+
+
+def _get_registry():
+    global _registry
+    if _registry is None:
+        _registry = BrickRegistry(db=BrixDB())
+    return _registry
 _validator = PipelineValidator()
 _store = PipelineStore()
 _audit_db = BrixDB()  # shared instance for audit logging

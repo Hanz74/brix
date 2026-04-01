@@ -8,6 +8,7 @@ from typing import Any
 
 from .base import BaseRunner
 from brix.config import config
+from brix.runners._subprocess import _terminate_subprocess
 
 
 def parse_timeout(timeout_str: str) -> float:
@@ -167,6 +168,10 @@ class CliRunner(BaseRunner):
                 "error": f"Timeout after {timeout_seconds}s",
                 "duration": time.monotonic() - start,
             }
+        except asyncio.CancelledError:
+            # Run was cancelled — kill the subprocess (INBOX-510)
+            await _terminate_subprocess(proc)
+            raise
 
         duration = time.monotonic() - start
 

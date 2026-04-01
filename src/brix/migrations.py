@@ -313,7 +313,12 @@ def _register_new_tool_schemas_v67(db: "BrixDB") -> None:
     This prevents the problem where new handlers are added in code but
     never registered in the DB — making them invisible to MCP clients.
     """
-    from brix.mcp_server import _HANDLERS
+    try:
+        from brix.mcp_server import _HANDLERS
+    except ImportError:
+        # Circular import during test DB init — skip, startup_sync handles it
+        logger.warning("migration v67: skipped (circular import — startup_sync will handle)")
+        return
 
     with db._connect() as conn:
         db_tools = {r[0] for r in conn.execute("SELECT name FROM mcp_tool_schema").fetchall()}
@@ -793,7 +798,7 @@ def run_pending_migrations(db: "BrixDB") -> list[dict]:
                 applied_at = _now_iso()
                 mig_table = _migrations_table_name(conn)
                 conn.execute(
-                    f"INSERT INTO {mig_table} (version, name, applied_at) VALUES (?, ?, ?)",
+                    f"INSERT OR IGNORE INTO {mig_table} (version, name, applied_at) VALUES (?, ?, ?)",
                     (version, name, applied_at),
                 )
         except Exception as exc:
