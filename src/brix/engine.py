@@ -238,7 +238,8 @@ class PipelineEngine:
         # Load the brick registry so that dot-notation step types (e.g. "db.query")
         # can be resolved to their underlying runner name.
         from brix.bricks.registry import BrickRegistry as _BrickRegistry
-        self._brick_registry = _BrickRegistry()
+        from brix.db import BrixDB as _BrixDB
+        self._brick_registry = _BrickRegistry(db=_BrixDB())
 
         # Deprecation tracking DB (T-BRIX-DB-05d) — lazy-init in _resolve_runner
         self._deprecation_db: "BrixDB | None" = None
