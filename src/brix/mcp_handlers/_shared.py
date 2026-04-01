@@ -24,16 +24,30 @@ from brix.pipeline_store import PipelineStore
 from brix.credential_store import CredentialStore, CredentialNotFoundError, CREDENTIAL_TYPES
 from brix.config import config
 
-# Shared singletons (lazy-init to avoid circular imports during migration)
-_registry = None
+# Shared singletons.
+#
+# Handlers import ``_registry`` directly from this module and then call methods
+# on it. A plain ``None`` sentinel breaks that import pattern because later
+# assigning to the module-level name does not update already imported
+# references. Keep lazy construction, but expose a stable proxy object so all
+# imports resolve the real BrickRegistry on first use.
+_registry_instance = None
+
+
+class _RegistryProxy:
+    def __getattr__(self, name):
+        return getattr(_get_registry(), name)
+
+
+_registry = _RegistryProxy()
 _loader = PipelineLoader()
 
 
 def _get_registry():
-    global _registry
-    if _registry is None:
-        _registry = BrickRegistry(db=BrixDB())
-    return _registry
+    global _registry_instance
+    if _registry_instance is None:
+        _registry_instance = BrickRegistry(db=BrixDB())
+    return _registry_instance
 _validator = PipelineValidator()
 _store = PipelineStore()
 _audit_db = BrixDB()  # shared instance for audit logging
