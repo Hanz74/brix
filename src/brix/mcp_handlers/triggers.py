@@ -1,6 +1,8 @@
 """Trigger and scheduler handler module."""
 from __future__ import annotations
 
+import asyncio
+
 # In-process scheduler state (per-MCP-server-process)
 _scheduler_task: "asyncio.Task | None" = None
 _scheduler_running: bool = False
@@ -198,13 +200,15 @@ async def _handle_scheduler_status(arguments: dict) -> dict:
     store = TriggerStore()
     triggers = store.list_all()
     enabled = [t for t in triggers if t.get("enabled")]
+    # T-BRIX-BUG-18: Report actual task liveness, not just the flag.
+    task_alive = _scheduler_task is not None and not _scheduler_task.done()
     return {
-        "running": _scheduler_running,
+        "running": _scheduler_running and task_alive,
         "trigger_count": len(triggers),
         "enabled_count": len(enabled),
         "note": (
-            "The Brix scheduler runs in-process. "
-            "Use brix__scheduler_start/stop to control it in the current MCP server process."
+            "The Brix scheduler runs in-process independently of MCP sessions. "
+            "Use brix__scheduler_start/stop to control it."
         ),
     }
 
@@ -236,7 +240,8 @@ async def _handle_scheduler_start(arguments: dict) -> dict:
     triggers = store.list_all()
     enabled = [t for t in triggers if t.get("enabled")]
 
-    if _scheduler_running:
+    # Already running with a live task — nothing to do.
+    if _scheduler_running and _scheduler_task is not None and not _scheduler_task.done():
         return {
             "success": True,
             "status": "already_running",
@@ -252,6 +257,24 @@ async def _handle_scheduler_start(arguments: dict) -> dict:
 
     _scheduler_running = True
 
+    # T-BRIX-BUG-18: Actually create a background asyncio task for the
+    # TriggerService so triggers poll independently of MCP sessions.
+    from brix.triggers.service import TriggerService
+    svc = TriggerService()
+    _scheduler_task = asyncio.create_task(svc.start(), name="brix-trigger-service")
+
+    # Log exceptions from the background task without crashing
+    def _on_scheduler_done(task: asyncio.Task) -> None:
+        global _scheduler_running
+        _scheduler_running = False
+        if not task.cancelled() and task.exception():
+            import logging
+            logging.getLogger(__name__).error(
+                "Trigger scheduler task failed: %s", task.exception()
+            )
+
+    _scheduler_task.add_done_callback(_on_scheduler_done)
+
     return {
         "success": True,
         "status": "started",
@@ -265,12 +288,22 @@ async def _handle_scheduler_start(arguments: dict) -> dict:
 
 async def _handle_scheduler_stop(arguments: dict) -> dict:
     """Stop the in-process trigger scheduler."""
-    global _scheduler_running
+    global _scheduler_running, _scheduler_task
 
-    if not _scheduler_running:
+    if not _scheduler_running and (_scheduler_task is None or _scheduler_task.done()):
         return {"success": True, "status": "already_stopped"}
 
     _scheduler_running = False
+
+    # T-BRIX-BUG-18: Cancel the actual background task.
+    if _scheduler_task is not None and not _scheduler_task.done():
+        _scheduler_task.cancel()
+        try:
+            await _scheduler_task
+        except asyncio.CancelledError:
+            pass
+        _scheduler_task = None
+
     return {"success": True, "status": "stopped"}
 
 

@@ -1008,15 +1008,31 @@ async def run_mcp_server() -> None:
     except Exception as _sync_err:
         logger.warning("startup_sync failed (non-fatal): %s", _sync_err)
 
-    server = create_server()
-    # T-BRIX-V6-BUG-01: Auto-start scheduler if enabled triggers exist
+    # T-BRIX-BUG-18: Start the scheduler OUTSIDE the MCP session scope so it
+    # survives client disconnects/reconnects.  The process stays alive and
+    # re-enters stdio_server() for the next MCP session.
     await _auto_start_scheduler_if_needed()
-    async with stdio_server() as (read_stream, write_stream):
-        # T-BRIX-V6-05: declare claude/channel experimental capability
-        init_options = server.create_initialization_options(
-            experimental_capabilities={"claude/channel": {}}
-        )
-        await server.run(read_stream, write_stream, init_options)
+
+    while True:
+        server = create_server()
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                # T-BRIX-V6-05: declare claude/channel experimental capability
+                init_options = server.create_initialization_options(
+                    experimental_capabilities={"claude/channel": {}}
+                )
+                await server.run(read_stream, write_stream, init_options)
+        except Exception as exc:
+            logger.warning("MCP stdio session ended: %s", exc)
+
+        # Session ended (client disconnected).  If stdin is closed (EOF),
+        # there is no way to accept a new connection — exit the loop.
+        import sys as _sys
+        if _sys.stdin.closed or _sys.stdin is None:
+            logger.info("stdin closed — exiting MCP server loop")
+            break
+
+        logger.info("MCP client disconnected, waiting for reconnection…")
 
 
 async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
