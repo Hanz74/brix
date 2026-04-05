@@ -2215,7 +2215,7 @@
         {
           "name": "username",
           "type": "string",
-          "description": "Gmail address (e.g. user@gmail.com).",
+          "description": "Gmail address (e.g. user@example.com).",
           "required": true,
           "default": null
         },

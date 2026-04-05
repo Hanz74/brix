@@ -26,7 +26,7 @@ class NotifyRunner(BaseRunner):
         - id: alert
           type: notify
           channel: whatsapp
-          to: "491701234567@c.us"
+          to: "49170EXAMPLE@c.us"
           message: "Pipeline done: {{ input.name }}"
     """
 

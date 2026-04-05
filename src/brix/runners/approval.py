@@ -26,7 +26,7 @@ class ApprovalRunner(BaseRunner):
           approval_timeout: "1h"
           on_timeout: stop      # or "continue"
           channel: whatsapp     # optional — notify via NotifyRunner
-          to: "491701234567@c.us"
+          to: "49170EXAMPLE@c.us"
     """
 
     def config_schema(self) -> dict:
