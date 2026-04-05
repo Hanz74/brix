@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
-_VALID_TYPES = {"mail", "file", "http_poll", "pipeline_done", "event"}  # "event" added T-BRIX-DB-22
+_VALID_TYPES = {"mail", "file", "http_poll", "pipeline_done", "event", "schedule"}  # "event" T-BRIX-DB-22, "schedule" T-BRIX-BUG-19
 
 
 def _now_iso() -> str:

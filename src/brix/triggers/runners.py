@@ -4,6 +4,7 @@ import hashlib
 import imaplib
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -449,10 +450,125 @@ class PipelineDoneTriggerRunner(BaseTriggerRunner):
         return result
 
 
+# ---------------------------------------------------------------------------
+# Cron matching (no external dependencies)
+# ---------------------------------------------------------------------------
+
+def _parse_cron_field(field: str, min_val: int, max_val: int) -> set[int]:
+    """Parse a single cron field into a set of matching integer values.
+
+    Supports: * (any), */N (step), N (exact), N-M (range), N-M/S (range+step),
+    and comma-separated combinations of the above.
+    """
+    values: set[int] = set()
+    for part in field.split(","):
+        part = part.strip()
+        if not part:
+            continue
+
+        # Handle step: */N or N-M/S
+        step = 1
+        if "/" in part:
+            base, step_str = part.split("/", 1)
+            step = int(step_str)
+        else:
+            base = part
+
+        if base == "*":
+            values.update(range(min_val, max_val + 1, step))
+        elif "-" in base:
+            lo_str, hi_str = base.split("-", 1)
+            lo, hi = int(lo_str), int(hi_str)
+            values.update(range(lo, hi + 1, step))
+        else:
+            # Exact value (step is ignored for bare numbers)
+            values.add(int(base))
+
+    return values
+
+
+def cron_matches(expr: str, dt: datetime) -> bool:
+    """Check whether *dt* matches a 5-field cron expression.
+
+    Fields: minute hour day-of-month month day-of-week (0=Sun or 7=Sun).
+    """
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        raise ValueError(f"Cron expression must have 5 fields, got {len(parts)}: '{expr}'")
+
+    minute_set = _parse_cron_field(parts[0], 0, 59)
+    hour_set = _parse_cron_field(parts[1], 0, 23)
+    dom_set = _parse_cron_field(parts[2], 1, 31)
+    month_set = _parse_cron_field(parts[3], 1, 12)
+    dow_set = _parse_cron_field(parts[4], 0, 7)
+    # Normalise: 7 == 0 (both mean Sunday)
+    if 7 in dow_set:
+        dow_set.add(0)
+
+    # Python weekday: Monday=0 .. Sunday=6 → cron weekday: Sunday=0 .. Saturday=6
+    cron_dow = (dt.weekday() + 1) % 7
+
+    return (
+        dt.minute in minute_set
+        and dt.hour in hour_set
+        and dt.day in dom_set
+        and dt.month in month_set
+        and cron_dow in dow_set
+    )
+
+
+class ScheduleTriggerRunner(BaseTriggerRunner):
+    """Fires when a cron expression is due since last_fired.
+
+    Config fields:
+        cron (str, required): 5-field cron expression.
+        timezone (str, optional): currently only "UTC" is supported (default).
+    """
+
+    async def poll(self) -> list[dict]:
+        cron_expr = self.trigger.cron or (self.trigger.filter.get("cron") if self.trigger.filter else None)
+        if not cron_expr:
+            # Also check config dict that comes from the DB store
+            cron_expr = getattr(self.trigger, "config", {}).get("cron") if hasattr(self.trigger, "config") else None
+        if not cron_expr:
+            print(f"[trigger:{self.trigger.id}] schedule: 'cron' is required in config")
+            return []
+
+        now = datetime.now(timezone.utc)
+
+        # Check if current minute matches the cron expression
+        if not cron_matches(cron_expr, now):
+            return []
+
+        # Prevent double-firing within the same minute
+        last_fired = self.state.get_last_check(self.trigger.id)
+        if last_fired:
+            last_dt = datetime.fromtimestamp(last_fired, tz=timezone.utc)
+            if (
+                last_dt.year == now.year
+                and last_dt.month == now.month
+                and last_dt.day == now.day
+                and last_dt.hour == now.hour
+                and last_dt.minute == now.minute
+            ):
+                return []
+
+        # Record that we fired this minute
+        self.state.set_last_check(self.trigger.id, now.timestamp())
+
+        return [{
+            "type": "schedule",
+            "cron": cron_expr,
+            "fired_at": now.isoformat(),
+        }]
+
+
 # Registry
 TRIGGER_RUNNERS = {
     "mail": MailTriggerRunner,
     "file": FileTriggerRunner,
     "http_poll": HttpPollTriggerRunner,
     "pipeline_done": PipelineDoneTriggerRunner,
+    "schedule": ScheduleTriggerRunner,
+    "event": ScheduleTriggerRunner,  # alias (T-BRIX-BUG-19)
 }

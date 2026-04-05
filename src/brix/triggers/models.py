@@ -49,3 +49,5 @@ class TriggerConfig(BaseModel):
     # e.g. "5m" means: wait 5 minutes after last event before firing.
     # If more events arrive within the window the timer resets.
     debounce: Optional[str] = None  # Duration string, e.g. "5m", "30s"
+    # T-BRIX-BUG-19: Schedule trigger (cron)
+    cron: Optional[str] = None  # 5-field cron expression, e.g. "0 */3 * * *"
