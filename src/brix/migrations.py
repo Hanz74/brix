@@ -589,6 +589,8 @@ def _normalize_pipeline_steps_common(
 
 def _normalize_pipeline_steps_v71(db: "BrixDB") -> None:
     """Normalize legacy YAML-backed pipelines into step/input/credential rows."""
+    # Ensure nested step JSON columns exist (v72 adds them, but v71 needs them first)
+    _add_nested_step_json_columns_v72(db)
     _normalize_pipeline_steps_common(db, log_prefix="migration v71")
 
 
