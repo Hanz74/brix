@@ -346,6 +346,19 @@ class Step(BaseModel):
                     )
         return self
 
+    def to_db_dict(self) -> dict:
+        """Serialize the step to the normalized DB row shape."""
+        from brix.db import step_dict_to_row
+
+        return step_dict_to_row(self.model_dump())
+
+    @classmethod
+    def from_db_row(cls, row: dict) -> "Step":
+        """Build a validated step from a normalized DB row."""
+        from brix.db import step_row_to_dict
+
+        return cls.model_validate(step_row_to_dict(row))
+
 
 class MattermostNotifyConfig(BaseModel):
     """Mattermost webhook notification configuration (T-BRIX-V6-06)."""
@@ -459,6 +472,68 @@ class Pipeline(BaseModel):
         if len(v) < 1:
             raise ValueError("Pipeline must have at least one step")
         return v
+
+    @classmethod
+    def from_db(
+        cls,
+        pipeline_row: dict,
+        step_rows: list[dict],
+        credential_rows: list[dict] | None = None,
+        input_rows: list[dict] | None = None,
+    ) -> "Pipeline":
+        """Build a validated pipeline from normalized DB rows."""
+        from brix.db import _json_loads
+
+        pipeline_data: dict[str, Any] = {
+            "name": pipeline_row["name"],
+            "version": pipeline_row.get("version") or "1.0.0",
+            "description": pipeline_row.get("description"),
+            "brix_version": pipeline_row.get("brix_version"),
+            "kind": pipeline_row.get("kind"),
+            "extends": pipeline_row.get("extends"),
+            "idempotency_key": pipeline_row.get("idempotency_key"),
+            "is_template": bool(pipeline_row.get("is_template")),
+            "compositor_mode": bool(pipeline_row.get("compositor_mode")),
+            "allow_code": bool(pipeline_row.get("allow_code")),
+            "strict_bricks": bool(pipeline_row.get("strict_bricks")),
+            "test_mode": bool(pipeline_row.get("test_mode")),
+            "template_params": _json_loads(pipeline_row.get("template_params_json")) or {},
+            "blueprint_params": _json_loads(pipeline_row.get("blueprint_params_json")) or [],
+            "error_handling": _json_loads(pipeline_row.get("error_handling_json")) or {},
+            "retry_profiles": _json_loads(pipeline_row.get("retry_profiles_json")) or {},
+            "notify": _json_loads(pipeline_row.get("notify_json")) or {},
+            "groups": _json_loads(pipeline_row.get("groups_json")) or {},
+            "output": _json_loads(pipeline_row.get("output_json")),
+            "output_slots": _json_loads(pipeline_row.get("output_slots_json")) or {},
+            "requirements": _json_loads(pipeline_row.get("requirements_json")) or [],
+        }
+
+        credentials: dict[str, Any] = {}
+        for row in credential_rows or []:
+            alias = row.get("alias", row.get("name"))
+            env = row.get("env_ref", row.get("env"))
+            cred: dict[str, Any] = {"env": env}
+            refresh = _json_loads(row.get("refresh_json", row.get("refresh")))
+            if refresh is not None:
+                cred["refresh"] = refresh
+            if alias is not None:
+                credentials[alias] = cred
+        pipeline_data["credentials"] = credentials
+
+        inputs: dict[str, Any] = {}
+        for row in input_rows or []:
+            input_key = row.get("input_key", row.get("name"))
+            param = {
+                "type": row.get("type"),
+                "default": _json_loads(row.get("default_json", row.get("default"))),
+                "description": row.get("description"),
+            }
+            if input_key is not None:
+                inputs[input_key] = param
+        pipeline_data["input"] = inputs
+
+        pipeline_data["steps"] = [Step.from_db_row(row) for row in step_rows]
+        return cls.model_validate(pipeline_data)
 
 
 class StepResult(BaseModel):
