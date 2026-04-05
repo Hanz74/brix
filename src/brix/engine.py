@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,6 +34,7 @@ from brix.runners.queue import QueueRunner
 from brix.runners.emit import EmitRunner
 from brix.progress import ProgressReporter
 from brix.mcp_pool import McpConnectionPool
+from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 
 # ---------------------------------------------------------------------------
 # Brick-First Engine — T-BRIX-DB-05c
@@ -442,6 +444,53 @@ class PipelineEngine:
             return runner
 
         return None
+
+    def _resolve_step_credentials(self, step: Any) -> dict[str, Any]:
+        """Resolve per-step credentials using the same rules as PipelineContext."""
+        step_credentials = getattr(step, "credentials", None) or {}
+        resolved: dict[str, Any] = {}
+        for key, cred in step_credentials.items():
+            if isinstance(cred, str):
+                cred = {"env": cred}
+            if not isinstance(cred, dict):
+                continue
+            env_ref = cred.get("env", "")
+            if is_credential_uuid(env_ref):
+                try:
+                    value = CredentialStore().resolve(env_ref)
+                except CredentialNotFoundError:
+                    import warnings
+
+                    warnings.warn(
+                        f"Credential UUID '{env_ref}' not found in store for key '{key}'. "
+                        "Using empty string.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    value = ""
+            else:
+                value = os.environ.get(env_ref, "")
+            if cred.get("refresh") is not None:
+                value = PipelineContext._refresh_credential(cred, value)
+            resolved[key] = value
+        return resolved
+
+    @contextmanager
+    def _step_credentials_context(self, context: "PipelineContext", step: Any):
+        """Overlay step credentials for a single step execution."""
+        step_credentials = self._resolve_step_credentials(step)
+        if not step_credentials:
+            yield
+            return
+
+        original_credentials = dict(context.credentials)
+        context.credentials = {**original_credentials, **step_credentials}
+        context._jinja_cache = None
+        try:
+            yield
+        finally:
+            context.credentials = original_credentials
+            context._jinja_cache = None
 
     async def run(self, pipeline: Pipeline, user_input: dict = None, keep_workdir: bool = False, run_id: str = None, profile: str = None, mcp_pool: "McpConnectionPool | None" = None, dry_run_steps: "list[str] | None" = None, _inherit_input: dict = None) -> RunResult:
         """Execute a pipeline and return results.
@@ -856,51 +905,52 @@ class PipelineEngine:
                                         break
                                     continue
 
-                            jinja_ctx = context.to_jinja_context()
-                            items = self.loader.resolve_foreach(step.foreach, jinja_ctx)
+                            with self._step_credentials_context(context, step):
+                                jinja_ctx = context.to_jinja_context()
+                                items = self.loader.resolve_foreach(step.foreach, jinja_ctx)
 
-                            step_start = time.monotonic()
-                            if step.batch_size > 0:
-                                # Batch mode: chunk items and run each batch through the existing foreach path
-                                chunks = self._chunk_items(items, step.batch_size)
-                                all_batch_items: list = []
-                                all_batch_succeeded = 0
-                                all_batch_failed = 0
-                                batch_aborted = False
-                                for chunk_idx, chunk in enumerate(chunks):
-                                    self.progress.step_start(
-                                        f"{step.id}[batch {chunk_idx + 1}/{len(chunks)}]", step.type
-                                    )
-                                    if step.parallel:
-                                        chunk_result = await self._run_foreach_parallel(step, chunk, context, pipeline)
-                                    else:
-                                        chunk_result = await self._run_foreach_sequential(step, chunk, context, pipeline)
-                                    chunk_summary = chunk_result.get("summary", {})
-                                    all_batch_items.extend(chunk_result.get("items", []))
-                                    all_batch_succeeded += chunk_summary.get("succeeded", 0)
-                                    all_batch_failed += chunk_summary.get("failed", 0)
-                                    if not chunk_result.get("success"):
-                                        effective_on_error = step.on_error or pipeline.error_handling.on_error
-                                        if effective_on_error == "stop":
-                                            batch_aborted = True
-                                            break
-                                foreach_result = {
-                                    "items": all_batch_items,
-                                    "summary": {
-                                        "total": all_batch_succeeded + all_batch_failed,
-                                        "succeeded": all_batch_succeeded,
-                                        "failed": all_batch_failed,
-                                    },
-                                    "success": all_batch_failed == 0 or (
-                                        not batch_aborted and
-                                        (step.on_error or pipeline.error_handling.on_error) == "continue"
-                                    ),
-                                    "duration": 0.0,
-                                }
-                            elif step.parallel:
-                                foreach_result = await self._run_foreach_parallel(step, items, context, pipeline)
-                            else:
-                                foreach_result = await self._run_foreach_sequential(step, items, context, pipeline)
+                                step_start = time.monotonic()
+                                if step.batch_size > 0:
+                                    # Batch mode: chunk items and run each batch through the existing foreach path
+                                    chunks = self._chunk_items(items, step.batch_size)
+                                    all_batch_items: list = []
+                                    all_batch_succeeded = 0
+                                    all_batch_failed = 0
+                                    batch_aborted = False
+                                    for chunk_idx, chunk in enumerate(chunks):
+                                        self.progress.step_start(
+                                            f"{step.id}[batch {chunk_idx + 1}/{len(chunks)}]", step.type
+                                        )
+                                        if step.parallel:
+                                            chunk_result = await self._run_foreach_parallel(step, chunk, context, pipeline)
+                                        else:
+                                            chunk_result = await self._run_foreach_sequential(step, chunk, context, pipeline)
+                                        chunk_summary = chunk_result.get("summary", {})
+                                        all_batch_items.extend(chunk_result.get("items", []))
+                                        all_batch_succeeded += chunk_summary.get("succeeded", 0)
+                                        all_batch_failed += chunk_summary.get("failed", 0)
+                                        if not chunk_result.get("success"):
+                                            effective_on_error = step.on_error or pipeline.error_handling.on_error
+                                            if effective_on_error == "stop":
+                                                batch_aborted = True
+                                                break
+                                    foreach_result = {
+                                        "items": all_batch_items,
+                                        "summary": {
+                                            "total": all_batch_succeeded + all_batch_failed,
+                                            "succeeded": all_batch_succeeded,
+                                            "failed": all_batch_failed,
+                                        },
+                                        "success": all_batch_failed == 0 or (
+                                            not batch_aborted and
+                                            (step.on_error or pipeline.error_handling.on_error) == "continue"
+                                        ),
+                                        "duration": 0.0,
+                                    }
+                                elif step.parallel:
+                                    foreach_result = await self._run_foreach_parallel(step, items, context, pipeline)
+                                else:
+                                    foreach_result = await self._run_foreach_sequential(step, items, context, pipeline)
                             step_duration = time.monotonic() - step_start
 
                             # --- Performance hints ---
@@ -1130,11 +1180,12 @@ class PipelineEngine:
                         self._write_context_snapshot(context)
 
                         self.progress.step_start(step.id, step.type)
-                        step_start = time.monotonic()
-                        _step_started_at = datetime.now(timezone.utc).isoformat()
-                        result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-                        step_duration = time.monotonic() - step_start
-                        _step_ended_at = datetime.now(timezone.utc).isoformat()
+                        with self._step_credentials_context(context, step):
+                            step_start = time.monotonic()
+                            _step_started_at = datetime.now(timezone.utc).isoformat()
+                            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
+                            step_duration = time.monotonic() - step_start
+                            _step_ended_at = datetime.now(timezone.utc).isoformat()
 
                         # --- report_progress compliance check (T-BRIX-DB-15) ---
                         # Warn if the runner did not call report_progress() at all.
@@ -2145,9 +2196,10 @@ class PipelineEngine:
             rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
 
             self.progress.step_start(step.id, step.type)
-            step_start = time.monotonic()
-            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-            step_duration = time.monotonic() - step_start
+            with self._step_credentials_context(context, step):
+                step_start = time.monotonic()
+                result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
+                step_duration = time.monotonic() - step_start
 
             if result.get("success"):
                 context.set_output(step.id, result.get("data"))
