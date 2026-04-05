@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from brix.db import BrixDB, _PIPELINE_BOOL_COLUMNS, _PIPELINE_JSON_COLUMNS, _json_dumps
 from brix.loader import PipelineLoader
-from brix.models import Pipeline
+from brix.models import Pipeline, Step
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +246,15 @@ class PipelineStore:
             conn.execute("DELETE FROM pipeline_input WHERE pipeline_id=?", (pipeline_id,))
 
             for step_order, step in enumerate(pipeline_data.get("steps") or []):
+                try:
+                    Step.model_validate(step)
+                except Exception as exc:
+                    logger.warning(
+                        "pipeline_store.save: step '%s' in pipeline '%s' failed validation; using raw data: %s",
+                        (step or {}).get("id", f"index:{step_order}"),
+                        pipeline_name,
+                        exc,
+                    )
                 self._db.upsert_step(pipeline_id, step, step_order=step_order, conn=conn)
 
             credentials = pipeline_data.get("credentials") or {}

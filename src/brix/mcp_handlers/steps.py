@@ -321,11 +321,21 @@ async def _handle_add_step(arguments: dict) -> dict:
 
     if is_migrated and pipeline_row is not None:
         from brix.db import BrixDB as _BrixDB
+        from brix.models import Step as _StepModel
 
         db = _BrixDB()
         ordered_ids = [s.get("id") for s in steps if isinstance(s, dict) and s.get("id")]
         insert_index = ordered_ids.index(step_id)
         try:
+            try:
+                _StepModel.model_validate(step)
+            except Exception as exc:
+                _logger.warning(
+                    "_handle_add_step: step '%s' in pipeline '%s' failed validation; using raw data: %s",
+                    step_id,
+                    name,
+                    exc,
+                )
             db.upsert_step(pipeline_row["id"], step, step_order=insert_index)
             db.reorder_steps(pipeline_row["id"], ordered_ids)
             _bump_pipeline_version_row(pipeline_row, bump="minor", db=db)

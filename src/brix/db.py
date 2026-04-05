@@ -33,6 +33,8 @@ from uuid import uuid4
 
 from brix.config import config as _brix_config
 
+logger = logging.getLogger(__name__)
+
 BRIX_DB_PATH = Path(os.environ["BRIX_DB_PATH"]) if os.environ.get("BRIX_DB_PATH") else Path.home() / ".brix" / "brix.db"
 HISTORY_DB_PATH = Path.home() / ".brix" / "history.db"
 REGISTRY_YAML_PATH = Path.home() / ".brix" / "helpers" / "registry.yaml"
@@ -67,6 +69,7 @@ _STEP_FIELD_TO_COLUMN: dict[str, str] = {
     "id": "step_key",
     "type": "step_type",
     "pipeline": "sub_pipeline",
+    "success": "success_on_stop",
     "to": "notify_to",
     "when": "when_expr",
     "until": "until_expr",
@@ -75,7 +78,7 @@ _STEP_FIELD_TO_COLUMN: dict[str, str] = {
 }
 
 _STEP_COLUMN_TO_FIELD: dict[str, str] = {
-    value: key for key, value in _STEP_FIELD_TO_COLUMN.items()
+    value: key for key, value in _STEP_FIELD_TO_COLUMN.items() if key != "success"
 }
 
 _STEP_JSON_COLUMNS: set[str] = {
@@ -130,6 +133,8 @@ _STEP_STRUCTURAL_COLUMNS: set[str] = {
     "updated_at",
 }
 
+_STEP_ALLOWED_COLUMNS_EXCLUDED: set[str] = _STEP_STRUCTURAL_COLUMNS | {"id"}
+
 _PIPELINE_JSON_COLUMNS: dict[str, str] = {
     "template_params_json": "template_params",
     "blueprint_params_json": "blueprint_params",
@@ -172,7 +177,11 @@ def step_dict_to_row(step_dict: dict) -> dict:
         if column is None and f"{key}_json" in _STEP_JSON_COLUMNS:
             column = f"{key}_json"
         if column is None:
-            column = key
+            if key in _STEP_ALLOWED_COLUMNS:
+                column = key
+            else:
+                logger.debug("step_dict_to_row: skipping unknown step field '%s'", key)
+                continue
         if column in _STEP_JSON_COLUMNS:
             row[column] = _json_dumps(value)
         elif column in _STEP_BOOL_COLUMNS:
@@ -328,6 +337,10 @@ _PIPELINE_STEP_INDEX_DDL = [
         ON pipeline_step (pipeline_id, step_key)
     """,
 ]
+
+_PIPELINE_STEP_COLUMNS: frozenset[str] = frozenset()
+
+_STEP_ALLOWED_COLUMNS: frozenset[str] = frozenset()
 
 _DDL = [
     """
@@ -933,6 +946,15 @@ _DDL = [
 # Table-name allowlist — derived from _DDL at import time (T-BRIX-SEC-01)
 # ---------------------------------------------------------------------------
 import re as _re
+
+_PIPELINE_STEP_COLUMNS = frozenset(
+    _re.findall(r"^\s+([a-z_][a-z0-9_]*)\s+", _PIPELINE_STEP_DDL, flags=_re.MULTILINE)
+)
+
+_STEP_ALLOWED_COLUMNS = frozenset(
+    column for column in _PIPELINE_STEP_COLUMNS
+    if column not in _STEP_ALLOWED_COLUMNS_EXCLUDED
+)
 
 _KNOWN_TABLES: frozenset[str] = frozenset(
     _re.findall(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", " ".join(_DDL))
