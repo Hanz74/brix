@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 import tarfile
 import tempfile
 from datetime import datetime, timezone
@@ -58,6 +59,57 @@ DEFAULT_HELPERS_DIRS: list[Path] = [
     Path("/app/helpers"),
     Path.home() / ".brix" / "helpers",
 ]
+
+
+def _helper_ref_from_name(name: str) -> str:
+    helper = (name or "").strip()
+    if helper.startswith("helpers/") and helper.endswith(".py"):
+        return helper
+    if helper.endswith(".py"):
+        helper = Path(helper).stem
+    return f"helpers/{helper}.py"
+
+
+def _pipeline_name_from_reference(pipeline_path: Path) -> str:
+    return pipeline_path.stem
+
+
+def _pipeline_dict_from_db(db, pipeline_name: str) -> tuple[dict, dict]:
+    pipeline_row = db.get_pipeline(pipeline_name)
+    if pipeline_row is None:
+        raise FileNotFoundError(f"Pipeline '{pipeline_name}' not found in DB")
+    pipeline_dict = db.pipeline_to_dict(pipeline_row["id"])
+    if pipeline_dict is None:
+        raise FileNotFoundError(f"Pipeline '{pipeline_name}' could not be reconstructed from DB")
+    return pipeline_row, pipeline_dict
+
+
+def _pipeline_yaml_from_db(db, pipeline_name: str) -> tuple[dict, dict, str]:
+    pipeline_row, pipeline_dict = _pipeline_dict_from_db(db, pipeline_name)
+    pipeline_yaml = yaml.dump(
+        pipeline_dict,
+        default_flow_style=False,
+        allow_unicode=True,
+        sort_keys=False,
+    )
+    return pipeline_row, pipeline_dict, pipeline_yaml
+
+
+def _find_helper_references_for_pipeline(db, pipeline_id: str) -> list[str]:
+    with db._connect() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT helper
+            FROM pipeline_step
+            WHERE pipeline_id=?
+              AND helper IS NOT NULL
+              AND TRIM(helper) != ''
+            ORDER BY position ASC
+            """,
+            (pipeline_id,),
+        ).fetchall()
+    return sorted({_helper_ref_from_name(row["helper"]) for row in rows if row["helper"]})
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +174,7 @@ def export_bundle(
     *,
     base_dir: Optional[Path] = None,
     include_missing: bool = False,
+    db: Optional[object] = None,
 ) -> "BundleManifest":
     """Create a ``.brix.tar.gz`` bundle from a pipeline and its helpers.
 
@@ -143,12 +196,17 @@ def export_bundle(
     BundleManifest
         Metadata about the created bundle.
     """
+    if db is None:
+        from brix.db import BrixDB
+        db = BrixDB()
+
     pipeline_path = pipeline_path.resolve()
     if base_dir is None:
         base_dir = pipeline_path.parent
 
-    pipeline_yaml = pipeline_path.read_text(encoding="utf-8")
-    helper_refs = find_helper_references(pipeline_yaml)
+    pipeline_name = _pipeline_name_from_reference(pipeline_path)
+    pipeline_row, pipeline_dict, pipeline_yaml = _pipeline_yaml_from_db(db, pipeline_name)
+    helper_refs = _find_helper_references_for_pipeline(db, pipeline_row["id"])
 
     # Resolve helpers — search order:
     # 1. base_dir / ref  (pipeline's own directory)
@@ -157,12 +215,12 @@ def export_bundle(
     _managed_helpers = Path.home() / ".brix" / "helpers"
     _legacy_helpers = Path("/app/helpers")
 
-    helpers: list[tuple[str, Path]] = []  # (archive_path, local_path)
+    helpers: list[tuple[str, Optional[Path], Optional[bytes]]] = []
     missing: list[str] = []
     for ref in helper_refs:
         local = base_dir / ref
         if local.exists():
-            helpers.append((ref, local))
+            helpers.append((ref, local, None))
             continue
 
         # Fallback: search by filename in managed and legacy dirs
@@ -170,11 +228,14 @@ def export_bundle(
         managed_candidate = _managed_helpers / script_name
         legacy_candidate = _legacy_helpers / script_name
         if managed_candidate.exists():
-            helpers.append((ref, managed_candidate))
+            helpers.append((ref, managed_candidate, None))
         elif legacy_candidate.exists():
-            helpers.append((ref, legacy_candidate))
+            helpers.append((ref, legacy_candidate, None))
         else:
-            if include_missing:
+            helper_code = db.get_helper_code(Path(ref).stem)
+            if helper_code is not None:
+                helpers.append((ref, None, helper_code.encode("utf-8")))
+            elif include_missing:
                 missing.append(ref)
             else:
                 raise FileNotFoundError(
@@ -185,13 +246,7 @@ def export_bundle(
                 )
 
     # Extract requirements from pipeline (T-BRIX-V4-BUG-11)
-    from brix.loader import PipelineLoader as _PipelineLoader
-    try:
-        _loader = _PipelineLoader()
-        _pipeline = _loader.load(str(pipeline_path))
-        _requirements = list(_pipeline.requirements)
-    except Exception:
-        _requirements = []
+    _requirements = list(pipeline_dict.get("requirements") or [])
 
     # Build manifest
     manifest = BundleManifest(
@@ -199,7 +254,7 @@ def export_bundle(
         pipeline_file=pipeline_path.name,
         brix_version=__version__,
         created_at=datetime.now(tz=timezone.utc).isoformat(),
-        helpers=[ref for ref, _ in helpers],
+        helpers=[ref for ref, _, _ in helpers],
         missing_helpers=missing,
         pipeline_checksum=_sha256(pipeline_yaml.encode()),
         requirements=_requirements,
@@ -218,8 +273,11 @@ def export_bundle(
         )
 
         # 2. Helpers
-        for arcname, local_path in helpers:
-            tar.add(str(local_path), arcname=arcname)
+        for arcname, local_path, helper_bytes in helpers:
+            if local_path is not None:
+                tar.add(str(local_path), arcname=arcname)
+            elif helper_bytes is not None:
+                _tar_add_bytes(tar, data=helper_bytes, arcname=arcname)
 
         # 3. Manifest
         manifest_json = json.dumps(manifest.to_dict(), indent=2).encode("utf-8")
@@ -257,6 +315,7 @@ def import_bundle(
     pipelines_dir: Optional[Path] = None,
     helpers_dir: Optional[Path] = None,
     overwrite: bool = False,
+    db: Optional[object] = None,
 ) -> "ImportResult":
     """Extract a ``.brix.tar.gz`` bundle and install pipeline + helpers.
 
@@ -278,6 +337,10 @@ def import_bundle(
         Summary of what was installed.
     """
     bundle_path = bundle_path.resolve()
+
+    if db is None:
+        from brix.db import BrixDB
+        db = BrixDB()
 
     if pipelines_dir is None:
         pipelines_dir = DEFAULT_PIPELINES_DIR
@@ -314,17 +377,20 @@ def import_bundle(
             raise ValueError("Cannot read pipeline.yaml from bundle.")
         pipeline_yaml = f.read().decode("utf-8")
 
-        # Determine output filename
         pipeline_name = _extract_pipeline_name(pipeline_yaml)
-        dest_pipeline = pipelines_dir / f"{pipeline_name}.yaml"
+        existing_pipeline = db.get_pipeline(pipeline_name)
 
-        if dest_pipeline.exists() and not overwrite:
+        if existing_pipeline is not None and not overwrite:
             raise FileExistsError(
-                f"Pipeline already exists: {dest_pipeline}\n"
+                f"Pipeline already exists: {pipelines_dir / f'{pipeline_name}.yaml'}\n"
                 f"  Use --overwrite to replace it."
             )
-        dest_pipeline.write_text(pipeline_yaml, encoding="utf-8")
-        installed_pipeline = dest_pipeline
+
+        from brix.pipeline_store import PipelineStore
+
+        pipeline_data = yaml.safe_load(pipeline_yaml) or {}
+        store = PipelineStore(pipelines_dir=pipelines_dir, search_paths=[pipelines_dir], db=db)
+        installed_pipeline = store.save(pipeline_data, name=pipeline_name)
 
         # Extract helpers
         for name, member in members.items():
@@ -553,18 +619,13 @@ def export_project(
         if p.get("project", "") == project_name
     ]
 
-    # 2. Collect credential references from pipeline YAML
+    # 2. Collect credential references from normalized pipeline rows
     credential_refs: dict[str, list[str]] = {}
     for p in pipelines:
-        yaml_content = db.get_pipeline_yaml_content(p["name"])
-        if yaml_content:
-            try:
-                parsed = yaml.safe_load(yaml_content) or {}
-                creds = parsed.get("credentials", {})
-                if creds:
-                    credential_refs[p["name"]] = list(creds.keys())
-            except Exception:
-                pass
+        pipeline_dict = db.pipeline_to_dict(p["id"]) or {}
+        creds = pipeline_dict.get("credentials", {})
+        if creds:
+            credential_refs[p["name"]] = list(creds.keys())
 
     # 3. Build manifest
     counts = {
@@ -596,13 +657,12 @@ def export_project(
 
         # pipelines/
         for p in pipelines:
-            yaml_content = db.get_pipeline_yaml_content(p["name"])
-            if yaml_content:
-                _tar_add_bytes(
-                    tar,
-                    data=yaml_content.encode("utf-8"),
-                    arcname=f"pipelines/{p['name']}.yaml",
-                )
+            _, _, pipeline_yaml = _pipeline_yaml_from_db(db, p["name"])
+            _tar_add_bytes(
+                tar,
+                data=pipeline_yaml.encode("utf-8"),
+                arcname=f"pipelines/{p['name']}.yaml",
+            )
 
         # helpers/
         for h in helpers:
@@ -738,7 +798,10 @@ def import_project(
         from brix.db import BrixDB
         db = BrixDB()
 
+    from brix.pipeline_store import PipelineStore
+
     archive_path = Path(archive_path).resolve()
+    pipeline_store = PipelineStore(db=db)
     imported: dict[str, int] = {
         "pipelines": 0, "helpers": 0, "triggers": 0,
         "trigger_groups": 0, "variables": 0,
@@ -793,25 +856,15 @@ def import_project(
                 name = yaml_file.stem
                 yaml_content = yaml_file.read_text("utf-8")
                 try:
-                    existing = db.get_pipeline_yaml_content(name)
+                    existing = db.get_pipeline(name)
                     if existing is not None and on_conflict == "skip":
                         skipped["pipelines"] += 1
                         continue
                     if not dry_run:
-                        # Extract requirements from YAML
-                        reqs: list[str] = []
-                        try:
-                            parsed = yaml.safe_load(yaml_content) or {}
-                            reqs = parsed.get("requirements", []) or []
-                        except Exception:
-                            pass
-                        db.upsert_pipeline(
-                            name=name,
-                            path=f"db://{name}",
-                            requirements=reqs,
-                            yaml_content=yaml_content,
-                            project=project_name or None,
-                        )
+                        parsed = yaml.safe_load(yaml_content) or {}
+                        if project_name and not parsed.get("project"):
+                            parsed["project"] = project_name
+                        pipeline_store.save(parsed, name=name)
                     imported["pipelines"] += 1
                 except Exception as exc:
                     errors.append(f"Pipeline '{name}': {exc}")
