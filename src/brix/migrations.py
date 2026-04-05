@@ -335,6 +335,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_nested_step_json_columns_v72",
         "down": "",
     },
+    {
+        "version": 73,
+        "name": "refresh_db_only_persistence_docs_content",
+        "up": "",
+        "up_fn": "_refresh_db_only_persistence_docs_v73",
+        "down": "",
+    },
 ]
 
 
@@ -607,6 +614,180 @@ def _add_nested_step_json_columns_v72(db: "BrixDB") -> None:
             if not db._column_exists(conn, "pipeline_step", column):
                 conn.execute(
                     f"ALTER TABLE pipeline_step ADD COLUMN {column} {column_type}"
+                )
+
+
+def _load_seed_data_for_migration() -> dict | None:
+    """Load seed-data.json from common runtime or repo locations."""
+    from pathlib import Path
+
+    seed_paths = [
+        Path("/app/seed-data.json"),
+        Path(__file__).parent.parent.parent / "seed-data.json",
+    ]
+    for sp in seed_paths:
+        if sp.exists():
+            try:
+                with open(sp) as f:
+                    return json.load(f)
+            except Exception:
+                continue
+    return None
+
+
+def _db_only_tip_payloads_v73() -> list[dict]:
+    """Return tip content updates for DB-only persistence guidance."""
+    return [
+        {
+            "title": "KERN-REGEL",
+            "category": "KERN-REGEL",
+            "content": (
+                "IMMER Brix MCP-Tools nutzen. KEINE Workarounds. KEINE manuellen Pipeline-Dateien.\n"
+                "Pipelines leben in brix.db als normale DB-Zeilen (`pipeline`, `pipeline_step`,\n"
+                "`pipeline_credential`, `pipeline_input`).\n"
+                "`yaml_content` ist nur Backup fuer Rollback/Export-Kompatibilitaet.\n"
+                "KEIN docker exec. KEIN YAML fuer normale CRUD. KEIN Container rebuild.\n"
+                "KEIN Bash(cat ~/.brix/...)       → nutze get_run_log / get_run_status\n"
+                "KEIN Bash(python3 -c ...)        → nutze create_helper\n"
+                "KEIN Bash(rm -f ...)             → nutze brix__delete_run / brix clean"
+            ),
+            "priority": 10,
+        },
+        {
+            "title": "TOP-5 ANTI-PATTERNS",
+            "category": "TOP-5 ANTI-PATTERNS",
+            "content": (
+                "delete_pipeline + create_pipeline   →  update_step / update_pipeline / add_step\n"
+                "Pipeline-YAML als Persistence sehen →  falsch: normale CRUD arbeitet auf DB-Zeilen\n"
+                "YAML manuell schreiben              →  nur noch fuer Import/Export/Restore-Kompatibilitaet\n"
+                "brix run via Bash                   →  brix__run_pipeline\n"
+                "base64 in foreach-Loops             →  Dateipfade als Strings uebergeben\n"
+                "concurrency: '{{ input.n }}'        →  concurrency muss int sein (kein Jinja2!)"
+            ),
+            "priority": 9,
+        },
+        {
+            "title": "Trigger type selection guide",
+            "category": "triggers",
+            "content": (
+                "Choose the right trigger type:\n"
+                "  schedule      - Recurring cron jobs (e.g. daily report at 9am)\n"
+                "  pipeline_done - Chain pipelines (run B after A completes)\n"
+                "  http_poll     - Poll external API at intervals\n"
+                "  mail          - Monitor inbox for new messages\n"
+                "  file          - Watch filesystem for changes\n"
+                "  event         - React to internal Brix events\n\n"
+                "schedules.yaml existiert nicht mehr als normaler Persistenzpfad.\n"
+                "Use brix__trigger(action='add', type='schedule', config={cron, timezone})."
+            ),
+            "priority": 5,
+        },
+        {
+            "title": "DB-only Pipeline Persistence",
+            "category": "architecture",
+            "content": (
+                "Pipeline-CRUD arbeitet auf DB-Zeilen, nicht auf Pipeline-Dateien.\n"
+                "Source of Truth:\n"
+                "  - pipeline\n"
+                "  - pipeline_step\n"
+                "  - pipeline_credential\n"
+                "  - pipeline_input\n"
+                "`yaml_content` bleibt als Backup/Mirror fuer Rollback und Export erhalten.\n"
+                "Wenn du Pipeline-Inhalt sehen oder aendern willst:\n"
+                "  - get_pipeline / list_pipelines\n"
+                "  - update_pipeline / add_step / update_step / remove_step"
+            ),
+            "priority": 10,
+        },
+        {
+            "title": "BRIX_STEP_SOURCE Toggle",
+            "category": "architecture",
+            "content": (
+                "BRIX_STEP_SOURCE steuert, wo Step-Definitionen gelesen werden:\n"
+                "  db   = DB-Zeilen sind aktiv\n"
+                "  dual = DB-Zeilen + Vergleich mit yaml_content\n"
+                "  yaml = Legacy-Leseweg aus yaml_content\n"
+                "Nutze im Normalbetrieb `db`.\n"
+                "`dual` ist fuer Paritaetschecks waehrend Migration/Debugging.\n"
+                "`yaml` nur fuer Legacy-Faelle."
+            ),
+            "priority": 6,
+        },
+    ]
+
+
+def _refresh_db_only_persistence_docs_v73(db: "BrixDB") -> None:
+    """Refresh tips, help topics, and tool schema text for DB-only persistence."""
+    seed_data = _load_seed_data_for_migration()
+    if seed_data is None:
+        logger.warning("migration v73: seed-data.json not found, skipping help/topic/schema refresh")
+        return
+
+    tool_names = {
+        "brix__delete_pipeline",
+        "brix__rename_pipeline",
+        "brix__rollback",
+        "brix__diagnose_run",
+        "brix__get_pipeline",
+    }
+    topic_names = {
+        "quick-start",
+        "anti-patterns",
+        "triggers",
+        "registries",
+        "error-patterns",
+        "pipeline-persistence",
+    }
+    tips = _db_only_tip_payloads_v73()
+
+    with db._connect() as conn:
+        for ts in seed_data.get("mcp_tool_schemas", []):
+            if ts.get("name") not in tool_names:
+                continue
+            conn.execute(
+                "UPDATE mcp_tool_schema SET description = ?, updated_at = datetime('now') WHERE name = ?",
+                (ts["description"], ts["name"]),
+            )
+
+        for topic in seed_data.get("help_topics", []):
+            if topic.get("name") not in topic_names:
+                continue
+            conn.execute(
+                """INSERT INTO help_topic (name, title, content, category, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                   ON CONFLICT(name) DO UPDATE SET
+                       title=excluded.title,
+                       content=excluded.content,
+                       category=excluded.category,
+                       updated_at=datetime('now')""",
+                (
+                    topic["name"],
+                    topic.get("title", topic["name"]),
+                    topic.get("content", ""),
+                    topic.get("category", ""),
+                ),
+            )
+
+        for tip in tips:
+            row = conn.execute("SELECT id FROM tip WHERE title = ?", (tip["title"],)).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE tip SET category = ?, content = ?, priority = ?, updated_at = datetime('now') WHERE id = ?",
+                    (tip["category"], tip["content"], tip["priority"], row[0]),
+                )
+            else:
+                from uuid import uuid4
+
+                conn.execute(
+                    """INSERT INTO tip (id, category, title, content, priority, is_active, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))""",
+                    (
+                        str(uuid4()),
+                        tip["category"],
+                        tip["title"],
+                        tip["content"],
+                        tip["priority"],
+                    ),
                 )
 
 
@@ -975,8 +1156,11 @@ def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
          "Variables für Runtime-Config: set_variable → {{ var.name }} in Pipelines\n"
          "Persistent Store für Run-übergreifende Daten: store.key", 7),
         ("KERN-REGEL", "KERN-REGEL",
-         "IMMER Brix MCP-Tools nutzen. KEINE Workarounds. KEINE manuellen Dateien.\n"
-         "KEIN docker exec. KEIN YAML als Persistenz schreiben. KEIN Container rebuild.\n"
+         "IMMER Brix MCP-Tools nutzen. KEINE Workarounds. KEINE manuellen Pipeline-Dateien.\n"
+         "Pipelines leben in brix.db als normale DB-Zeilen (`pipeline`, `pipeline_step`,\n"
+         "`pipeline_credential`, `pipeline_input`).\n"
+         "`yaml_content` ist nur Backup fuer Rollback/Export-Kompatibilitaet.\n"
+         "KEIN docker exec. KEIN YAML fuer normale CRUD. KEIN Container rebuild.\n"
          "KEIN Bash(cat ~/.brix/...)       → nutze get_run_log / get_run_status\n"
          "KEIN Bash(python3 -c ...)        → nutze create_helper\n"
          "KEIN Bash(rm -f ...)             → nutze brix__delete_run / brix clean", 10),
@@ -1006,11 +1190,31 @@ def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
          "Override möglich: allow_code: true auf Pipeline-Ebene.\n"
          "compose_pipeline(compositor_mode=true) → LLM-sichere Brick-only Pipeline.", 7),
         ("TOP-5 ANTI-PATTERNS", "TOP-5 ANTI-PATTERNS",
-         "delete_pipeline + create_pipeline  →  update_step / update_pipeline / add_step\n"
-         "YAML manuell schreiben             →  brix__create_pipeline mit steps inline (DB-only)\n"
-         "brix run via Bash                  →  brix__run_pipeline\n"
-         "base64 in foreach-Loops            →  Dateipfade als Strings übergeben\n"
-         "concurrency: '{{ input.n }}'       →  concurrency muss int sein (kein Jinja2!)", 9),
+         "delete_pipeline + create_pipeline   →  update_step / update_pipeline / add_step\n"
+         "Pipeline-YAML als Persistence sehen →  falsch: normale CRUD arbeitet auf DB-Zeilen\n"
+         "YAML manuell schreiben              →  nur noch fuer Import/Export/Restore-Kompatibilitaet\n"
+         "brix run via Bash                   →  brix__run_pipeline\n"
+         "base64 in foreach-Loops             →  Dateipfade als Strings uebergeben\n"
+         "concurrency: '{{ input.n }}'        →  concurrency muss int sein (kein Jinja2!)", 9),
+        ("architecture", "DB-only Pipeline Persistence",
+         "Pipeline-CRUD arbeitet auf DB-Zeilen, nicht auf Pipeline-Dateien.\n"
+         "Source of Truth:\n"
+         "  - pipeline\n"
+         "  - pipeline_step\n"
+         "  - pipeline_credential\n"
+         "  - pipeline_input\n"
+         "`yaml_content` bleibt als Backup/Mirror fuer Rollback und Export erhalten.\n"
+         "Wenn du Pipeline-Inhalt sehen oder aendern willst:\n"
+         "  - get_pipeline / list_pipelines\n"
+         "  - update_pipeline / add_step / update_step / remove_step", 10),
+        ("architecture", "BRIX_STEP_SOURCE Toggle",
+         "BRIX_STEP_SOURCE steuert, wo Step-Definitionen gelesen werden:\n"
+         "  db   = DB-Zeilen sind aktiv\n"
+         "  dual = DB-Zeilen + Vergleich mit yaml_content\n"
+         "  yaml = Legacy-Leseweg aus yaml_content\n"
+         "Nutze im Normalbetrieb `db`.\n"
+         "`dual` ist fuer Paritaetschecks waehrend Migration/Debugging.\n"
+         "`yaml` nur fuer Legacy-Faelle.", 6),
         ("DEBUGGING", "DEBUGGING",
          "Bei Fehler: brix__get_run_errors(run_id) → LLM-optimierte Fehleranalyse\n"
          "Dann:       brix__diagnose_run(run_id)   → Schritt-für-Schritt-Diagnose\n"

@@ -6,28 +6,26 @@ allowed-tools: Bash(brix:*)
 
 # Brix Pipeline Runner
 
-Run a Brix pipeline by name or path.
+Run a Brix pipeline by name.
 
 ## Arguments
 
 Parse `$ARGUMENTS` for:
-- First argument: pipeline name or path (e.g. "download-attachments" or "pipelines/custom.yaml")
+- First argument: pipeline name (e.g. "download-attachments")
 - Remaining arguments: pipeline parameters as key=value pairs
 
 ## Execution
 
-1. Resolve pipeline path:
-   - If argument is a name: look in `pipelines/<name>.yaml`
-   - If argument is a path: use directly
+1. Resolve the pipeline name from the first argument.
 
 2. Validate first:
 ```bash
-brix validate <pipeline-path>
+brix validate <pipeline-name>
 ```
 
 3. Execute:
 ```bash
-brix run <pipeline-path> <params as -p key=value>
+brix run <pipeline-name> <params as -p key=value>
 ```
 
 ## Result

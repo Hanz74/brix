@@ -14,13 +14,13 @@ Choose the optimal strategy based on the user's request:
 
 ### Targeted (default)
 Use when: specific OData-compatible filter, few expected results, precise query.
-Pipeline: `download-attachments.yaml`
+Pipeline: `download-attachments`
 - OData filter on server side (fast for selective queries)
 - Example: "mails with subject containing 'Rechnung' that have attachments"
 
 ### Broad
 Use when: common keywords, many expected results, or when OData filter would be complex.
-Pipeline: `download-attachments-broad.yaml`
+Pipeline: `download-attachments-broad`
 - Fetches many mails at once (200+), filters locally by keywords
 - Faster when the filter term is common (avoids per-mail API calls for non-matches)
 - Use `--broad` flag or when keywords are simple text searches
@@ -38,7 +38,7 @@ Parse `$ARGUMENTS` for:
 
 ### Targeted Strategy
 ```bash
-brix run /app/pipelines/download-attachments.yaml \
+brix run download-attachments \
   -p "query=hasAttachments eq true and contains(subject, '<search term>')" \
   -p top=<N> \
   -p output_dir=/host/root/<target-path>
@@ -46,7 +46,7 @@ brix run /app/pipelines/download-attachments.yaml \
 
 ### Broad Strategy
 ```bash
-brix run /app/pipelines/download-attachments-broad.yaml \
+brix run download-attachments-broad \
   -p "keywords=<comma-separated keywords>" \
   -p top=200 \
   -p output_dir=/host/root/<target-path>

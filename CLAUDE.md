@@ -19,7 +19,9 @@ Brix ist als MCP Server registriert. Claude sieht `mcp__brix__*` Tools automatis
 - **KEIN YAML manuell schreiben** -> `mcp__brix__create_pipeline` oder `mcp__brix__compose_pipeline`
 - **KEINE Helper-Scripts fuer Standardaufgaben** -> Built-in Bricks: `flow.filter`, `flow.transform`, `llm.batch`, `extract.specialist`, `markitdown.convert`
 - **KEIN `brix run` via Bash** -> `mcp__brix__run_pipeline` oder `mcp__brix__pipeline__<name>`
-- **PIPELINES SIND DB-ONLY** -> YAML ist nur Export/Import, normale CRUD nur ueber MCP-Tools
+- **PIPELINES SIND DB-ONLY** -> Source of Truth sind `pipeline`, `pipeline_step`, `pipeline_credential`, `pipeline_input`
+- **`yaml_content` IST MIRROR/BACKUP** -> nur fuer Rollback, Export/Import und Kompatibilitaet
+- **BRIX_STEP_SOURCE** -> `db` standard, `dual` fuer Paritaetschecks, `yaml` nur fuer Legacy/Debugging
 - **KEIN Container-Rebuild** -> `helpers/` ist Volume-gemountet; Pipeline-Aenderungen laufen ueber die DB
 - **IMMER `mcp__brix__get_tips` zuerst** bei Pipeline-Arbeit
 - **IMMER `mcp__brix__list_bricks` / `search_bricks`** bevor ein Brick genutzt wird
@@ -33,13 +35,18 @@ claude mcp add brix -- docker exec -i brix-mcp brix mcp
 
 ```bash
 brix --version
-brix run <pipeline.yaml> -p key=value
-brix validate <pipeline.yaml>
-brix run --dry-run <pipeline.yaml>
+brix run <pipeline-name> -p key=value
+brix validate <pipeline-name>
+brix run --dry-run <pipeline-name>
 brix server list        # registrierte MCP-Server
 brix history            # letzte Runs
 brix stats              # Erfolgsrate, Avg Duration
 ```
+
+Legacy/Compat:
+- Die file-path CLI (`brix run <pipeline.yaml>`, `brix validate <pipeline.yaml>`) ist
+  ein Legacy/Authoring-Pfad fuer YAML-Loader-Workflows.
+- Fuer normale Brix-Arbeit: MCP-Tools gegen DB-persistierte Pipelines nutzen.
 
 **NUTZE BRIX** fuer Multi-Step-Aufgaben statt einzelne Tool-Calls!
 
@@ -142,6 +149,7 @@ mcp__brix__test_pipeline(pipeline_id="...", pin={...}, mock={...})
 | `error-patterns` | Haeufige Fehler + Fixes |
 | `credentials` | Fernet-Encryption, UUID-Referenzen |
 | `triggers` | schedule, event, file, http_poll, mail, pipeline_done |
+| `pipeline-persistence` | DB-only Persistenz, `yaml_content`, `BRIX_STEP_SOURCE` |
 | `dag` | depends_on, parallele Ausfuehrung |
 | `templates` | get_template, instantiate_template |
 | `helpers` | create_helper, register_helper |
@@ -168,7 +176,7 @@ src/brix/
   models.py            # Pydantic models for all entities
   engine.py            # Pipeline execution engine
   context.py           # Step execution context (Jinja2 rendering, step references)
-  loader.py            # Pipeline/step loading from DB, YAML nur fuer Import/Compat
+  loader.py            # YAML loader + DB-row reassembly into Pipeline models
   migrations.py        # Schema migration system (auto-run on start)
   migration_templates.py # Migration SQL/Python templates
   validator.py         # Pipeline validation
