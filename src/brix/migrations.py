@@ -7,8 +7,11 @@ as numbered migrations instead of inline ALTER TABLE calls in _init_schema.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING
+
+import yaml
 
 if TYPE_CHECKING:
     from brix.db import BrixDB
@@ -318,6 +321,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_db_only_pipeline_persistence_v70",
         "down": "",
     },
+    {
+        "version": 71,
+        "name": "normalize_pipeline_steps_rows",
+        "up": "",
+        "up_fn": "_normalize_pipeline_steps_v71",
+        "down": "",
+    },
 ]
 
 
@@ -368,6 +378,211 @@ def _add_db_only_pipeline_persistence_v70(db: "BrixDB") -> None:
                 err = str(exc).lower()
                 if "duplicate column" not in err:
                     raise
+
+
+def _pipeline_metadata_updates_from_raw(raw: dict, pipeline_row: dict) -> dict[str, object]:
+    """Build normalized pipeline metadata UPDATE values from legacy YAML."""
+    from brix.db import _PIPELINE_BOOL_COLUMNS, _PIPELINE_JSON_COLUMNS, _json_dumps
+
+    updates: dict[str, object] = {
+        "version": raw.get("version") or pipeline_row.get("version") or "1.0.0",
+        "brix_version": raw.get("brix_version", pipeline_row.get("brix_version")),
+        "kind": raw.get("kind", pipeline_row.get("kind")),
+        "extends": raw.get("extends", pipeline_row.get("extends")),
+        "idempotency_key": raw.get("idempotency_key", pipeline_row.get("idempotency_key")),
+        "description": raw.get("description", pipeline_row.get("description") or ""),
+        "project": raw.get("project", pipeline_row.get("project") or ""),
+        "group_name": raw.get("group", pipeline_row.get("group_name") or ""),
+    }
+
+    raw_tags = raw.get("tags", pipeline_row.get("tags") or [])
+    if isinstance(raw_tags, str):
+        try:
+            raw_tags = json.loads(raw_tags)
+        except Exception:
+            raw_tags = []
+    updates["tags"] = _json_dumps(raw_tags if isinstance(raw_tags, list) else [])
+
+    bool_defaults = {
+        "is_template": False,
+        "compositor_mode": False,
+        "allow_code": True,
+        "strict_bricks": False,
+        "test_mode": False,
+    }
+    for column, field in _PIPELINE_BOOL_COLUMNS.items():
+        value = raw.get(field)
+        if value is None:
+            value = pipeline_row.get(column)
+        if value is None:
+            value = bool_defaults[field]
+        updates[column] = int(bool(value))
+
+    json_defaults = {
+        "template_params_json": {},
+        "blueprint_params_json": [],
+        "error_handling_json": {},
+        "retry_profiles_json": {},
+        "notify_json": {},
+        "groups_json": {},
+        "output_json": None,
+        "output_slots_json": {},
+        "requirements_json": [],
+    }
+    for column, field in _PIPELINE_JSON_COLUMNS.items():
+        value = raw.get(field)
+        if value is None:
+            existing = pipeline_row.get(column)
+            if existing not in (None, ""):
+                updates[column] = existing
+                continue
+            value = json_defaults[column]
+        updates[column] = None if value is None else _json_dumps(value)
+
+    return updates
+
+
+def _set_pipeline_migration_status(
+    db: "BrixDB",
+    pipeline_id: str,
+    status: str,
+) -> None:
+    from brix.db import _now_iso
+
+    with db._connect() as conn:
+        conn.execute(
+            "UPDATE pipeline SET migration_status=?, updated_at=? WHERE id=?",
+            (status, _now_iso(), pipeline_id),
+        )
+
+
+def _normalize_pipeline_steps_common(
+    db: "BrixDB",
+    *,
+    log_prefix: str,
+) -> dict[str, int]:
+    """Normalize legacy YAML-backed pipeline rows into step/input/credential tables."""
+    from brix.db import _now_iso
+
+    summary = {"migrated": 0, "failed": 0, "skipped": 0}
+
+    with db._connect() as conn:
+        conn.row_factory = None
+        rows = conn.execute(
+            """
+            SELECT id, name, yaml_content, migration_status
+            FROM pipeline
+            WHERE yaml_content IS NOT NULL AND yaml_content != ''
+            ORDER BY name ASC
+            """
+        ).fetchall()
+
+    for pipeline_id, pipeline_name, yaml_content, migration_status in rows:
+        if migration_status == "v71_complete":
+            summary["skipped"] += 1
+            continue
+
+        with db._connect() as conn:
+            existing_steps = conn.execute(
+                "SELECT COUNT(*) FROM pipeline_step WHERE pipeline_id=?",
+                (pipeline_id,),
+            ).fetchone()[0]
+        if existing_steps:
+            summary["skipped"] += 1
+            continue
+
+        try:
+            raw = yaml.safe_load(yaml_content) or {}
+            if not isinstance(raw, dict):
+                raise ValueError("pipeline YAML did not parse to a mapping")
+
+            steps = raw.get("steps") or []
+            credentials = raw.get("credentials") or {}
+            pipeline_input = raw.get("input") or {}
+
+            if not isinstance(steps, list):
+                raise ValueError("pipeline steps must be a list")
+            if not isinstance(credentials, dict):
+                raise ValueError("pipeline credentials must be a mapping")
+            if not isinstance(pipeline_input, dict):
+                raise ValueError("pipeline input must be a mapping")
+            if any(not isinstance(step, dict) for step in steps):
+                raise ValueError("pipeline steps must contain only mappings")
+
+            with db._connect() as conn:
+                conn.row_factory = None
+                pipeline_row_result = conn.execute(
+                    "SELECT * FROM pipeline WHERE id=?",
+                    (pipeline_id,),
+                )
+                columns = [column[0] for column in pipeline_row_result.description]
+                pipeline_row = dict(zip(columns, pipeline_row_result.fetchone()))
+
+                for step_order, step in enumerate(steps):
+                    db.upsert_step(pipeline_id, step, step_order=step_order, conn=conn)
+
+                for alias, credential in credentials.items():
+                    if isinstance(credential, str):
+                        env_ref = credential
+                        refresh = None
+                    elif isinstance(credential, dict):
+                        env_ref = credential.get("env") or ""
+                        refresh = credential.get("refresh")
+                    else:
+                        raise ValueError(f"credential '{alias}' must be a string or mapping")
+                    db.upsert_pipeline_credential(
+                        pipeline_id,
+                        alias,
+                        env_ref,
+                        refresh=refresh,
+                        conn=conn,
+                    )
+
+                for input_key, input_spec in pipeline_input.items():
+                    if not isinstance(input_spec, dict):
+                        raise ValueError(f"input '{input_key}' must be a mapping")
+                    db.upsert_pipeline_input(
+                        pipeline_id,
+                        input_key,
+                        input_spec.get("type") or "string",
+                        default_value=input_spec.get("default"),
+                        description=input_spec.get("description"),
+                        conn=conn,
+                    )
+
+                metadata_updates = _pipeline_metadata_updates_from_raw(raw, pipeline_row)
+                metadata_updates["migration_status"] = "v71_complete"
+                metadata_updates["updated_at"] = _now_iso()
+                assignments = ", ".join(f"{column}=?" for column in metadata_updates)
+                conn.execute(
+                    f"UPDATE pipeline SET {assignments} WHERE id=?",
+                    [*metadata_updates.values(), pipeline_id],
+                )
+
+            summary["migrated"] += 1
+        except (yaml.YAMLError, ValueError, TypeError) as exc:
+            _set_pipeline_migration_status(db, pipeline_id, "v71_failed")
+            logger.warning(
+                "%s: failed to normalize pipeline '%s': %s",
+                log_prefix,
+                pipeline_name,
+                exc,
+            )
+            summary["failed"] += 1
+
+    logger.info(
+        "%s: migrated=%d failed=%d skipped=%d",
+        log_prefix,
+        summary["migrated"],
+        summary["failed"],
+        summary["skipped"],
+    )
+    return summary
+
+
+def _normalize_pipeline_steps_v71(db: "BrixDB") -> None:
+    """Normalize legacy YAML-backed pipelines into step/input/credential rows."""
+    _normalize_pipeline_steps_common(db, log_prefix="migration v71")
 
 
 def _register_new_tool_schemas_v67(db: "BrixDB") -> None:

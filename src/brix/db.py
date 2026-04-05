@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import sqlite3
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -2330,14 +2331,21 @@ class BrixDB:
             cursor = conn.execute("DELETE FROM pipeline WHERE name=?", (name,))
             return cursor.rowcount > 0
 
-    def upsert_step(self, pipeline_id: str, step_dict: dict, step_order: int) -> str:
+    def upsert_step(
+        self,
+        pipeline_id: str,
+        step_dict: dict,
+        step_order: int,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> str:
         """Insert or update one normalized pipeline_step row."""
         now = _now_iso()
         row = step_dict_to_row(step_dict)
         step_key = row["step_key"]
 
-        with self._connect() as conn:
-            existing = conn.execute(
+        conn_ctx = nullcontext(conn) if conn is not None else self._connect()
+        with conn_ctx as active_conn:
+            existing = active_conn.execute(
                 "SELECT id, created_at FROM pipeline_step WHERE pipeline_id=? AND step_key=?",
                 (pipeline_id, step_key),
             ).fetchone()
@@ -2359,7 +2367,7 @@ class BrixDB:
             updates = ",".join(
                 f"{col}=excluded.{col}" for col in cols if col not in {"id", "created_at"}
             )
-            conn.execute(
+            active_conn.execute(
                 f"""INSERT INTO pipeline_step ({",".join(cols)})
                    VALUES ({placeholders})
                    ON CONFLICT(pipeline_id, step_key) DO UPDATE SET {updates}""",
@@ -2435,10 +2443,12 @@ class BrixDB:
         name: str,
         env: str,
         refresh: Any = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> None:
         """Insert or update one normalized pipeline credential row."""
-        with self._connect() as conn:
-            conn.execute(
+        conn_ctx = nullcontext(conn) if conn is not None else self._connect()
+        with conn_ctx as active_conn:
+            active_conn.execute(
                 """INSERT INTO pipeline_credential (pipeline_id, alias, env_ref, refresh_json)
                    VALUES (?, ?, ?, ?)
                    ON CONFLICT(pipeline_id, alias) DO UPDATE SET
@@ -2483,10 +2493,12 @@ class BrixDB:
         param_type: str,
         default_value: Any = None,
         description: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> None:
         """Insert or update one normalized pipeline input row."""
-        with self._connect() as conn:
-            conn.execute(
+        conn_ctx = nullcontext(conn) if conn is not None else self._connect()
+        with conn_ctx as active_conn:
+            active_conn.execute(
                 """INSERT INTO pipeline_input (pipeline_id, input_key, type, default_json, description)
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(pipeline_id, input_key) DO UPDATE SET

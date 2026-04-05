@@ -22,6 +22,8 @@ import yaml
 if TYPE_CHECKING:
     from brix.db import BrixDB
 
+from brix.migrations import _normalize_pipeline_steps_common
+
 logger = logging.getLogger(__name__)
 
 # Directories to scan for helpers
@@ -180,6 +182,7 @@ def run_startup_sync(db: "BrixDB") -> dict:
         "tool_schemas_synced": 0,
         "helpers_registered": 0,
         "pipelines_imported": 0,
+        "pipelines_normalized": 0,
         "descriptions_backfilled": 0,
         "orphan_triggers": 0,
         "orphan_helpers": 0,
@@ -207,6 +210,11 @@ def run_startup_sync(db: "BrixDB") -> dict:
         logger.warning("startup_sync: pipeline sync failed: %s", exc)
 
     try:
+        summary["pipelines_normalized"] = _migrate_pipeline_steps(db)
+    except Exception as exc:
+        logger.warning("startup_sync: pipeline normalization failed: %s", exc)
+
+    try:
         summary["descriptions_backfilled"] = _backfill_descriptions(db)
     except Exception as exc:
         logger.warning("startup_sync: description backfill failed: %s", exc)
@@ -225,11 +233,12 @@ def run_startup_sync(db: "BrixDB") -> dict:
 
     # Log the summary
     logger.info(
-        "startup_sync: helpers_registered=%d, pipelines_imported=%d, "
+        "startup_sync: helpers_registered=%d, pipelines_imported=%d, pipelines_normalized=%d, "
         "descriptions_backfilled=%d, orphan_triggers=%d, orphan_helpers=%d, "
         "test_artifacts_cleaned=%d",
         summary["helpers_registered"],
         summary["pipelines_imported"],
+        summary["pipelines_normalized"],
         summary["descriptions_backfilled"],
         summary["orphan_triggers"],
         summary["orphan_helpers"],
@@ -311,6 +320,12 @@ def _sync_pipelines(db: "BrixDB") -> int:
             logger.warning("startup_sync: failed to import pipeline '%s': %s", name, exc)
 
     return imported
+
+
+def _migrate_pipeline_steps(db: "BrixDB") -> int:
+    """Normalize imported legacy YAML-backed pipelines into row tables."""
+    summary = _normalize_pipeline_steps_common(db, log_prefix="startup_sync")
+    return summary["migrated"]
 
 
 def _set_pipeline_description(db: "BrixDB", name: str, description: str) -> None:
