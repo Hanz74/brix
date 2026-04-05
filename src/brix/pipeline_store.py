@@ -86,7 +86,7 @@ class PipelineStore:
                     (pipeline_id,),
                 ).fetchall()
             ]
-        return Pipeline.from_db(
+        return self.loader.load_from_db(
             pipeline_row,
             step_rows,
             self._db.get_pipeline_credentials(pipeline_id),

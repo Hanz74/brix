@@ -974,10 +974,15 @@ def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
          "Persistent Store für Run-übergreifende Daten: store.key", 7),
         ("KERN-REGEL", "KERN-REGEL",
          "IMMER Brix MCP-Tools nutzen. KEINE Workarounds. KEINE manuellen Dateien.\n"
-         "KEIN docker exec. KEIN YAML schreiben. KEIN Container rebuild.\n"
+         "KEIN docker exec. KEIN YAML als Persistenz schreiben. KEIN Container rebuild.\n"
          "KEIN Bash(cat ~/.brix/...)       → nutze get_run_log / get_run_status\n"
          "KEIN Bash(python3 -c ...)        → nutze create_helper\n"
          "KEIN Bash(rm -f ...)             → nutze brix__delete_run / brix clean", 10),
+        ("PIPELINE-PERSISTENZ", "PIPELINE-PERSISTENZ",
+         "Pipelines werden DB-only gespeichert.\n"
+         "YAML ist nur fuer Bundle-Export/-Import und Legacy-Kompatibilitaet.\n"
+         "Normale Pipeline-CRUD nur ueber create_pipeline / update_pipeline /\n"
+         "add_step / update_step / remove_step nutzen.", 9),
         ("HILFE VERFÜGBAR", "HILFE VERFÜGBAR",
          "Für Details: brix__get_help(topic)\n"
          "Topics: 'quick-start', 'step-types', 'step-referenzen', 'helper-scripts',\n"
@@ -1000,7 +1005,7 @@ def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
          "compose_pipeline(compositor_mode=true) → LLM-sichere Brick-only Pipeline.", 7),
         ("TOP-5 ANTI-PATTERNS", "TOP-5 ANTI-PATTERNS",
          "delete_pipeline + create_pipeline  →  update_step / update_pipeline / add_step\n"
-         "YAML manuell schreiben             →  brix__create_pipeline mit steps inline\n"
+         "YAML manuell schreiben             →  brix__create_pipeline mit steps inline (DB-only)\n"
          "brix run via Bash                  →  brix__run_pipeline\n"
          "base64 in foreach-Loops            →  Dateipfade als Strings übergeben\n"
          "concurrency: '{{ input.n }}'       →  concurrency muss int sein (kein Jinja2!)", 9),

@@ -19,7 +19,8 @@ Brix ist als MCP Server registriert. Claude sieht `mcp__brix__*` Tools automatis
 - **KEIN YAML manuell schreiben** -> `mcp__brix__create_pipeline` oder `mcp__brix__compose_pipeline`
 - **KEINE Helper-Scripts fuer Standardaufgaben** -> Built-in Bricks: `flow.filter`, `flow.transform`, `llm.batch`, `extract.specialist`, `markitdown.convert`
 - **KEIN `brix run` via Bash** -> `mcp__brix__run_pipeline` oder `mcp__brix__pipeline__<name>`
-- **KEIN Container-Rebuild** -> `pipelines/` und `helpers/` sind Volume-gemountet
+- **PIPELINES SIND DB-ONLY** -> YAML ist nur Export/Import, normale CRUD nur ueber MCP-Tools
+- **KEIN Container-Rebuild** -> `helpers/` ist Volume-gemountet; Pipeline-Aenderungen laufen ueber die DB
 - **IMMER `mcp__brix__get_tips` zuerst** bei Pipeline-Arbeit
 - **IMMER `mcp__brix__list_bricks` / `search_bricks`** bevor ein Brick genutzt wird
 
@@ -167,7 +168,7 @@ src/brix/
   models.py            # Pydantic models for all entities
   engine.py            # Pipeline execution engine
   context.py           # Step execution context (Jinja2 rendering, step references)
-  loader.py            # Pipeline/step loading from DB
+  loader.py            # Pipeline/step loading from DB, YAML nur fuer Import/Compat
   migrations.py        # Schema migration system (auto-run on start)
   migration_templates.py # Migration SQL/Python templates
   validator.py         # Pipeline validation
@@ -287,7 +288,7 @@ src/brix/
 
 ## Neue Pipelines/Helpers erstellen
 
-**KEIN Container-Rebuild noetig!** `pipelines/` und `helpers/` sind Volume-gemountet.
+**KEIN Container-Rebuild noetig!** Helper-Dateien unter `helpers/` sind Volume-gemountet. Pipelines werden DB-only gespeichert.
 
 **Brick-First: IMMER erst pruefen ob ein Built-in Brick ausreicht.**
 
@@ -319,6 +320,8 @@ if __name__ == "__main__":
 - Host-Pfade: `/host/root/...`
 - `| default([])` bei conditional Steps
 - Brick-Namen: `namespace.type` (z.B. `flow.filter`, nicht `filter`)
+- Pipelines nur ueber MCP-Tools anlegen/aendern (`create_pipeline`, `add_step`, `update_step`, `update_pipeline`)
+- YAML ist nur fuer Bundle-Import/Export oder Legacy-Kompatibilitaet
 - Erst `brix validate`, dann `brix run --dry-run`, dann `brix run`
 
 ## Entwicklung
@@ -344,7 +347,7 @@ BRIX_DB_PATH=/tmp/test-brix.db brix run ...
 # Rebuild NUR bei src/brix/ oder Dockerfile Aenderungen
 docker compose build --quiet && docker compose up -d
 
-# KEIN Rebuild bei pipelines/ oder helpers/ Aenderungen!
+# KEIN Rebuild bei helpers/ Aenderungen; Pipeline-CRUD ist DB-only.
 ```
 
 ### Deployment auf Collir

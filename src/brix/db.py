@@ -1921,22 +1921,46 @@ class BrixDB:
                     pass
 
     def refresh_pipeline_deps(self, pipeline_name: str) -> None:
-        """Re-scan a pipeline's YAML and update pipeline_helper.
-
-        Reads the pipeline's yaml_content from DB, extracts helper refs,
-        and refreshes the join table.  Safe to call after any mutation.
-        """
+        """Refresh pipeline_helper from step rows, with YAML fallback for legacy rows."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, yaml_content FROM pipeline WHERE name=?",
+                "SELECT id, yaml_content, migration_status FROM pipeline WHERE name=?",
                 (pipeline_name,),
             ).fetchone()
             if not row:
                 return
             pipeline_id = row[0]
             yaml_content = row[1]
+            migration_status = row[2]
+
+            if migration_status == "v71_complete":
+                helper_rows = conn.execute(
+                    """SELECT DISTINCT helper
+                       FROM pipeline_step
+                       WHERE pipeline_id=? AND helper IS NOT NULL AND helper != ''""",
+                    (pipeline_id,),
+                ).fetchall()
+                conn.execute(
+                    "DELETE FROM pipeline_helper WHERE pipeline_id=?",
+                    (pipeline_id,),
+                )
+                for helper_row in helper_rows:
+                    helper_name = _normalize_helper_ref(helper_row[0])
+                    row = conn.execute(
+                        "SELECT id FROM helper WHERE name=?",
+                        (helper_name,),
+                    ).fetchone()
+                    if row:
+                        try:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO pipeline_helper (pipeline_id, helper_id) VALUES (?,?)",
+                                (pipeline_id, row[0]),
+                            )
+                        except Exception:
+                            pass
+                return
+
             if not yaml_content:
-                # No YAML stored — clear any stale links
                 conn.execute(
                     "DELETE FROM pipeline_helper WHERE pipeline_id=?",
                     (pipeline_id,),

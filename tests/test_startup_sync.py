@@ -1,18 +1,14 @@
 """Tests for startup_sync — T-BRIX-INTEGRITY-01."""
 import os
-import textwrap
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import yaml
 
 from brix.db import BrixDB
 from brix.startup_sync import (
     _is_test_helper,
     _scan_helper_files,
-    _scan_pipeline_files,
-    _extract_description_from_yaml,
     run_startup_sync,
     _sync_helpers,
     _sync_pipelines,
@@ -35,23 +31,6 @@ def helper_dir(tmp_path):
     d.mkdir()
     (d / "real_helper.py").write_text("# real helper\n")
     (d / "another_util.py").write_text("# another util\n")
-    return d
-
-
-@pytest.fixture
-def pipeline_dir(tmp_path):
-    """Create a temporary pipeline directory with some YAML files."""
-    d = tmp_path / "pipelines"
-    d.mkdir()
-    (d / "my-pipeline.yaml").write_text(yaml.dump({
-        "name": "my-pipeline",
-        "description": "A test pipeline for sync",
-        "steps": [{"id": "s1", "type": "flow.transform", "params": {"expression": "item"}}],
-    }))
-    (d / "no-desc.yaml").write_text(yaml.dump({
-        "name": "no-desc",
-        "steps": [{"id": "s1", "type": "flow.transform", "params": {"expression": "item"}}],
-    }))
     return d
 
 
@@ -78,23 +57,6 @@ class TestIsTestHelper:
         assert _is_test_helper("download_attachments") is False
         assert _is_test_helper("parse_invoice") is False
         assert _is_test_helper("email_utils") is False
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: _extract_description_from_yaml
-# ---------------------------------------------------------------------------
-
-class TestExtractDescription:
-    def test_extracts_description(self):
-        yaml_text = yaml.dump({"name": "p1", "description": "My pipeline desc"})
-        assert _extract_description_from_yaml(yaml_text) == "My pipeline desc"
-
-    def test_no_description(self):
-        yaml_text = yaml.dump({"name": "p1", "steps": []})
-        assert _extract_description_from_yaml(yaml_text) == ""
-
-    def test_invalid_yaml(self):
-        assert _extract_description_from_yaml(":::invalid") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -142,40 +104,60 @@ class TestHelperSync:
 # ---------------------------------------------------------------------------
 
 class TestPipelineSync:
-    def test_imports_unregistered_pipelines(self, sync_db, pipeline_dir):
-        with patch("brix.startup_sync._PIPELINE_SEARCH_PATHS", [pipeline_dir]):
-            count = _sync_pipelines(sync_db)
+    def test_sync_pipelines_noop_when_all_rows_migrated(self, sync_db):
+        sync_db.upsert_pipeline(name="done-pipe", path="/done.yaml")
+        row = sync_db.get_pipeline("done-pipe")
+        assert row is not None
 
-        assert count == 2
-        names = {p["name"] for p in sync_db.list_pipelines()}
-        assert "my-pipeline" in names
-        assert "no-desc" in names
+        with sync_db._connect() as conn:
+            conn.execute(
+                "UPDATE pipeline SET migration_status='v71_complete' WHERE id=?",
+                (row["id"],),
+            )
 
-    def test_skips_already_registered(self, sync_db, pipeline_dir):
-        sync_db.upsert_pipeline(name="my-pipeline", path="/old/path.yaml")
+        count = _sync_pipelines(sync_db)
 
-        with patch("brix.startup_sync._PIPELINE_SEARCH_PATHS", [pipeline_dir]):
-            count = _sync_pipelines(sync_db)
+        assert count == 0
 
-        assert count == 1  # only no-desc
+    def test_sync_pipelines_normalizes_non_migrated_rows(self, sync_db):
+        sync_db.upsert_pipeline(
+            name="legacy-pipe",
+            path="/legacy.yaml",
+            yaml_content="""
+name: legacy-pipe
+steps:
+  - id: normalize-me
+    type: flow.set
+    values:
+      value: 1
+""".strip(),
+        )
 
-    def test_skips_test_pipelines(self, sync_db, tmp_path):
-        d = tmp_path / "pipelines"
-        d.mkdir()
-        (d / "test_foo.yaml").write_text(yaml.dump({"name": "test_foo", "steps": []}))
-        (d / "real_pipe.yaml").write_text(yaml.dump({
-            "name": "real_pipe",
-            "description": "A real pipeline",
-            "steps": [{"id": "s1", "type": "flow.transform"}],
-        }))
-
-        with patch("brix.startup_sync._PIPELINE_SEARCH_PATHS", [d]):
-            count = _sync_pipelines(sync_db)
+        count = _sync_pipelines(sync_db)
+        row = sync_db.get_pipeline("legacy-pipe")
 
         assert count == 1
-        names = {p["name"] for p in sync_db.list_pipelines()}
-        assert "real_pipe" in names
-        assert "test_foo" not in names
+        assert row is not None
+        assert row["migration_status"] == "v71_complete"
+        assert sync_db.get_steps(row["id"])[0]["id"] == "normalize-me"
+
+    def test_sync_pipelines_does_not_scan_disk(self, sync_db, monkeypatch):
+        sync_db.upsert_pipeline(name="db-only-pipe", path="/db-only.yaml")
+        row = sync_db.get_pipeline("db-only-pipe")
+        assert row is not None
+        with sync_db._connect() as conn:
+            conn.execute(
+                "UPDATE pipeline SET migration_status='v71_complete' WHERE id=?",
+                (row["id"],),
+            )
+
+        def _boom():
+            raise AssertionError("pipeline disk scan should not run")
+
+        monkeypatch.setattr("brix.startup_sync._scan_pipeline_files", _boom)
+        count = _sync_pipelines(sync_db)
+
+        assert count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -183,28 +165,12 @@ class TestPipelineSync:
 # ---------------------------------------------------------------------------
 
 class TestDescriptionBackfill:
-    def test_backfills_from_yaml_content(self, sync_db):
-        yaml_content = yaml.dump({"name": "bp1", "description": "Filled from YAML"})
-        sync_db.upsert_pipeline(name="bp1", path="/p.yaml", yaml_content=yaml_content)
-        # Ensure description is empty
-        import sqlite3
-        with sync_db._connect() as conn:
-            if sync_db._column_exists(conn, "pipeline", "description"):
-                conn.execute("UPDATE pipeline SET description='' WHERE name='bp1'")
-
-        count = _backfill_descriptions(sync_db)
-        assert count == 1
-
-        p = sync_db.get_pipeline("bp1")
-        assert p.get("description") == "Filled from YAML"
-
-    def test_skips_already_described(self, sync_db):
-        yaml_content = yaml.dump({"name": "bp2", "description": "Original"})
-        sync_db.upsert_pipeline(name="bp2", path="/p.yaml", yaml_content=yaml_content)
-        import sqlite3
-        with sync_db._connect() as conn:
-            if sync_db._column_exists(conn, "pipeline", "description"):
-                conn.execute("UPDATE pipeline SET description='Already set' WHERE name='bp2'")
+    def test_backfill_descriptions_is_noop(self, sync_db):
+        sync_db.upsert_pipeline(
+            name="bp1",
+            path="/p.yaml",
+            yaml_content="name: bp1\ndescription: Filled from YAML\nsteps: []\n",
+        )
 
         count = _backfill_descriptions(sync_db)
         assert count == 0
@@ -279,24 +245,45 @@ class TestArtifactCleanup:
 # ---------------------------------------------------------------------------
 
 class TestRunStartupSync:
-    def test_full_sync(self, sync_db, helper_dir, pipeline_dir):
-        with patch("brix.startup_sync._HELPER_SEARCH_PATHS", [helper_dir]), \
-             patch("brix.startup_sync._PIPELINE_SEARCH_PATHS", [pipeline_dir]):
+    def test_full_sync_registers_helpers_and_normalizes_pipelines(self, sync_db, helper_dir):
+        """Startup sync registers disk helpers and normalizes non-migrated pipelines."""
+        # Pre-seed a non-migrated pipeline in DB (as if from a previous import)
+        sync_db.upsert_pipeline(
+            name="unmigrated-pipe",
+            path="/unmigrated.yaml",
+            yaml_content="name: unmigrated-pipe\nsteps:\n  - id: s1\n    type: flow.set\n    values:\n      x: 1\n",
+        )
+
+        with patch("brix.startup_sync._HELPER_SEARCH_PATHS", [helper_dir]):
             result = run_startup_sync(sync_db)
 
+        # Helpers registered from disk
         assert result["helpers_registered"] == 2
-        assert result["pipelines_imported"] == 2
+        # Pipeline normalized from yaml_content to step rows
+        assert result["pipelines_normalized"] >= 1
+        # Verify the pipeline is now migrated
+        row = sync_db.get_pipeline("unmigrated-pipe")
+        assert row["migration_status"] == "v71_complete"
+        # Verify step rows exist
+        steps = sync_db.get_steps(row["id"])
+        assert len(steps) == 1
+        assert len(steps) >= 1  # step row created
 
-    def test_idempotent(self, sync_db, helper_dir, pipeline_dir):
-        with patch("brix.startup_sync._HELPER_SEARCH_PATHS", [helper_dir]), \
-             patch("brix.startup_sync._PIPELINE_SEARCH_PATHS", [pipeline_dir]):
+    def test_idempotent(self, sync_db, helper_dir):
+        """Running startup sync twice produces no duplicate data."""
+        sync_db.upsert_pipeline(
+            name="idem-pipe",
+            path="/idem.yaml",
+            yaml_content="name: idem-pipe\nsteps:\n  - id: s1\n    type: flow.set\n    values:\n      v: 1\n",
+        )
+
+        with patch("brix.startup_sync._HELPER_SEARCH_PATHS", [helper_dir]):
             result1 = run_startup_sync(sync_db)
             result2 = run_startup_sync(sync_db)
 
-        # First run registers things
+        # First run registers helpers and normalizes
         assert result1["helpers_registered"] == 2
-        assert result1["pipelines_imported"] == 2
-
+        assert result1["pipelines_normalized"] >= 1
         # Second run finds nothing new
         assert result2["helpers_registered"] == 0
-        assert result2["pipelines_imported"] == 0
+        assert result2["pipelines_normalized"] == 0

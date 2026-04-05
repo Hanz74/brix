@@ -5,8 +5,7 @@ Idempotent: safe to run multiple times with the same result.
 
 Syncs:
   - Helpers: disk files not in DB get auto-registered
-  - Pipelines: disk YAML not in DB get imported
-  - Descriptions: empty DB descriptions backfilled from YAML content
+  - Pipelines: DB rows are normalized if migration is incomplete
   - Orphans: triggers pointing to missing pipelines, helpers without files
   - Test artifacts: known test helper files cleaned from ~/.brix/helpers/
 """
@@ -205,14 +204,9 @@ def run_startup_sync(db: "BrixDB") -> dict:
         logger.warning("startup_sync: helper sync failed: %s", exc)
 
     try:
-        summary["pipelines_imported"] = _sync_pipelines(db)
+        summary["pipelines_normalized"] = _sync_pipelines(db)
     except Exception as exc:
         logger.warning("startup_sync: pipeline sync failed: %s", exc)
-
-    try:
-        summary["pipelines_normalized"] = _migrate_pipeline_steps(db)
-    except Exception as exc:
-        logger.warning("startup_sync: pipeline normalization failed: %s", exc)
 
     try:
         summary["descriptions_backfilled"] = _backfill_descriptions(db)
@@ -278,95 +272,31 @@ def _sync_helpers(db: "BrixDB") -> int:
 
 
 def _sync_pipelines(db: "BrixDB") -> int:
-    """Import pipeline YAML files from disk that are not yet in the DB."""
+    """Ensure pipeline rows are fully migrated to DB-native step storage."""
+    pending = [
+        pipeline["name"]
+        for pipeline in db.list_pipelines()
+        if pipeline.get("migration_status") != "v71_complete"
+    ]
+    if not pending:
+        return 0
 
-    disk_pipelines = _scan_pipeline_files()
-    db_pipelines = {p["name"] for p in db.list_pipelines()}
-
-    imported = 0
-    for name, path in disk_pipelines.items():
-        if name in db_pipelines:
-            continue
-        if _is_test_pipeline(name):
-            continue
-        try:
-            content = path.read_text(encoding="utf-8")
-            raw = yaml.safe_load(content) or {}
-            # Use the YAML name field if present, otherwise file stem
-            yaml_name = raw.get("name") or name
-            if yaml_name in db_pipelines:
-                continue
-
-            description = (raw.get("description") or "").strip()
-            project = (raw.get("project") or "").strip()
-            tags_raw = raw.get("tags")
-            tags = tags_raw if isinstance(tags_raw, list) else None
-
-            db.upsert_pipeline(
-                name=yaml_name,
-                path=str(path),
-                yaml_content=content,
-                project=project or None,
-                tags=tags,
-            )
-            # Also update description if available
-            if description:
-                _set_pipeline_description(db, yaml_name, description)
-
-            logger.info("startup_sync: imported pipeline '%s' from %s", yaml_name, path)
-            db_pipelines.add(yaml_name)
-            imported += 1
-        except Exception as exc:
-            logger.warning("startup_sync: failed to import pipeline '%s': %s", name, exc)
-
-    return imported
-
-
-def _migrate_pipeline_steps(db: "BrixDB") -> int:
-    """Normalize imported legacy YAML-backed pipelines into row tables."""
+    logger.info(
+        "startup_sync: normalizing %d pipeline(s) without v71_complete status",
+        len(pending),
+    )
     summary = _normalize_pipeline_steps_common(db, log_prefix="startup_sync")
     return summary["migrated"]
 
 
-def _set_pipeline_description(db: "BrixDB", name: str, description: str) -> None:
-    """Set the description column on a pipeline row."""
-    import sqlite3
-    with db._connect() as conn:
-        if db._column_exists(conn, "pipeline", "description"):
-            conn.execute(
-                "UPDATE pipeline SET description=? WHERE name=?",
-                (description, name),
-            )
+def _migrate_pipeline_steps(db: "BrixDB") -> int:
+    """Compatibility wrapper; pipeline normalization now happens in _sync_pipelines()."""
+    return 0
 
 
 def _backfill_descriptions(db: "BrixDB") -> int:
-    """For pipelines with empty description but yaml_content containing one, backfill."""
-    import sqlite3
-
-    with db._connect() as conn:
-        if not db._column_exists(conn, "pipeline", "description"):
-            return 0
-        if not db._column_exists(conn, "pipeline", "yaml_content"):
-            return 0
-
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """SELECT name, yaml_content FROM pipeline
-               WHERE (description IS NULL OR description = '')
-                 AND yaml_content IS NOT NULL AND yaml_content != ''"""
-        ).fetchall()
-
-    backfilled = 0
-    for row in rows:
-        name = row["name"]
-        yaml_content = row["yaml_content"]
-        desc = _extract_description_from_yaml(yaml_content)
-        if desc:
-            _set_pipeline_description(db, name, desc)
-            logger.info("startup_sync: backfilled description for pipeline '%s'", name)
-            backfilled += 1
-
-    return backfilled
+    """No-op; descriptions live in the pipeline row and are not backfilled from YAML."""
+    return 0
 
 
 def _detect_orphans(db: "BrixDB") -> dict:

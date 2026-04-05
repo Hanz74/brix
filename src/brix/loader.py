@@ -40,13 +40,28 @@ class PipelineLoader:
     # ------------------------------------------------------------------
 
     def load(self, path: str, search_paths: list[str] | None = None) -> Pipeline:
-        """Load a pipeline YAML file and parse into a Pipeline model."""
+        """Deprecated: load a pipeline from a YAML file on disk."""
         with open(path) as f:
             raw = yaml.safe_load(f)
         base_dir = os.path.dirname(os.path.abspath(path))
         raw = self.resolve_includes(raw, base_dir=base_dir)
         raw = self.resolve_extends(raw, base_dir=base_dir, search_paths=search_paths)
         return Pipeline.model_validate(raw)
+
+    def load_from_db(
+        self,
+        pipeline_row: dict,
+        step_rows: list[dict],
+        credential_rows: list[dict] | None = None,
+        input_rows: list[dict] | None = None,
+    ) -> Pipeline:
+        """Load a pipeline from normalized DB rows."""
+        return Pipeline.from_db(
+            pipeline_row,
+            step_rows,
+            credential_rows,
+            input_rows,
+        )
 
     def load_from_string(self, yaml_string: str, base_dir: str | None = None, search_paths: list[str] | None = None) -> Pipeline:
         """Load a pipeline from a YAML string."""
