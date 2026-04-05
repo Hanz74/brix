@@ -66,6 +66,124 @@ def _normalize_helper_ref(ref: str) -> str:
 # Schema
 # ---------------------------------------------------------------------------
 
+_PIPELINE_INPUT_DDL = """
+    CREATE TABLE IF NOT EXISTS pipeline_input (
+        pipeline_id   TEXT NOT NULL,
+        input_key     TEXT NOT NULL,
+        type          TEXT NOT NULL,
+        default_json  TEXT,
+        description   TEXT,
+        PRIMARY KEY (pipeline_id, input_key),
+        FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE CASCADE
+    )
+"""
+
+_PIPELINE_CREDENTIAL_DDL = """
+    CREATE TABLE IF NOT EXISTS pipeline_credential (
+        pipeline_id   TEXT NOT NULL,
+        alias         TEXT NOT NULL,
+        env_ref       TEXT NOT NULL,
+        refresh_json  TEXT,
+        PRIMARY KEY (pipeline_id, alias),
+        FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE CASCADE
+    )
+"""
+
+_PIPELINE_STEP_DDL = """
+    CREATE TABLE IF NOT EXISTS pipeline_step (
+        id                   TEXT PRIMARY KEY,
+        pipeline_id          TEXT NOT NULL,
+        step_key             TEXT NOT NULL,
+        parent_step_id       TEXT,
+        container            TEXT NOT NULL DEFAULT 'steps',
+        branch_key           TEXT,
+        branch_when          TEXT,
+        position             INTEGER NOT NULL,
+        step_type            TEXT NOT NULL,
+        enabled              INTEGER NOT NULL DEFAULT 1,
+        script               TEXT,
+        helper               TEXT,
+        url                  TEXT,
+        method               TEXT DEFAULT 'GET',
+        headers_json         TEXT,
+        body_json            TEXT,
+        command              TEXT,
+        args_json            TEXT,
+        shell                INTEGER NOT NULL DEFAULT 0,
+        server               TEXT,
+        tool                 TEXT,
+        sub_pipeline         TEXT,
+        pipelines_json       TEXT,
+        shared_params_json   TEXT NOT NULL DEFAULT '{}',
+        values_json          TEXT,
+        persist              INTEGER NOT NULL DEFAULT 0,
+        message              TEXT,
+        success_on_stop      INTEGER NOT NULL DEFAULT 1,
+        channel              TEXT,
+        notify_to            TEXT,
+        approval_timeout     TEXT DEFAULT '24h',
+        on_timeout           TEXT DEFAULT 'stop',
+        until_expr           TEXT,
+        while_expr           TEXT,
+        max_iterations       INTEGER NOT NULL DEFAULT 100,
+        params_json          TEXT,
+        foreach_expr         TEXT,
+        parallel             INTEGER NOT NULL DEFAULT 0,
+        concurrency          INTEGER NOT NULL DEFAULT 10,
+        batch_size           INTEGER NOT NULL DEFAULT 0,
+        flat_output          INTEGER NOT NULL DEFAULT 0,
+        when_expr            TEXT,
+        else_of              TEXT,
+        on_error             TEXT,
+        retry_profile        TEXT,
+        timeout              TEXT,
+        fetch_all_pages      INTEGER NOT NULL DEFAULT 0,
+        progress             INTEGER NOT NULL DEFAULT 0,
+        requirements_json    TEXT NOT NULL DEFAULT '[]',
+        input_schema_json    TEXT NOT NULL DEFAULT '{}',
+        output_schema_json   TEXT NOT NULL DEFAULT '{}',
+        rules_json           TEXT,
+        config_json          TEXT,
+        depends_on_json      TEXT NOT NULL DEFAULT '[]',
+        cache_json           TEXT,
+        circuit_breaker_json TEXT,
+        rate_limit_json      TEXT,
+        compensate_json      TEXT,
+        persist_output       INTEGER NOT NULL DEFAULT 0,
+        pause_before         INTEGER NOT NULL DEFAULT 0,
+        persist_data         INTEGER NOT NULL DEFAULT 1,
+        profile              TEXT,
+        queue_name           TEXT,
+        collect_until        INTEGER,
+        collect_for          TEXT,
+        flush_to             TEXT,
+        event                TEXT,
+        data_json            TEXT,
+        stream               INTEGER NOT NULL DEFAULT 0,
+        unwrap_json          INTEGER,
+        created_at           TEXT NOT NULL,
+        updated_at           TEXT NOT NULL,
+        FOREIGN KEY (pipeline_id) REFERENCES pipeline(id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_step_id) REFERENCES pipeline_step(id) ON DELETE CASCADE,
+        UNIQUE (pipeline_id, step_key)
+    )
+"""
+
+_PIPELINE_STEP_INDEX_DDL = [
+    """
+    CREATE INDEX IF NOT EXISTS idx_pipeline_step_pipeline_id
+        ON pipeline_step (pipeline_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_pipeline_step_parent_container_position
+        ON pipeline_step (parent_step_id, container, position)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_pipeline_step_pipeline_step_key
+        ON pipeline_step (pipeline_id, step_key)
+    """,
+]
+
 _DDL = [
     """
     CREATE TABLE IF NOT EXISTS run (
@@ -97,6 +215,25 @@ _DDL = [
         path         TEXT NOT NULL,
         created_at   TEXT NOT NULL,
         updated_at   TEXT NOT NULL,
+        version      TEXT DEFAULT '1.0.0',
+        brix_version TEXT,
+        kind         TEXT,
+        extends      TEXT,
+        is_template  INTEGER NOT NULL DEFAULT 0,
+        compositor_mode INTEGER NOT NULL DEFAULT 0,
+        allow_code   INTEGER NOT NULL DEFAULT 1,
+        strict_bricks INTEGER NOT NULL DEFAULT 0,
+        test_mode    INTEGER NOT NULL DEFAULT 0,
+        idempotency_key TEXT,
+        template_params_json TEXT NOT NULL DEFAULT '{}',
+        blueprint_params_json TEXT NOT NULL DEFAULT '[]',
+        error_handling_json TEXT NOT NULL DEFAULT '{}',
+        retry_profiles_json TEXT NOT NULL DEFAULT '{}',
+        notify_json TEXT NOT NULL DEFAULT '{}',
+        groups_json TEXT NOT NULL DEFAULT '{}',
+        output_json TEXT,
+        output_slots_json TEXT NOT NULL DEFAULT '{}',
+        migration_status TEXT DEFAULT NULL,
         requirements_json TEXT DEFAULT '[]',
         yaml_content TEXT DEFAULT '',
         project      TEXT DEFAULT '',
@@ -105,6 +242,10 @@ _DDL = [
         description  TEXT DEFAULT ''
     )
     """,
+    _PIPELINE_INPUT_DDL,
+    _PIPELINE_CREDENTIAL_DDL,
+    _PIPELINE_STEP_DDL,
+    *_PIPELINE_STEP_INDEX_DDL,
     """
     CREATE TABLE IF NOT EXISTS helper (
         id               TEXT PRIMARY KEY,

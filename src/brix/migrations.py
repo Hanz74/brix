@@ -311,7 +311,63 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_update_trigger_schema_and_help_v69",
         "down": "",
     },
+    {
+        "version": 70,
+        "name": "add_db_only_pipeline_persistence_tables",
+        "up": "",
+        "up_fn": "_add_db_only_pipeline_persistence_v70",
+        "down": "",
+    },
 ]
+
+
+def _add_db_only_pipeline_persistence_v70(db: "BrixDB") -> None:
+    """Create normalized pipeline persistence tables and extend pipeline metadata."""
+    from brix.db import (
+        _PIPELINE_CREDENTIAL_DDL,
+        _PIPELINE_INPUT_DDL,
+        _PIPELINE_STEP_DDL,
+        _PIPELINE_STEP_INDEX_DDL,
+    )
+
+    pipeline_columns = [
+        ("version", "TEXT DEFAULT '1.0.0'"),
+        ("brix_version", "TEXT"),
+        ("kind", "TEXT"),
+        ("extends", "TEXT"),
+        ("is_template", "INTEGER NOT NULL DEFAULT 0"),
+        ("compositor_mode", "INTEGER NOT NULL DEFAULT 0"),
+        ("allow_code", "INTEGER NOT NULL DEFAULT 1"),
+        ("strict_bricks", "INTEGER NOT NULL DEFAULT 0"),
+        ("test_mode", "INTEGER NOT NULL DEFAULT 0"),
+        ("idempotency_key", "TEXT"),
+        ("template_params_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("blueprint_params_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("error_handling_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("retry_profiles_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("notify_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("groups_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("output_json", "TEXT"),
+        ("output_slots_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("migration_status", "TEXT DEFAULT NULL"),
+    ]
+
+    with db._connect() as conn:
+        conn.execute(_PIPELINE_INPUT_DDL)
+        conn.execute(_PIPELINE_CREDENTIAL_DDL)
+        conn.execute(_PIPELINE_STEP_DDL)
+        for ddl in _PIPELINE_STEP_INDEX_DDL:
+            conn.execute(ddl)
+
+        for column_name, column_sql in pipeline_columns:
+            try:
+                conn.execute(
+                    f"ALTER TABLE pipeline ADD COLUMN {column_name} {column_sql}"
+                )
+            except Exception as exc:
+                err = str(exc).lower()
+                if "duplicate column" not in err:
+                    raise
 
 
 def _register_new_tool_schemas_v67(db: "BrixDB") -> None:
