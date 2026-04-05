@@ -263,7 +263,11 @@ from brix.mcp_handlers.insights import (
     _handle_release_resource,
     _handle_db_status,
 )
-from brix.mcp_handlers.health import _handle_health, _handle_get_app_log
+from brix.mcp_handlers.health import (
+    _handle_health,
+    _handle_get_app_log,
+    _handle_validate_step_migration,
+)
 from brix.mcp_handlers.backup import (
     _handle_backup,
     _handle_restore,
@@ -727,6 +731,7 @@ _HANDLERS = {
     "brix__db_status": _handle_db_status,
     # Health Check — Gesamt-Status (T-BRIX-DB-25)
     "brix__health": _handle_health,
+    "brix__validate_step_migration": _handle_validate_step_migration,
     # Application Event Log (T-BRIX-LOG-01)
     "brix__get_app_log": _handle_get_app_log,
     # Backup / Restore (T-BRIX-DB-28)

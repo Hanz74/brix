@@ -628,7 +628,7 @@ async def _handle_rename_pipeline(arguments: dict) -> dict:
     except FileNotFoundError:
         return {"success": False, "error": f"Pipeline '{old_name}' not found"}
 
-    # Locate old YAML file (may be in search paths, not necessarily pipelines_dir)
+    # Locate old YAML file if one still exists on disk (legacy dual-write setups)
     old_path: "Path | None" = None
     for search_dir in store.search_paths:
         for ext in [".yaml", ".yml"]:
@@ -639,24 +639,21 @@ async def _handle_rename_pipeline(arguments: dict) -> dict:
         if old_path:
             break
 
-    if old_path is None:
-        return {"success": False, "error": f"Could not locate YAML file for '{old_name}'"}
-
     # Update the name field inside the data
     data["name"] = new_name
 
     # Save under new name (this also writes db index and archives a version)
     store.save(data, name=new_name)
 
-    # Delete old file + db entry
-    # Remove old YAML directly (store.delete only looks in pipelines_dir)
-    try:
-        old_path.unlink()
-    except OSError as exc:
-        return {
-            "success": False,
-            "error": f"New file saved as '{new_name}' but could not remove old file: {exc}",
-        }
+    # Delete old file when present, but DB-only pipelines have no filesystem artifact.
+    if old_path is not None:
+        try:
+            old_path.unlink()
+        except OSError as exc:
+            return {
+                "success": False,
+                "error": f"New file saved as '{new_name}' but could not remove old file: {exc}",
+            }
     # Remove old db entry
     store._db.delete_pipeline(old_name)
 

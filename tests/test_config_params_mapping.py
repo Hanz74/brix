@@ -126,7 +126,7 @@ class TestCreatePipelineConfigMapping:
         raw = store.load_raw("test-config-map")
         saved_step = raw["steps"][0]
         assert saved_step.get("params") == {"url": "https://example.com", "method": "GET"}
-        assert "config" not in saved_step
+        assert saved_step.get("config") in (None, {})
 
     @pytest.mark.asyncio
     async def test_params_still_works(self, tmp_path, monkeypatch):
@@ -146,7 +146,7 @@ class TestCreatePipelineConfigMapping:
         raw = store.load_raw("test-params-ok")
         saved_step = raw["steps"][0]
         assert saved_step.get("params") == {"url": "https://example.com"}
-        assert "config" not in saved_step
+        assert saved_step.get("config") in (None, {})
 
     @pytest.mark.asyncio
     async def test_specialist_config_preserved(self, tmp_path, monkeypatch):
@@ -170,7 +170,7 @@ class TestCreatePipelineConfigMapping:
         raw = store.load_raw("test-specialist")
         saved_step = raw["steps"][0]
         assert saved_step.get("config") == specialist_config
-        assert "params" not in saved_step
+        assert saved_step.get("params") in (None, {})
 
 
 class TestAddStepConfigMapping:
@@ -200,4 +200,4 @@ class TestAddStepConfigMapping:
         raw = store.load_raw("test-add-step")
         added_step = next(s for s in raw["steps"] if s["id"] == "call_api")
         assert added_step.get("params") == {"url": "https://api.example.com"}
-        assert "config" not in added_step
+        assert added_step.get("config") in (None, {})

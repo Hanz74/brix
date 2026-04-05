@@ -32,6 +32,8 @@ from brix.config import config
 # references. Keep lazy construction, but expose a stable proxy object so all
 # imports resolve the real BrickRegistry on first use.
 _registry_instance = None
+_store_instance = None
+_audit_db_instance = None
 
 
 class _RegistryProxy:
@@ -48,9 +50,35 @@ def _get_registry():
     if _registry_instance is None:
         _registry_instance = BrickRegistry(db=BrixDB())
     return _registry_instance
+
+
+class _StoreProxy:
+    def __getattr__(self, name):
+        return getattr(_get_store(), name)
+
+
+class _AuditDBProxy:
+    def __getattr__(self, name):
+        return getattr(_get_audit_db(), name)
+
+
+def _get_store():
+    global _store_instance
+    if _store_instance is None:
+        _store_instance = PipelineStore()
+    return _store_instance
+
+
+def _get_audit_db():
+    global _audit_db_instance
+    if _audit_db_instance is None:
+        _audit_db_instance = BrixDB()
+    return _audit_db_instance
+
+
 _validator = PipelineValidator()
-_store = PipelineStore()
-_audit_db = BrixDB()  # shared instance for audit logging
+_store = _StoreProxy()
+_audit_db = _AuditDBProxy()  # shared instance for audit logging
 
 # Background-run registry — maps run_id → asyncio.Task for async-mode runs
 _background_runs: dict[str, "asyncio.Task[None]"] = {}

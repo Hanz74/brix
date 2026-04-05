@@ -7,7 +7,10 @@ triggers, and retention policy.
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
+
+import yaml
 
 from brix.db import BrixDB, _DEFAULT_RETENTION_DAYS, _DEFAULT_RETENTION_MAX_MB
 from brix.runners.base import discover_runners
@@ -283,4 +286,60 @@ async def _handle_health(arguments: dict) -> dict:
     return {
         "overall": overall,
         **subsystems,
+    }
+
+
+async def _handle_validate_step_migration(arguments: dict) -> dict:
+    """Compare DB-backed pipeline reconstruction against yaml_content for all pipelines."""
+    db = BrixDB()
+    store = PipelineStore(pipelines_dir=_pipeline_dir(), db=db)
+
+    mismatches: list[dict] = []
+    checked = 0
+
+    with db._connect() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, name, yaml_content, migration_status FROM pipeline ORDER BY name ASC"
+        ).fetchall()
+
+    for row in rows:
+        pipeline_id = row["id"]
+        name = row["name"]
+        yaml_content = row["yaml_content"] or ""
+        checked += 1
+
+        yaml_dict = yaml.safe_load(yaml_content) if yaml_content else None
+        db_dict = db.pipeline_to_dict(pipeline_id)
+
+        if db_dict == yaml_dict:
+            continue
+
+        mismatch: dict[str, object] = {
+            "name": name,
+            "migration_status": row["migration_status"],
+        }
+        if yaml_dict is None:
+            mismatch["reason"] = "missing_yaml_content"
+        elif db_dict is None:
+            mismatch["reason"] = "missing_db_rows"
+        else:
+            mismatch["reason"] = "content_mismatch"
+            mismatch["db_keys"] = sorted(db_dict.keys())
+            mismatch["yaml_keys"] = sorted(yaml_dict.keys())
+
+            try:
+                loaded = store.load_raw(name)
+            except Exception:
+                loaded = None
+            mismatch["store_load_matches_db"] = loaded == db_dict
+            mismatch["store_load_matches_yaml"] = loaded == yaml_dict
+
+        mismatches.append(mismatch)
+
+    return {
+        "success": True,
+        "checked": checked,
+        "mismatch_count": len(mismatches),
+        "mismatches": mismatches,
     }

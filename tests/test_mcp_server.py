@@ -505,13 +505,14 @@ class TestBuilderHandlers:
 
     @pytest.mark.asyncio
     async def test_create_pipeline_empty(self, tmp_path, monkeypatch):
-        """Create an empty pipeline saves a YAML file."""
+        """Create an empty pipeline persists a DB pipeline row."""
         monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
         result = await _handle_create_pipeline({"name": "test-empty"})
         assert result["success"] is True
         assert result["pipeline_id"] == "test-empty"
         assert result["step_count"] == 0
-        assert (tmp_path / "test-empty.yaml").exists()
+        from brix.db import BrixDB
+        assert BrixDB().get_pipeline("test-empty") is not None
 
     @pytest.mark.asyncio
     async def test_create_pipeline_inline(self, tmp_path, monkeypatch):
@@ -526,7 +527,8 @@ class TestBuilderHandlers:
         assert result["success"] is True
         assert result["step_count"] == 1
         assert "validated" in result
-        assert (tmp_path / "test-inline.yaml").exists()
+        from brix.db import BrixDB
+        assert BrixDB().get_pipeline("test-inline") is not None
 
     @pytest.mark.asyncio
     async def test_get_pipeline(self, tmp_path, monkeypatch):
@@ -1021,9 +1023,8 @@ class TestBuilderHandlers:
             "error_handling": eh,
         })
         assert result["success"] is True
-        # Load raw YAML to confirm error_handling is stored
-        import yaml
-        raw = yaml.safe_load((tmp_path / "test-eh-create.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("test-eh-create")
         assert raw.get("error_handling", {}).get("on_error") == "continue"
 
     @pytest.mark.asyncio
@@ -1038,8 +1039,8 @@ class TestBuilderHandlers:
         })
         assert result["success"] is True
         assert "error_handling" in result["changed_fields"]
-        import yaml
-        raw = yaml.safe_load((tmp_path / "test-eh-upd.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("test-eh-upd")
         assert raw["error_handling"]["on_error"] == "retry"
         assert raw["error_handling"]["retry"]["max"] == 5
 
@@ -1057,8 +1058,8 @@ class TestBuilderHandlers:
             "groups": groups,
         })
         assert result["success"] is True
-        import yaml
-        raw = yaml.safe_load((tmp_path / "test-groups-create.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("test-groups-create")
         assert "shared_fetch" in raw.get("groups", {})
 
     @pytest.mark.asyncio
@@ -1075,8 +1076,8 @@ class TestBuilderHandlers:
         })
         assert result["success"] is True
         assert "groups" in result["changed_fields"]
-        import yaml
-        raw = yaml.safe_load((tmp_path / "test-groups-upd.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("test-groups-upd")
         assert "setup" in raw.get("groups", {})
 
     @pytest.mark.asyncio
@@ -1089,8 +1090,8 @@ class TestBuilderHandlers:
             "output": output,
         })
         assert result["success"] is True
-        import yaml
-        raw = yaml.safe_load((tmp_path / "test-output-create.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("test-output-create")
         assert raw.get("output", {}).get("result") == "{{ steps.fetch.data }}"
 
     @pytest.mark.asyncio
@@ -1105,8 +1106,8 @@ class TestBuilderHandlers:
         })
         assert result["success"] is True
         assert "output" in result["changed_fields"]
-        import yaml
-        raw = yaml.safe_load((tmp_path / "test-output-upd.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("test-output-upd")
         assert raw["output"]["summary"] == "{{ steps.process.summary }}"
 
     @pytest.mark.asyncio
@@ -2145,10 +2146,12 @@ class TestRenamePipeline:
 
     @pytest.mark.asyncio
     async def test_rename_pipeline_basic(self, tmp_path, monkeypatch):
-        """Rename a pipeline: new YAML file created, old file removed, db updated."""
+        """Rename a pipeline: DB name updated and old name removed."""
         monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
         await _handle_create_pipeline({"name": "xtest-orig-rename-basic"})
-        assert (tmp_path / "xtest-orig-rename-basic.yaml").exists()
+        from brix.db import BrixDB
+        db = BrixDB()
+        assert db.get_pipeline("xtest-orig-rename-basic") is not None
 
         result = await _handle_rename_pipeline({
             "old_name": "xtest-orig-rename-basic",
@@ -2158,34 +2161,35 @@ class TestRenamePipeline:
         assert result["old_name"] == "xtest-orig-rename-basic"
         assert result["new_name"] == "xtest-new-rename-basic"
 
-        assert not (tmp_path / "xtest-orig-rename-basic.yaml").exists()
-        assert (tmp_path / "xtest-new-rename-basic.yaml").exists()
+        assert db.get_pipeline("xtest-orig-rename-basic") is None
+        assert db.get_pipeline("xtest-new-rename-basic") is not None
 
     @pytest.mark.asyncio
     async def test_rename_pipeline_updates_name_field(self, tmp_path, monkeypatch):
-        """The 'name' field inside the YAML is updated to the new name."""
-        import yaml as _yaml
+        """The pipeline payload stored in DB updates its name field."""
         monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
         await _handle_create_pipeline({"name": "xtest-rn-alpha"})
 
         await _handle_rename_pipeline({"old_name": "xtest-rn-alpha", "new_name": "xtest-rn-beta"})
 
-        raw = _yaml.safe_load((tmp_path / "xtest-rn-beta.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        raw = PipelineStore(pipelines_dir=tmp_path).load_raw("xtest-rn-beta")
         assert raw["name"] == "xtest-rn-beta"
 
     @pytest.mark.asyncio
     async def test_rename_pipeline_preserves_uuid(self, tmp_path, monkeypatch):
         """The pipeline UUID is preserved after rename."""
-        import yaml as _yaml
         monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
         await _handle_create_pipeline({"name": "xtest-uuid-pipe"})
 
-        before_raw = _yaml.safe_load((tmp_path / "xtest-uuid-pipe.yaml").read_text())
+        from brix.pipeline_store import PipelineStore
+        store = PipelineStore(pipelines_dir=tmp_path)
+        before_raw = store.load_raw("xtest-uuid-pipe")
         original_uuid = before_raw.get("id")
 
         await _handle_rename_pipeline({"old_name": "xtest-uuid-pipe", "new_name": "xtest-uuid-renamed"})
 
-        after_raw = _yaml.safe_load((tmp_path / "xtest-uuid-renamed.yaml").read_text())
+        after_raw = store.load_raw("xtest-uuid-renamed")
         assert after_raw.get("id") == original_uuid
 
     @pytest.mark.asyncio

@@ -328,6 +328,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_normalize_pipeline_steps_v71",
         "down": "",
     },
+    {
+        "version": 72,
+        "name": "add_nested_step_json_columns",
+        "up": "",
+        "up_fn": "_add_nested_step_json_columns_v72",
+        "down": "",
+    },
 ]
 
 
@@ -583,6 +590,22 @@ def _normalize_pipeline_steps_common(
 def _normalize_pipeline_steps_v71(db: "BrixDB") -> None:
     """Normalize legacy YAML-backed pipelines into step/input/credential rows."""
     _normalize_pipeline_steps_common(db, log_prefix="migration v71")
+
+
+def _add_nested_step_json_columns_v72(db: "BrixDB") -> None:
+    """Add JSON columns needed to persist nested step containers in pipeline_step."""
+    columns = [
+        ("choices_json", "TEXT"),
+        ("default_steps_json", "TEXT"),
+        ("sequence_json", "TEXT"),
+        ("sub_steps_json", "TEXT"),
+    ]
+    with db._connect() as conn:
+        for column, column_type in columns:
+            if not db._column_exists(conn, "pipeline_step", column):
+                conn.execute(
+                    f"ALTER TABLE pipeline_step ADD COLUMN {column} {column_type}"
+                )
 
 
 def _register_new_tool_schemas_v67(db: "BrixDB") -> None:
