@@ -62,6 +62,142 @@ def _normalize_helper_ref(ref: str) -> str:
     return name
 
 
+_STEP_FIELD_TO_COLUMN: dict[str, str] = {
+    "id": "step_key",
+    "type": "step_type",
+    "pipeline": "sub_pipeline",
+    "to": "notify_to",
+    "when": "when_expr",
+    "until": "until_expr",
+    "foreach": "foreach_expr",
+    "while_condition": "while_expr",
+}
+
+_STEP_COLUMN_TO_FIELD: dict[str, str] = {
+    value: key for key, value in _STEP_FIELD_TO_COLUMN.items()
+}
+
+_STEP_JSON_COLUMNS: set[str] = {
+    "headers_json",
+    "body_json",
+    "args_json",
+    "pipelines_json",
+    "shared_params_json",
+    "values_json",
+    "params_json",
+    "requirements_json",
+    "input_schema_json",
+    "output_schema_json",
+    "rules_json",
+    "config_json",
+    "depends_on_json",
+    "cache_json",
+    "circuit_breaker_json",
+    "rate_limit_json",
+    "compensate_json",
+    "data_json",
+}
+
+_STEP_BOOL_COLUMNS: set[str] = {
+    "enabled",
+    "shell",
+    "persist",
+    "success_on_stop",
+    "parallel",
+    "flat_output",
+    "fetch_all_pages",
+    "progress",
+    "persist_output",
+    "pause_before",
+    "persist_data",
+    "stream",
+    "unwrap_json",
+}
+
+_STEP_STRUCTURAL_COLUMNS: set[str] = {
+    "pipeline_id",
+    "parent_step_id",
+    "container",
+    "branch_key",
+    "branch_when",
+    "position",
+    "created_at",
+    "updated_at",
+}
+
+_PIPELINE_JSON_COLUMNS: dict[str, str] = {
+    "template_params_json": "template_params",
+    "blueprint_params_json": "blueprint_params",
+    "error_handling_json": "error_handling",
+    "retry_profiles_json": "retry_profiles",
+    "notify_json": "notify",
+    "groups_json": "groups",
+    "output_json": "output",
+    "output_slots_json": "output_slots",
+    "requirements_json": "requirements",
+}
+
+_PIPELINE_BOOL_COLUMNS: dict[str, str] = {
+    "is_template": "is_template",
+    "compositor_mode": "compositor_mode",
+    "allow_code": "allow_code",
+    "strict_bricks": "strict_bricks",
+    "test_mode": "test_mode",
+}
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, default=str)
+
+
+def _json_loads(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return value
+
+
+def step_dict_to_row(step_dict: dict) -> dict:
+    """Convert a step dict using model field names into DB column names."""
+    row: dict[str, Any] = {}
+    for key, value in step_dict.items():
+        column = _STEP_FIELD_TO_COLUMN.get(key)
+        if column is None and f"{key}_json" in _STEP_JSON_COLUMNS:
+            column = f"{key}_json"
+        if column is None:
+            column = key
+        if column in _STEP_JSON_COLUMNS:
+            row[column] = _json_dumps(value)
+        elif column in _STEP_BOOL_COLUMNS:
+            row[column] = None if value is None else int(bool(value))
+        else:
+            row[column] = value
+    return row
+
+
+def step_row_to_dict(row: dict) -> dict:
+    """Convert a DB step row into a step dict using model field names."""
+    step: dict[str, Any] = {}
+    for key, value in row.items():
+        if key == "id":
+            continue
+        if key in _STEP_STRUCTURAL_COLUMNS:
+            continue
+        if key in _STEP_JSON_COLUMNS and key.endswith("_json"):
+            field = key[:-5]
+        else:
+            field = _STEP_COLUMN_TO_FIELD.get(key, key)
+        if key in _STEP_JSON_COLUMNS:
+            step[field] = _json_loads(value)
+        elif key in _STEP_BOOL_COLUMNS:
+            step[field] = None if value is None else bool(value)
+        else:
+            step[field] = value
+    return step
+
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -2193,6 +2329,263 @@ class BrixDB:
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM pipeline WHERE name=?", (name,))
             return cursor.rowcount > 0
+
+    def upsert_step(self, pipeline_id: str, step_dict: dict, step_order: int) -> str:
+        """Insert or update one normalized pipeline_step row."""
+        now = _now_iso()
+        row = step_dict_to_row(step_dict)
+        step_key = row["step_key"]
+
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id, created_at FROM pipeline_step WHERE pipeline_id=? AND step_key=?",
+                (pipeline_id, step_key),
+            ).fetchone()
+            row_id = existing[0] if existing else str(uuid4())
+            created_at = existing[1] if existing else now
+
+            row.update(
+                {
+                    "id": row_id,
+                    "pipeline_id": pipeline_id,
+                    "position": step_order,
+                    "created_at": created_at,
+                    "updated_at": now,
+                }
+            )
+
+            cols = list(row.keys())
+            placeholders = ",".join("?" for _ in cols)
+            updates = ",".join(
+                f"{col}=excluded.{col}" for col in cols if col not in {"id", "created_at"}
+            )
+            conn.execute(
+                f"""INSERT INTO pipeline_step ({",".join(cols)})
+                   VALUES ({placeholders})
+                   ON CONFLICT(pipeline_id, step_key) DO UPDATE SET {updates}""",
+                [row[col] for col in cols],
+            )
+        return row_id
+
+    def get_steps(self, pipeline_id: str) -> list[dict]:
+        """Return all steps for a pipeline ordered by position."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM pipeline_step WHERE pipeline_id=? ORDER BY position ASC",
+                (pipeline_id,),
+            ).fetchall()
+        return [step_row_to_dict(dict(row)) for row in rows]
+
+    def get_step_by_id(self, pipeline_id: str, step_id: str) -> dict | None:
+        """Return one step by model-visible step id."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM pipeline_step WHERE pipeline_id=? AND step_key=?",
+                (pipeline_id, step_id),
+            ).fetchone()
+        return step_row_to_dict(dict(row)) if row else None
+
+    def update_step_row(self, pipeline_id: str, step_id: str, updates: dict) -> bool:
+        """Partially update one pipeline_step row."""
+        if not updates:
+            return self.get_step_by_id(pipeline_id, step_id) is not None
+
+        row_updates = step_dict_to_row(updates)
+        if not row_updates:
+            return self.get_step_by_id(pipeline_id, step_id) is not None
+
+        row_updates["updated_at"] = _now_iso()
+        assignments = ", ".join(f"{column}=?" for column in row_updates)
+        values = list(row_updates.values()) + [pipeline_id, step_id]
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""UPDATE pipeline_step
+                    SET {assignments}
+                    WHERE pipeline_id=? AND step_key=?""",
+                values,
+            )
+            return cursor.rowcount > 0
+
+    def delete_step_row(self, pipeline_id: str, step_id: str) -> bool:
+        """Delete one step row by model-visible step id."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM pipeline_step WHERE pipeline_id=? AND step_key=?",
+                (pipeline_id, step_id),
+            )
+            return cursor.rowcount > 0
+
+    def reorder_steps(self, pipeline_id: str, step_ids: list[str]) -> None:
+        """Rewrite position for the given step ids in the provided order."""
+        with self._connect() as conn:
+            for position, step_id in enumerate(step_ids):
+                conn.execute(
+                    """UPDATE pipeline_step
+                       SET position=?, updated_at=?
+                       WHERE pipeline_id=? AND step_key=?""",
+                    (position, _now_iso(), pipeline_id, step_id),
+                )
+
+    def upsert_pipeline_credential(
+        self,
+        pipeline_id: str,
+        name: str,
+        env: str,
+        refresh: Any = None,
+    ) -> None:
+        """Insert or update one normalized pipeline credential row."""
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO pipeline_credential (pipeline_id, alias, env_ref, refresh_json)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(pipeline_id, alias) DO UPDATE SET
+                       env_ref=excluded.env_ref,
+                       refresh_json=excluded.refresh_json""",
+                (pipeline_id, name, env, _json_dumps(refresh) if refresh is not None else None),
+            )
+
+    def get_pipeline_credentials(self, pipeline_id: str) -> list[dict]:
+        """Return pipeline credentials ordered by alias."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT pipeline_id, alias, env_ref, refresh_json
+                   FROM pipeline_credential
+                   WHERE pipeline_id=?
+                   ORDER BY alias ASC""",
+                (pipeline_id,),
+            ).fetchall()
+        result: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["name"] = item.pop("alias")
+            item["env"] = item.pop("env_ref")
+            item["refresh"] = _json_loads(item.pop("refresh_json"))
+            result.append(item)
+        return result
+
+    def delete_pipeline_credentials(self, pipeline_id: str) -> int:
+        """Delete all credentials for a pipeline."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM pipeline_credential WHERE pipeline_id=?",
+                (pipeline_id,),
+            )
+            return cursor.rowcount
+
+    def upsert_pipeline_input(
+        self,
+        pipeline_id: str,
+        name: str,
+        param_type: str,
+        default_value: Any = None,
+        description: Optional[str] = None,
+    ) -> None:
+        """Insert or update one normalized pipeline input row."""
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO pipeline_input (pipeline_id, input_key, type, default_json, description)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(pipeline_id, input_key) DO UPDATE SET
+                       type=excluded.type,
+                       default_json=excluded.default_json,
+                       description=excluded.description""",
+                (
+                    pipeline_id,
+                    name,
+                    param_type,
+                    _json_dumps(default_value) if default_value is not None else None,
+                    description,
+                ),
+            )
+
+    def get_pipeline_inputs(self, pipeline_id: str) -> list[dict]:
+        """Return pipeline inputs ordered by input key."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT pipeline_id, input_key, type, default_json, description
+                   FROM pipeline_input
+                   WHERE pipeline_id=?
+                   ORDER BY input_key ASC""",
+                (pipeline_id,),
+            ).fetchall()
+        result: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["name"] = item.pop("input_key")
+            item["default"] = _json_loads(item.pop("default_json"))
+            result.append(item)
+        return result
+
+    def delete_pipeline_inputs(self, pipeline_id: str) -> int:
+        """Delete all input rows for a pipeline."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM pipeline_input WHERE pipeline_id=?",
+                (pipeline_id,),
+            )
+            return cursor.rowcount
+
+    def pipeline_to_dict(self, pipeline_id: str) -> dict | None:
+        """Reconstruct a pipeline dict from normalized DB rows."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            pipeline_row = conn.execute(
+                "SELECT * FROM pipeline WHERE id=?",
+                (pipeline_id,),
+            ).fetchone()
+
+        if not pipeline_row:
+            return None
+
+        row = dict(pipeline_row)
+        result: dict[str, Any] = {
+            "name": row["name"],
+            "version": row.get("version") or "1.0.0",
+            "description": row.get("description"),
+            "brix_version": row.get("brix_version"),
+            "kind": row.get("kind"),
+            "extends": row.get("extends"),
+            "idempotency_key": row.get("idempotency_key"),
+            "project": row.get("project", ""),
+        }
+
+        for column, field in _PIPELINE_BOOL_COLUMNS.items():
+            result[field] = bool(row.get(column))
+        for column, field in _PIPELINE_JSON_COLUMNS.items():
+            fallback = [] if column in {"blueprint_params_json", "requirements_json"} else {}
+            if column == "output_json":
+                fallback = None
+            value = _json_loads(row.get(column))
+            result[field] = fallback if value is None else value
+
+        raw_tags = row.get("tags") or "[]"
+        result["tags"] = _json_loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+        if row.get("group_name"):
+            result["group"] = row["group_name"]
+
+        inputs: dict[str, Any] = {}
+        for item in self.get_pipeline_inputs(pipeline_id):
+            inputs[item["name"]] = {
+                "type": item["type"],
+                "default": item["default"],
+                "description": item["description"],
+            }
+        result["input"] = inputs
+
+        credentials: dict[str, Any] = {}
+        for item in self.get_pipeline_credentials(pipeline_id):
+            cred = {"env": item["env"]}
+            if item["refresh"] is not None:
+                cred["refresh"] = item["refresh"]
+            credentials[item["name"]] = cred
+        result["credentials"] = credentials
+        result["steps"] = self.get_steps(pipeline_id)
+        return result
 
     def get_pipeline(self, name: str) -> Optional[dict]:
         with self._connect() as conn:
