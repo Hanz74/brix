@@ -140,7 +140,7 @@ mcp__brix__test_pipeline(pipeline_id="...", pin={...}, mock={...})
 | `debugging` | diagnose_run, auto_fix_step, breakpoints |
 | `error-patterns` | Haeufige Fehler + Fixes |
 | `credentials` | Fernet-Encryption, UUID-Referenzen |
-| `triggers` | Mail, file, http_poll, pipeline, webhook |
+| `triggers` | schedule, event, file, http_poll, mail, pipeline_done |
 | `dag` | depends_on, parallele Ausfuehrung |
 | `templates` | get_template, instantiate_template |
 | `helpers` | create_helper, register_helper |

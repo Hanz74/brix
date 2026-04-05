@@ -303,6 +303,14 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_backfill_tool_input_schemas_v68",
         "down": "",
     },
+    # T-BRIX-SCHED-03: Update brix__trigger tool schema + triggers help topic for schedule type
+    {
+        "version": 69,
+        "name": "update_trigger_schema_and_help_for_schedule",
+        "up": "",
+        "up_fn": "_update_trigger_schema_and_help_v69",
+        "down": "",
+    },
 ]
 
 
@@ -402,6 +410,86 @@ def _backfill_tool_input_schemas_v68(db: "BrixDB") -> None:
 
         if updated:
             logger.info("migration v68: backfilled %d tool schemas", updated)
+
+
+def _update_trigger_schema_and_help_v69(db: "BrixDB") -> None:
+    """T-BRIX-SCHED-03: Update brix__trigger tool schema and triggers help topic.
+
+    - Updates brix__trigger input_schema to include schedule in type enum
+      and full property definitions (name, type, pipeline, config, etc.)
+    - Updates triggers help topic to document all 6 trigger types incl. schedule
+    - Inserts a tip about trigger type selection
+    """
+    import json
+    from pathlib import Path
+
+    seed_paths = [
+        Path("/app/seed-data.json"),
+        Path(__file__).parent.parent.parent / "seed-data.json",
+    ]
+    seed_data = None
+    for sp in seed_paths:
+        if sp.exists():
+            try:
+                with open(sp) as f:
+                    seed_data = json.load(f)
+                break
+            except Exception:
+                continue
+
+    if seed_data is None:
+        logger.warning("migration v69: seed-data.json not found, skipping")
+        return
+
+    with db._connect() as conn:
+        # 1) Update brix__trigger tool schema from seed-data.json
+        for ts in seed_data.get("mcp_tool_schemas", []):
+            if ts["name"] == "brix__trigger":
+                schema_json = json.dumps(ts.get("input_schema", {}))
+                conn.execute(
+                    "UPDATE mcp_tool_schema SET description = ?, input_schema = ?, "
+                    "updated_at = datetime('now') WHERE name = ?",
+                    (ts["description"], schema_json, "brix__trigger"),
+                )
+                logger.info("migration v69: updated brix__trigger tool schema")
+                break
+
+        # 2) Update triggers help topic from seed-data.json
+        for ht in seed_data.get("help_topics", []):
+            if ht["name"] == "triggers":
+                conn.execute(
+                    "UPDATE help_topic SET title = ?, content = ?, "
+                    "updated_at = datetime('now') WHERE name = ?",
+                    (ht["title"], ht["content"], "triggers"),
+                )
+                logger.info("migration v69: updated triggers help topic")
+                break
+
+        # 3) Insert trigger-type-selection tip (idempotent)
+        tip_title = "Trigger type selection guide"
+        existing = conn.execute(
+            "SELECT id FROM tip WHERE title = ?", (tip_title,)
+        ).fetchone()
+        if not existing:
+            from uuid import uuid4
+            conn.execute(
+                "INSERT INTO tip (id, category, title, content, priority, is_active, created_at, updated_at) "
+                "VALUES (?, 'triggers', ?, ?, 5, 1, datetime('now'), datetime('now'))",
+                (
+                    str(uuid4()),
+                    tip_title,
+                    "Choose the right trigger type:\n"
+                    "  schedule      - Recurring cron jobs (e.g. daily report at 9am)\n"
+                    "  pipeline_done - Chain pipelines (run B after A completes)\n"
+                    "  http_poll     - Poll external API at intervals\n"
+                    "  mail          - Monitor inbox for new messages\n"
+                    "  file          - Watch filesystem for changes\n"
+                    "  event         - React to internal Brix events\n\n"
+                    "Schedule triggers replace schedules.yaml (deprecated).\n"
+                    "Use brix__trigger(action='add', type='schedule', config={cron, timezone}).",
+                ),
+            )
+            logger.info("migration v69: inserted trigger-type-selection tip")
 
 
 def _create_plural_compat_views(db: "BrixDB") -> None:

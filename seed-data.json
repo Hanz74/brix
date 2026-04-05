@@ -5854,13 +5854,51 @@
     },
     {
       "name": "brix__trigger",
-      "description": "Trigger CRUD. action: add/get/list/update/delete/test. Params: name, type, pipeline, config, enabled, project, tags, group, description.",
+      "description": "Trigger CRUD. action: add/get/list/update/delete/test. Params: name, type (schedule|event|file|http_poll|mail|pipeline_done), pipeline, config (schedule: {cron, timezone}), enabled, project, tags, group, description.",
       "input_schema": {
         "type": "object",
         "properties": {
           "action": {
             "type": "string",
             "description": "CRUD action: add/get/list/update/delete/test"
+          },
+          "name": {
+            "type": "string",
+            "description": "Trigger name (required for add/get/update/delete/test)."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["schedule", "event", "file", "http_poll", "mail", "pipeline_done"],
+            "description": "Trigger type (required for add)."
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Pipeline name to execute when trigger fires (required for add)."
+          },
+          "config": {
+            "type": "object",
+            "description": "Type-specific config. schedule: {cron, timezone}. http_poll: {url, interval_seconds}. mail: {folder, filter}. file: {path, pattern}. event/pipeline_done: {source_pipeline}."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable/disable trigger (default true)."
+          },
+          "project": {
+            "type": "string",
+            "description": "Project slug."
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Tags."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Trigger description."
           }
         },
         "required": [
@@ -7190,8 +7228,8 @@
     },
     {
       "name": "triggers",
-      "title": "Trigger-System + Chaining + Scheduler.",
-      "content": "=== Trigger-System + Chaining + Scheduler ===\n\n## Trigger-Typen\n\n  • schedule  — Cron-basiert oder Intervall\n  • webhook   — HTTP-Endpoint\n  • file      — Datei-Änderungen beobachten\n  • event     — Interne Brix-Events\n\n## Trigger erstellen\n\n  brix__trigger_add(\n    pipeline_name=\"my-pipeline\",\n    trigger_type=\"schedule\",\n    config={\n      \"cron\": \"0 9 * * 1-5\",   # Mo-Fr 9 Uhr\n      \"timezone\": \"Europe/Berlin\"\n    }\n  )\n\n  Webhook-Trigger:\n  brix__trigger_add(\n    pipeline_name=\"my-pipeline\",\n    trigger_type=\"webhook\",\n    config={\"secret\": \"my-secret\", \"method\": \"POST\"}\n  )\n\n## Scheduler steuern\n\n  brix__scheduler_start()     → Scheduler starten (lädt alle Triggers)\n  brix__scheduler_stop()      → Scheduler stoppen\n  brix__scheduler_status()    → Status + aktive Triggers\n\n## Pipeline Chaining\n\n  Am Ende einer Pipeline eine andere starten:\n\n  {\n    \"id\": \"chain_next\",\n    \"type\": \"mcp\",\n    \"config\": {\n      \"server\": \"brix\",\n      \"tool\": \"run_pipeline\",\n      \"params\": {\n        \"name\": \"next-pipeline\",\n        \"params\": {\"input_data\": \"{{ prev_step.output }}\"}\n      }\n    }\n  }\n\n## Trigger-Gruppen\n\n  Mehrere Trigger gemeinsam verwalten:\n\n  brix__trigger_group_add(name=\"morning-jobs\", trigger_ids=[\"t1\", \"t2\", \"t3\"])\n  brix__trigger_group_start(name=\"morning-jobs\")   → Alle Triggers aktivieren\n  brix__trigger_group_stop(name=\"morning-jobs\")    → Alle deaktivieren\n\n## Trigger testen\n\n  brix__trigger_test(trigger_id=\"my-trigger\", payload={\"test\": true})\n  → Führt Pipeline einmalig aus als ob Trigger ausgelöst hätte"
+      "title": "Trigger-System: schedule, event, file, http_poll, mail, pipeline_done + Chaining + Scheduler.",
+      "content": "=== Trigger-System + Chaining + Scheduler ===\n\n## Trigger-Typen\n\n  • schedule       — Cron-basiert (ersetzt schedules.yaml, jetzt DB-native)\n  • event          — Interne Brix-Events\n  • file           — Datei-Aenderungen beobachten\n  • http_poll      — Externes API pollen\n  • mail           — Inbox-Monitoring\n  • pipeline_done  — Chaining: startet wenn andere Pipeline fertig\n\n  DEPRECATED: schedules.yaml wird nicht mehr gelesen.\n  Bestehende Eintraege werden automatisch zu schedule-Triggers migriert.\n\n## Schedule-Trigger erstellen (via MCP)\n\n  brix__trigger(action=\"add\",\n    name=\"daily-report\",\n    type=\"schedule\",\n    pipeline=\"generate-report\",\n    config={\n      \"cron\": \"0 9 * * 1-5\",      # Mo-Fr 9 Uhr\n      \"timezone\": \"Europe/Berlin\"  # Optional, Default: UTC\n    },\n    project=\"buddy\",\n    tags=[\"scheduled\", \"reporting\"]\n  )\n\n## Cron-Beispiele\n\n  \"0 9 * * 1-5\"    — Mo-Fr 9:00\n  \"*/15 * * * *\"   — alle 15 Minuten\n  \"0 0 1 * *\"      — monatlich am 1.\n  \"0 6,18 * * *\"   — taeglich 6:00 und 18:00\n  \"0 0 * * 0\"      — sonntags Mitternacht\n\n## Andere Trigger-Typen\n\n  http_poll:\n  brix__trigger(action=\"add\",\n    name=\"check-api\", type=\"http_poll\", pipeline=\"process-data\",\n    config={\"url\": \"https://api.example.com/status\", \"interval_seconds\": 300}\n  )\n\n  pipeline_done:\n  brix__trigger(action=\"add\",\n    name=\"after-extract\", type=\"pipeline_done\", pipeline=\"load-to-db\",\n    config={\"source_pipeline\": \"extract-data\"}\n  )\n\n  mail:\n  brix__trigger(action=\"add\",\n    name=\"inbox-watch\", type=\"mail\", pipeline=\"process-mail\",\n    config={\"folder\": \"Inbox\", \"filter\": \"hasAttachments eq true\"}\n  )\n\n## Scheduler steuern\n\n  brix__scheduler_start()     -> Scheduler starten (laedt alle Triggers)\n  brix__scheduler_stop()      -> Scheduler stoppen\n  brix__scheduler_status()    -> Status + aktive Triggers\n\n## Pipeline Chaining (via step)\n\n  Am Ende einer Pipeline eine andere starten:\n\n  {\n    \"id\": \"chain_next\",\n    \"type\": \"mcp\",\n    \"config\": {\n      \"server\": \"brix\",\n      \"tool\": \"run_pipeline\",\n      \"params\": {\n        \"name\": \"next-pipeline\",\n        \"params\": {\"input_data\": \"{{ prev_step.output }}\"}\n      }\n    }\n  }\n\n## Trigger-Gruppen\n\n  Mehrere Trigger gemeinsam verwalten:\n\n  brix__trigger_group(action=\"add\", name=\"morning-jobs\", triggers=[\"t1\", \"t2\", \"t3\"])\n  brix__trigger_group(action=\"start\", name=\"morning-jobs\")  -> Alle aktivieren\n  brix__trigger_group(action=\"stop\", name=\"morning-jobs\")   -> Alle deaktivieren\n\n## Trigger testen\n\n  brix__trigger(action=\"test\", name=\"my-trigger\")\n  -> Fuehrt Pipeline einmalig aus als ob Trigger ausgeloest haette"
     }
   ],
   "keyword_taxonomies": [
