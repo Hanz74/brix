@@ -1,11 +1,130 @@
-"""Trigger and scheduler handler module."""
+"""Trigger and scheduler handler module.
+
+T-BRIX-SCHED-02: Scheduler start/stop/status now controls TriggerService
+(DB-backed triggers) instead of the old YAML-based BrixScheduler.
+"""
 from __future__ import annotations
 
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 # In-process scheduler state (per-MCP-server-process)
 _scheduler_task: "asyncio.Task | None" = None
 _scheduler_running: bool = False
+
+
+# ---------------------------------------------------------------------------
+# T-BRIX-SCHED-02: schedules.yaml -> DB trigger migration
+# ---------------------------------------------------------------------------
+
+def interval_to_cron(interval_str: str) -> str:
+    """Convert an interval string (e.g. '6h', '30m', 'daily') to a cron expression.
+
+    Supported formats: Nh, Nm, Nd, 'daily', 'hourly'.
+    """
+    s = interval_str.strip().lower()
+    if s == "daily":
+        return "0 0 * * *"
+    if s == "hourly":
+        return "0 * * * *"
+    try:
+        if s.endswith("h"):
+            hours = int(float(s[:-1]))
+            if hours <= 0:
+                return "0 * * * *"
+            if hours >= 24:
+                return "0 0 * * *"
+            return f"0 */{hours} * * *"
+        if s.endswith("m"):
+            minutes = int(float(s[:-1]))
+            if minutes <= 0:
+                return "* * * * *"
+            if minutes >= 60:
+                hours = minutes // 60
+                return f"0 */{hours} * * *" if hours < 24 else "0 0 * * *"
+            return f"*/{minutes} * * * *"
+        if s.endswith("d"):
+            return "0 0 * * *"
+    except (ValueError, TypeError):
+        pass
+    # Default: daily
+    return "0 0 * * *"
+
+
+def migrate_schedules_yaml() -> list[dict]:
+    """Migrate schedules.yaml entries to DB triggers (idempotent).
+
+    Returns a list of dicts describing what was migrated.
+    """
+    from pathlib import Path
+
+    schedules_path = Path.home() / ".brix" / "schedules.yaml"
+    if not schedules_path.exists():
+        return []
+
+    import yaml
+    with open(schedules_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    schedules = data.get("schedules", [])
+    if not schedules:
+        return []
+
+    from brix.triggers.store import TriggerStore
+    store = TriggerStore()
+    results = []
+
+    for sched in schedules:
+        name = sched.get("name", "")
+        if not name:
+            continue
+
+        # Skip if trigger with this name already exists
+        existing = store.get(name)
+        if existing is not None:
+            results.append({"name": name, "action": "skipped", "reason": "already exists"})
+            continue
+
+        pipeline = sched.get("pipeline", "")
+        interval = sched.get("interval", "24h")
+        cron_expr = interval_to_cron(interval)
+        enabled = sched.get("enabled", True)
+        project = sched.get("project") or None
+        tags = sched.get("tags") or None
+        group = sched.get("group") or None
+        description = sched.get("description", "")
+        params = sched.get("params") or {}
+
+        config = {
+            "cron": cron_expr,
+            "params": params,
+            "migrated_from": "schedules.yaml",
+            "original_interval": interval,
+        }
+
+        try:
+            trigger = store.add(
+                name=name,
+                type="schedule",
+                pipeline=pipeline,
+                config=config,
+                enabled=bool(enabled),
+                project=project,
+                tags=tags,
+                group_name=group,
+            )
+            # Set description via update (add() doesn't support it directly)
+            if description:
+                store.update(name, description=description)
+            results.append({"name": name, "action": "created", "cron": cron_expr, "pipeline": pipeline})
+            logger.info("Migrated schedule '%s' -> DB trigger (cron=%s, pipeline=%s)", name, cron_expr, pipeline)
+        except Exception as exc:
+            results.append({"name": name, "action": "error", "error": str(exc)})
+            logger.warning("Failed to migrate schedule '%s': %s", name, exc)
+
+    return results
 
 
 async def _handle_trigger_add(arguments: dict) -> dict:
@@ -214,10 +333,21 @@ async def _handle_scheduler_status(arguments: dict) -> dict:
 
 
 async def _auto_start_scheduler_if_needed() -> None:
-    """Auto-start the scheduler on server startup if enabled triggers exist (T-BRIX-V6-BUG-01)."""
-    import logging
-    logger = logging.getLogger(__name__)
+    """Auto-start the scheduler on server startup if enabled triggers exist (T-BRIX-V6-BUG-01).
+
+    T-BRIX-SCHED-02: Also migrates schedules.yaml to DB triggers on first run.
+    """
     try:
+        # Migrate schedules.yaml -> DB triggers (idempotent)
+        migration_results = migrate_schedules_yaml()
+        if migration_results:
+            created = [r for r in migration_results if r.get("action") == "created"]
+            if created:
+                logger.info(
+                    "Migrated %d schedule(s) from schedules.yaml to DB triggers.",
+                    len(created),
+                )
+
         from brix.triggers.store import TriggerStore
         store = TriggerStore()
         triggers = store.list_all()

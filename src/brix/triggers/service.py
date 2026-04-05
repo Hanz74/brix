@@ -1,5 +1,11 @@
-"""TriggerService — async background polling."""
+"""TriggerService — async background polling.
+
+T-BRIX-SCHED-02: Now loads triggers from DB (TriggerStore) instead of
+triggers.yaml.  Also runs a daily retention loop (migrated from the
+deprecated scheduler.py).
+"""
 import asyncio
+import json
 import yaml
 from pathlib import Path
 from typing import Optional
@@ -20,12 +26,48 @@ class TriggerService:
         self._running = False
 
     def load_triggers(self):
-        if not self._config_path.exists():
-            self._triggers = []
-            return
-        with open(self._config_path) as f:
-            data = yaml.safe_load(f) or {}
-        self._triggers = [TriggerConfig(**t) for t in data.get("triggers", [])]
+        """Load triggers from DB.  Falls back to YAML only if DB is empty."""
+        self._triggers = []
+
+        # Primary: load from DB via TriggerStore
+        try:
+            from brix.triggers.store import TriggerStore
+            store = TriggerStore()
+            rows = store.list_all()
+            for row in rows:
+                cfg = row.get("config") or {}
+                if isinstance(cfg, str):
+                    try:
+                        cfg = json.loads(cfg)
+                    except Exception:
+                        cfg = {}
+                tc = TriggerConfig(
+                    id=row.get("name") or row.get("id", ""),
+                    type=row.get("type", ""),
+                    pipeline=row.get("pipeline", ""),
+                    enabled=row.get("enabled", True),
+                    params=cfg.get("params", {}),
+                    interval=cfg.get("interval", "5m"),
+                    cron=cfg.get("cron"),
+                    filter=cfg if row.get("type") in ("mail", "pipeline_done") else {},
+                    path=cfg.get("path"),
+                    pattern=cfg.get("pattern"),
+                    url=cfg.get("url"),
+                    headers=cfg.get("headers", {}),
+                    hash_field=cfg.get("hash_field"),
+                    status=cfg.get("status"),
+                    pipeline_target=cfg.get("pipeline"),
+                    debounce=cfg.get("debounce"),
+                )
+                self._triggers.append(tc)
+        except Exception:
+            pass
+
+        # Fallback: load from YAML if DB yielded nothing
+        if not self._triggers and self._config_path.exists():
+            with open(self._config_path) as f:
+                data = yaml.safe_load(f) or {}
+            self._triggers = [TriggerConfig(**t) for t in data.get("triggers", [])]
 
     async def start(self):
         self.load_triggers()
@@ -34,6 +76,8 @@ class TriggerService:
             return
         self._running = True
         tasks = [self._poll_loop(t) for t in enabled]
+        # T-BRIX-SCHED-02: Also run retention loop (migrated from scheduler.py)
+        tasks.append(self._retention_loop())
         await asyncio.gather(*tasks)
 
     async def _poll_loop(self, trigger: TriggerConfig):
@@ -65,6 +109,25 @@ class TriggerService:
             log_event("INFO", "trigger", f"Trigger fired: {trigger.id}", {"trigger_id": trigger.id, "pipeline": trigger.pipeline})
             print(f"[trigger:{trigger.id}] Firing for event")
             await runner.fire(event)
+
+    async def _retention_loop(self) -> None:
+        """Run the retention policy once per day while service is active.
+
+        Migrated from scheduler.py (T-BRIX-SCHED-02).
+        """
+        from brix.config import config as brix_config
+
+        while self._running:
+            await asyncio.sleep(brix_config.RETENTION_LOOP_INTERVAL_SECONDS)
+            if not self._running:
+                break
+            try:
+                from brix.db import BrixDB
+                db = BrixDB()
+                result = db.clean_retention()
+                log_event("INFO", "trigger-service", "Retention applied", result)
+            except Exception as e:
+                log_event("ERROR", "trigger-service", f"Retention error: {e}", {"error": str(e)})
 
     def stop(self):
         self._running = False

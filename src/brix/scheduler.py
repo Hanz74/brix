@@ -1,4 +1,17 @@
-"""Simple cron scheduler for pipeline execution."""
+"""Simple cron scheduler for pipeline execution.
+
+.. deprecated:: T-BRIX-SCHED-02
+    This module is DEPRECATED.  Scheduled pipelines are now managed as
+    DB-backed ``schedule`` triggers handled by
+    :class:`brix.triggers.service.TriggerService`.
+
+    The ``schedules.yaml`` file is automatically migrated to DB triggers
+    on server startup (see ``migrate_schedules_yaml()`` in
+    ``brix.mcp_handlers.triggers``).
+
+    This file is kept for backward-compatibility reference only and will
+    be removed in a future release.
+"""
 import asyncio
 from datetime import timedelta
 from pathlib import Path
