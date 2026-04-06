@@ -7,6 +7,34 @@ from brix.pipeline_store import PipelineStore
 from brix.runners.base import BaseRunner
 
 
+def _extract_sub_pipeline_params(step: Any) -> dict[str, Any]:
+    """Return only user-facing params for sub-pipeline execution."""
+    def _step_value(field: str) -> Any:
+        if isinstance(step, dict):
+            return step.get(field)
+        return getattr(step, field, None)
+
+    def _sanitize_user_params(raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        nested_params = raw.get("params")
+        source = dict(nested_params) if isinstance(nested_params, dict) else dict(raw)
+        return {
+            key: value
+            for key, value in source.items()
+            if not key.startswith("_") and key not in {"pipeline", "sub_pipeline"}
+        }
+
+    params = _step_value("params")
+    source_params = _sanitize_user_params(params)
+
+    config = _step_value("config")
+    if not source_params and isinstance(config, dict):
+        source_params = _sanitize_user_params(config)
+
+    return source_params
+
+
 class PipelineRunner(BaseRunner):
     """Runs a sub-pipeline in the same asyncio event loop (D-17)."""
 
@@ -77,9 +105,8 @@ class PipelineRunner(BaseRunner):
             # Load sub-pipeline from DB first, then disk fallback for system/file refs.
             sub_pipeline = self._load_sub_pipeline(pipeline_ref)
 
-            # Build sub-pipeline input from step params
-            params = getattr(step, 'params', {}) or {}
-            sub_input = {k: v for k, v in params.items() if not k.startswith('_')}
+            # Forward only user params, not runner-internal wrapper keys.
+            sub_input = _extract_sub_pipeline_params(step)
 
             # Track recursion depth
             depth = getattr(context, '_pipeline_depth', 0) + 1

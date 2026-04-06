@@ -11,6 +11,38 @@ from brix.runners.base import BaseRunner
 logger = logging.getLogger(__name__)
 
 
+def _extract_group_shared_params(step: Any) -> dict[str, Any]:
+    """Return only user-facing params for grouped sub-pipeline execution."""
+    def _step_value(field: str) -> Any:
+        if isinstance(step, dict):
+            return step.get(field)
+        return getattr(step, field, None)
+
+    def _sanitize_user_params(raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        nested_params = raw.get("params")
+        source = dict(nested_params) if isinstance(nested_params, dict) else dict(raw)
+        return {
+            key: value
+            for key, value in source.items()
+            if not key.startswith("_") and key not in {"pipeline", "sub_pipeline", "pipelines", "concurrency"}
+        }
+
+    shared_params = _step_value("shared_params")
+    source_params = _sanitize_user_params(shared_params)
+
+    config = _step_value("config")
+    if not source_params and isinstance(config, dict):
+        config_shared = config.get("shared_params")
+        if isinstance(config_shared, dict):
+            source_params = _sanitize_user_params(config_shared)
+        else:
+            source_params = _sanitize_user_params(config)
+
+    return source_params
+
+
 class PipelineGroupRunner(BaseRunner):
     """Runs multiple named sub-pipelines concurrently with shared_params and concurrency limit."""
 
@@ -92,7 +124,7 @@ class PipelineGroupRunner(BaseRunner):
                 "duration": 0.0,
             }
 
-        shared_params: dict = getattr(step, "shared_params", {}) or {}
+        shared_params = _extract_group_shared_params(step)
         # concurrency from step; default 3 for pipeline_group
         raw_concurrency = getattr(step, "concurrency", 3)
         try:
