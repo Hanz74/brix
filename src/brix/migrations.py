@@ -1609,7 +1609,7 @@ def _import_legacy_helper_code_v76(
                 conn.execute(
                     """
                     UPDATE helper
-                    SET code=?, content_hash=?, updated_at=?
+                    SET code=?, content_hash=?, script_path='', updated_at=?
                     WHERE name=?
                     """,
                     (file_content, content_hash, _now_iso(), helper_name),
@@ -1639,6 +1639,10 @@ def _import_legacy_helper_code_v76(
                 "migration v76: set content_hash for helper '%s'",
                 helper_name,
             )
+
+    # Clear stale script_path for all helpers with DB code
+    with db._connect() as conn:
+        conn.execute("UPDATE helper SET script_path = '' WHERE COALESCE(code, '') != '' AND script_path != ''")
 
     logger.info(
         "migration v76 summary: imported=%d skipped_existing=%d skipped_orphans=%d hash_updates=%d",
