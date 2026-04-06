@@ -355,9 +355,14 @@ class Step(BaseModel):
     @classmethod
     def from_db_row(cls, row: dict) -> "Step":
         """Build a validated step from a normalized DB row."""
-        from brix.db import step_row_to_dict
+        from brix.db import merge_step_config_into_params, step_row_to_dict
 
-        return cls.model_validate(step_row_to_dict(row))
+        step = cls.model_validate(step_row_to_dict(row))
+        if step.type not in {"specialist", "extract.specialist"} and step.config and not step.params:
+            merged = merge_step_config_into_params(step.model_dump())
+            if merged.get("params"):
+                return step.model_copy(update={"params": merged["params"]})
+        return step
 
 
 class MattermostNotifyConfig(BaseModel):

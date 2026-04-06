@@ -36,6 +36,23 @@ from brix.progress import ProgressReporter
 from brix.mcp_pool import McpConnectionPool
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 
+_SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
+
+
+def _step_config_dict(step: Any) -> dict[str, Any]:
+    """Return the generic config dict a non-specialist runner should see."""
+    params = getattr(step, "params", None)
+    if isinstance(params, dict) and params:
+        return dict(params)
+    config_dict = getattr(step, "config", None)
+    if (
+        getattr(step, "type", None) not in _SPECIALIST_STEP_TYPES
+        and isinstance(config_dict, dict)
+        and config_dict
+    ):
+        return dict(config_dict)
+    return {}
+
 # ---------------------------------------------------------------------------
 # Brick-First Engine — T-BRIX-DB-05c
 # ---------------------------------------------------------------------------
@@ -862,7 +879,7 @@ class PipelineEngine:
                             continue
 
                         # --- validate_config (T-BRIX-STD-03) ---
-                        _vc_config = dict(step.params or {})
+                        _vc_config = _step_config_dict(step)
                         # Merge top-level step attributes that runners may read
                         for _vc_attr in (
                             "connector", "script", "url", "method", "server", "tool",
@@ -2370,8 +2387,9 @@ class _RenderedStep:
         self.script = step.script
         self.server = step.server
         self.tool = step.tool
+        self.config = getattr(step, "config", None)
         self.pipeline = rendered.get("_pipeline") or step.pipeline
-        self.params = rendered if rendered else (step.params or {})
+        self.params = rendered if rendered else _step_config_dict(step)
         # set runner: rendered values under _values key, fall back to raw values field
         self.values = rendered.get("_values") or getattr(step, "values", None) or {}
         # set runner: persist flag (T-BRIX-DB-13)

@@ -150,6 +150,8 @@ class DbExecRunner(BaseRunner):
         self.report_progress(0.0, "starting db_exec")
 
         step_params = getattr(step, "params", None)
+        if not step_params:
+            step_params = getattr(step, "config", None)
         config_params = step_params if isinstance(step_params, dict) else {}
         query_params = None if isinstance(step_params, dict) else step_params
 

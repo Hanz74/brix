@@ -57,15 +57,32 @@ class HttpRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
-        url = getattr(step, "url", None) or (getattr(step, "params", {}) or {}).get("_url")
+        step_params = getattr(step, "params", None)
+        if not isinstance(step_params, dict) or not step_params:
+            config_params = getattr(step, "config", None)
+            step_params = config_params if isinstance(config_params, dict) else {}
+
+        url = (
+            getattr(step, "url", None)
+            or step_params.get("_url")
+            or step_params.get("url")
+        )
         if not url:
             self.report_progress(0.0, "error: missing url")
             return {"success": False, "error": "HTTP step needs 'url' field", "duration": 0.0}
 
-        method = getattr(step, "method", "GET") or "GET"
-        headers = getattr(step, "headers", None) or (getattr(step, "params", {}) or {}).get("_headers")
+        method = getattr(step, "method", None) or step_params.get("method") or "GET"
+        headers = (
+            getattr(step, "headers", None)
+            or step_params.get("_headers")
+            or step_params.get("headers")
+        )
         body = getattr(step, "body", None)
+        if body is None and "body" in step_params:
+            body = step_params.get("body")
         fetch_all_pages = getattr(step, "fetch_all_pages", False)
+        if not fetch_all_pages:
+            fetch_all_pages = bool(step_params.get("fetch_all_pages", False))
 
         self.report_progress(0.0, f"Requesting {method} {url}")
 

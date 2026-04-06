@@ -169,6 +169,33 @@ def _json_loads(value: Any) -> Any:
         return value
 
 
+_SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
+
+
+def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
+    """Copy non-specialist ``config`` into ``params`` when params is empty.
+
+    DB-backed brick steps persist generic config in ``config_json`` / ``step.config``,
+    while most engine paths and runners read ``step.params``. On the read path we
+    preserve ``config`` but also expose the same keys via ``params`` when:
+
+    - ``config`` is a non-empty dict
+    - ``params`` is empty / missing
+    - the step is not a specialist step, where ``config`` is semantic input
+    """
+    step_type = step.get("type")
+    config = step.get("config")
+    params = step.get("params")
+    if (
+        step_type not in _SPECIALIST_STEP_TYPES
+        and isinstance(config, dict)
+        and config
+        and not params
+    ):
+        step["params"] = dict(config)
+    return step
+
+
 def step_dict_to_row(step_dict: dict) -> dict:
     """Convert a step dict using model field names into DB column names."""
     row: dict[str, Any] = {}
@@ -209,7 +236,7 @@ def step_row_to_dict(row: dict) -> dict:
             step[field] = None if value is None else bool(value)
         else:
             step[field] = value
-    return step
+    return merge_step_config_into_params(step)
 
 
 # ---------------------------------------------------------------------------

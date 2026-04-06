@@ -180,9 +180,22 @@ class DbQueryRunner(BaseRunner):
         self.report_progress(0, "starting db_query")
 
         # ---- extract config from step --------------------------------
-        connection_ref: str = getattr(step, "connection", None) or ""
-        query_template: str = getattr(step, "query", None) or ""
-        params: dict | None = getattr(step, "params", None) or None
+        step_params = getattr(step, "params", None)
+        if not isinstance(step_params, dict) or not step_params:
+            config_params = getattr(step, "config", None)
+            step_params = config_params if isinstance(config_params, dict) else {}
+
+        connection_ref: str = (
+            getattr(step, "connection", None)
+            or step_params.get("connection")
+            or ""
+        )
+        query_template: str = (
+            getattr(step, "query", None)
+            or step_params.get("query")
+            or ""
+        )
+        params: dict | None = step_params.get("params")
 
         if not connection_ref:
             self.report_progress(0.0, "error: missing connection")
