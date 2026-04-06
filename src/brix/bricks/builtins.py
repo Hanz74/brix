@@ -57,13 +57,14 @@ RUN_CLI = BrickSchema(
 PYTHON_SCRIPT = BrickSchema(
     name="python_script",
     type="script.python",
-    description="Run a Python script file. Script reads JSON from argv[1] or stdin, writes JSON to stdout.",
+    description="Run Python code from a script path or registered helper. The target reads JSON from argv[1] or stdin and writes JSON to stdout.",
     when_to_use="Data transformation, filtering, file processing — anything that needs Python logic.",
     category="python",
     system=True,
     runner="python",
     config_schema={
-        "script": BrickParam(type="string", description="Path to Python script file", required=True),
+        "script": BrickParam(type="string", description="Path to Python script file"),
+        "helper": BrickParam(type="string", description="Registered helper name", required=False),
         "params": BrickParam(type="object", description="Parameters passed as JSON to the script"),
         "timeout": BrickParam(type="string", description="Timeout duration", default="60s"),
     },

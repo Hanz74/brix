@@ -36,12 +36,20 @@ class PythonRunner(BaseRunner):
             "type": "object",
             "properties": {
                 "script": {"type": "string", "description": "Path to Python script"},
+                "helper": {"type": "string", "description": "Registered helper name"},
                 "params": {"type": "object", "description": "Parameters passed as JSON to the script"},
                 "timeout": {"type": "string", "description": "Timeout e.g. '30s', '5m', '1h'"},
                 "progress": {"type": "boolean", "description": "Parse BRIX_PROGRESS lines from stderr"},
             },
-            "required": ["script"],
         }
+
+    def validate_config(self, config: dict) -> list[str]:
+        errors = super().validate_config(config)
+        script = config.get("script")
+        helper = config.get("helper")
+        if not script and not helper:
+            errors.append("Python runner requires either 'script' or 'helper'")
+        return errors
 
     def input_type(self) -> str:
         return "any"
@@ -52,7 +60,27 @@ class PythonRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
-        script = getattr(step, 'script', None) or getattr(step, 'helper', None)
+        def _step_value(field: str) -> Any:
+            if isinstance(step, dict):
+                return step.get(field)
+            return getattr(step, field, None)
+
+        params = _step_value("params") or {}
+        if not isinstance(params, dict):
+            params = {}
+
+        config = _step_value("config") or {}
+        if not isinstance(config, dict):
+            config = {}
+
+        script = (
+            _step_value("script")
+            or _step_value("helper")
+            or params.get("script")
+            or params.get("helper")
+            or config.get("script")
+            or config.get("helper")
+        )
         if not script:
             return {"success": False, "error": "Python step needs 'script' or 'helper' field", "duration": 0.0}
 
@@ -70,7 +98,6 @@ class PythonRunner(BaseRunner):
 
         # Build the command: python3 <script> <json_params>
         # Params are passed as JSON string in sys.argv[1]
-        params = getattr(step, 'params', {}) or {}
         # Remove internal keys (prefixed with _)
         clean_params = {k: v for k, v in params.items() if not k.startswith('_')}
 

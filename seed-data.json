@@ -1868,7 +1868,7 @@
       "runner": "python",
       "namespace": "script",
       "category": "system",
-      "description": "Run a Python script (Brick-First canonical name for the python runner).",
+      "description": "Run Python code via either a script path or a registered helper name (Brick-First canonical name for the python runner). The helper field is supported as an alternative to script.",
       "when_to_use": "Use when you need Python logic, data processing, or a custom script.",
       "when_NOT_to_use": "",
       "aliases": [],
