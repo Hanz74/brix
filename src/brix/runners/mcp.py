@@ -164,6 +164,37 @@ class McpRunner(BaseRunner):
 
         return warnings
 
+    def _normalize_arguments_for_schema(self, server_name: str, tool_name: str, arguments: dict) -> dict:
+        """Normalize MCP arguments before validation and transport.
+
+        Historical behavior re-serialized all dict/list values to JSON strings.
+        That remains the safe default when no schema is available, or when a
+        parameter has no specific object/array type declaration.
+        """
+        tool_schema = self._schema_cache.get_tool_schema(server_name, tool_name)
+        properties = ((tool_schema or {}).get("inputSchema") or {}).get("properties", {})
+
+        normalized = dict(arguments)
+        for param_name, param_value in list(normalized.items()):
+            if not isinstance(param_value, (dict, list)):
+                continue
+
+            if not tool_schema:
+                normalized[param_name] = json.dumps(param_value, ensure_ascii=False)
+                continue
+
+            expected_type = (properties.get(param_name) or {}).get("type")
+            if expected_type in {"object", "array"}:
+                continue
+            if expected_type == "string":
+                normalized[param_name] = json.dumps(param_value, ensure_ascii=False)
+                continue
+
+            # Backward-compatible fallback for incomplete/unknown schemas.
+            normalized[param_name] = json.dumps(param_value, ensure_ascii=False)
+
+        return normalized
+
     async def execute(self, step: Any, context: Any) -> dict:
         """Execute an MCP tool call step.
 
@@ -190,15 +221,7 @@ class McpRunner(BaseRunner):
         params = getattr(step, "params", {}) or {}
         arguments = {k: v for k, v in params.items() if not k.startswith("_")}
 
-        # Re-serialize dict/list values back to JSON strings.
-        # Many MCP servers (e.g. Cody) expect a JSON-encoded string for
-        # their ``params`` argument, but Brix's Jinja2 renderer auto-parses
-        # JSON strings into dicts.  Converting them back here keeps both
-        # worlds happy: pipeline authors can use Jinja2 to build dicts,
-        # and the MCP call receives the string the server expects.
-        for k, v in list(arguments.items()):
-            if isinstance(v, (dict, list)):
-                arguments[k] = json.dumps(v, ensure_ascii=False)
+        arguments = self._normalize_arguments_for_schema(server_name, tool_name, arguments)
 
         self.report_progress(0.0, f"Calling {server_name}/{tool_name}")
 
