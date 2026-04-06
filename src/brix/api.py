@@ -139,8 +139,8 @@ async def run_pipeline(request: Request) -> JSONResponse:
     async_mode = body.pop("async", False)
 
     # Warn about unknown input parameters (V2-20)
-    defined_params = set(pipeline.input.keys())
-    unknown_params = set(body.keys()) - defined_params
+    defined_params = set(pipeline.input.keys()) if pipeline.input else set()
+    unknown_params = set(body.keys()) - defined_params if defined_params else set()
     warnings: list[str] = []
     if unknown_params:
         warnings.append(

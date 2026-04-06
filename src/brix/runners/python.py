@@ -28,6 +28,38 @@ def _parse_brix_progress_line(line: str) -> dict | None:
     return None
 
 
+def _extract_helper_params(step: Any) -> dict[str, Any]:
+    """Return only user-facing params for python/helper subprocesses.
+
+    The Python runner accepts step fields from both ``step.params`` and the
+    legacy ``step.config`` shape. Helpers should receive only the nested
+    ``params`` payload, not runner-internal fields like ``helper`` or
+    ``script``.
+    """
+    def _step_value(field: str) -> Any:
+        if isinstance(step, dict):
+            return step.get(field)
+        return getattr(step, field, None)
+
+    params = _step_value("params")
+    if isinstance(params, dict):
+        source_params = dict(params)
+    else:
+        source_params = {}
+
+    config = _step_value("config")
+    if isinstance(config, dict):
+        config_params = config.get("params")
+        if isinstance(config_params, dict):
+            source_params = dict(config_params)
+
+    return {
+        key: value
+        for key, value in source_params.items()
+        if not key.startswith("_") and key not in {"helper", "script"}
+    }
+
+
 class PythonRunner(BaseRunner):
     """Runs Python scripts as subprocesses (D-19: never importlib)."""
 
@@ -65,9 +97,7 @@ class PythonRunner(BaseRunner):
                 return step.get(field)
             return getattr(step, field, None)
 
-        params = _step_value("params") or {}
-        if not isinstance(params, dict):
-            params = {}
+        params = _extract_helper_params(step)
 
         config = _step_value("config") or {}
         if not isinstance(config, dict):
@@ -116,8 +146,7 @@ class PythonRunner(BaseRunner):
 
         # Build the command: python3 <script> <json_params>
         # Params are passed as JSON string in sys.argv[1]
-        # Remove internal keys (prefixed with _)
-        clean_params = {k: v for k, v in params.items() if not k.startswith('_')}
+        clean_params = params
 
         cmd = ["python3", script]
         input_data = None

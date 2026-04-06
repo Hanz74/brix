@@ -70,8 +70,8 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
 
     # Warn about unknown input parameters (V2-20)
     user_params = arguments.get("input", {}) or {}
-    defined_params = set(pipeline.input.keys())
-    unknown_params = set(user_params.keys()) - defined_params
+    defined_params = set(pipeline.input.keys()) if pipeline.input else set()
+    unknown_params = set(user_params.keys()) - defined_params if defined_params else set()
     warnings: list[str] = []
     if unknown_params:
         warnings.append(
