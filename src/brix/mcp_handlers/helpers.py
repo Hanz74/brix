@@ -18,6 +18,34 @@ from brix.mcp_handlers._shared import (
 from brix.helper_registry import HelperRegistry
 
 
+def _helper_script_delete_roots() -> tuple[Path, ...]:
+    """Return helper directories whose files should be deleted with the helper."""
+    return (
+        _managed_helper_dir(),
+        Path("/app/helpers"),
+    )
+
+
+def _should_delete_helper_script(script_path: Path) -> bool:
+    """Return True when the helper script lives in a managed helper directory."""
+    try:
+        resolved_script = script_path.resolve(strict=False)
+    except OSError:
+        resolved_script = script_path
+
+    for root in _helper_script_delete_roots():
+        try:
+            resolved_root = root.resolve(strict=False)
+        except OSError:
+            resolved_root = root
+        try:
+            resolved_script.relative_to(resolved_root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 async def _handle_create_helper(arguments: dict) -> dict:
     """Create a new Python helper script with inline code and register it."""
     name = arguments.get("name", "").strip()
@@ -464,16 +492,18 @@ async def _handle_delete_helper(arguments: dict) -> dict:
         "affected_pipelines": affected_pipelines,
     }
 
-    # Optionally delete the script file
-    if delete_script and entry.script:
+    # Delete helper files from managed helper roots by default so startup sync
+    # cannot re-register a deleted helper on the next container start.
+    if entry.script:
         script_path = Path(entry.script)
-        if script_path.exists():
+        should_delete_script = delete_script or _should_delete_helper_script(script_path)
+        if should_delete_script and script_path.exists():
             try:
                 script_path.unlink()
                 result["deleted_script"] = str(script_path)
             except OSError as exc:
                 result["script_delete_error"] = str(exc)
-        else:
+        elif should_delete_script:
             result["script_not_found"] = str(script_path)
 
     return result

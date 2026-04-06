@@ -301,12 +301,19 @@ class PipelineStore:
     def delete(self, name: str) -> bool:
         """Delete a pipeline from DB and pipelines_dir. Returns True if deleted."""
         deleted = False
-        # Delete from filesystem
-        for ext in [".yaml", ".yml"]:
-            path = self.pipelines_dir / f"{name}{ext}"
-            if path.exists():
-                path.unlink()
-                deleted = True
+        # Delete from every configured search path so stale disk files do not
+        # outlive the DB row in mixed DB/filesystem deployments.
+        seen_paths: set[Path] = set()
+        for search_dir in [self.pipelines_dir, *self.search_paths]:
+            search_dir = Path(search_dir)
+            for ext in [".yaml", ".yml"]:
+                path = search_dir / f"{name}{ext}"
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+                if path.exists():
+                    path.unlink()
+                    deleted = True
         # Delete from DB
         if self._db.delete_pipeline(name):
             deleted = True
