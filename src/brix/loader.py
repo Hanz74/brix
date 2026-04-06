@@ -494,6 +494,14 @@ class PipelineLoader:
 
         if step.params:
             rendered = self.render_value(step.params, context)
+            # flow.transform expressions are evaluated by the runner with item/data/value
+            # in scope, so preserve the raw template instead of rendering it eagerly here.
+            if (
+                step.type in {"transform", "flow.transform"}
+                and isinstance(step.params, dict)
+                and "expression" in step.params
+            ):
+                rendered["expression"] = step.params["expression"]
         if getattr(step, "config", None):
             rendered["_config"] = self.render_value(step.config, context)
 

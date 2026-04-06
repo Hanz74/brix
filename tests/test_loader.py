@@ -712,6 +712,23 @@ steps:
     assert "_body" not in rendered
 
 
+def test_render_step_params_preserves_transform_expression_template():
+    """Transform expressions must stay raw for runner-time evaluation."""
+    loader = PipelineLoader()
+    pipeline = loader.load_from_string("""
+name: t
+steps:
+  - id: transform_score
+    type: flow.transform
+    params:
+      expression: "{{ convert_default.output.normalized._quality_score | default(0) }}"
+""")
+    step = pipeline.steps[0]
+    ctx = {"convert_default": {"output": {"normalized": {"_quality_score": 7}}}}
+    rendered = loader.render_step_params(step, ctx)
+    assert rendered["expression"] == "{{ convert_default.output.normalized._quality_score | default(0) }}"
+
+
 def test_render_step_params_body_static_dict_preserved():
     """body dict without templates is stored under _body unchanged."""
     loader = PipelineLoader()

@@ -1,7 +1,10 @@
 """Tests for FilterRunner and TransformRunner."""
 
+from pathlib import Path
+
 import pytest
 
+from brix.context import PipelineContext
 from brix.runners.filter import FilterRunner
 from brix.runners.transform import TransformRunner
 
@@ -199,3 +202,17 @@ async def test_transform_json_output():
     result = await runner.execute(step, context=None)
     assert result["success"] is True
     assert result["data"] == [{"id": 1, "tag_count": 2}, {"id": 2, "tag_count": 1}]
+
+
+@pytest.mark.asyncio
+async def test_transform_expression_can_reference_previous_step_output(tmp_path):
+    """Runner expressions see the full pipeline Jinja context."""
+    runner = TransformRunner()
+    ctx = PipelineContext(workdir=Path(tmp_path))
+    ctx.set_output("convert_default", {"normalized": {"_quality_score": 7}})
+    step = _Step(params={
+        "expression": "{{ convert_default.output.normalized._quality_score | default(0) }}",
+    })
+    result = await runner.execute(step, context=ctx)
+    assert result["success"] is True
+    assert result["data"] == 7

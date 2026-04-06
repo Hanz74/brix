@@ -4,6 +4,9 @@ import json
 import time
 from typing import Any
 
+from jinja2 import ChainableUndefined
+from jinja2.sandbox import SandboxedEnvironment
+
 from brix.config import config
 from brix.loader import register_brix_jinja_globals
 from brix.runners.base import BaseRunner
@@ -83,8 +86,14 @@ class TransformRunner(BaseRunner):
         n_items = len(input_data) if isinstance(input_data, (list, dict)) else 1
         self.report_progress(0.0, f"Transforming {n_items} items")
 
-        from jinja2.sandbox import SandboxedEnvironment
-        env = register_brix_jinja_globals(SandboxedEnvironment())
+        env = register_brix_jinja_globals(
+            SandboxedEnvironment(undefined=ChainableUndefined)
+        )
+        jinja_ctx = (
+            context.to_jinja_context()
+            if context is not None and hasattr(context, "to_jinja_context")
+            else {}
+        )
 
         try:
             template = env.from_string(expression)
@@ -93,7 +102,7 @@ class TransformRunner(BaseRunner):
                 # Apply expression to each item, expose as 'item'
                 results = []
                 for item in input_data:
-                    rendered = template.render(item=item)
+                    rendered = template.render({**jinja_ctx, "item": item})
                     # Try JSON parse for structured output
                     try:
                         results.append(json.loads(rendered))
@@ -102,15 +111,18 @@ class TransformRunner(BaseRunner):
                 data = results
             elif isinstance(input_data, dict):
                 # Single dict exposed as 'data'
-                rendered = template.render(data=input_data)
+                rendered = template.render({**jinja_ctx, "data": input_data})
                 try:
                     data = json.loads(rendered)
                 except (json.JSONDecodeError, ValueError):
                     data = rendered
             else:
                 # Scalar or other type exposed as 'value'
-                rendered = template.render(value=input_data)
-                data = rendered
+                rendered = template.render({**jinja_ctx, "value": input_data})
+                try:
+                    data = json.loads(rendered)
+                except (json.JSONDecodeError, ValueError):
+                    data = rendered
 
         except Exception as e:
             return {"success": False, "error": f"Transform error: {e}", "duration": time.monotonic() - start}
