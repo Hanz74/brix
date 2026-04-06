@@ -4,11 +4,12 @@ from brix.bricks.schema import BrickParam, BrickSchema
 
 HTTP_GET = BrickSchema(
     name="http_get",
-    type="http",
+    type="http.request",
     description="Make an HTTP GET request to a URL and return the response.",
     when_to_use="Fetching data from REST APIs, downloading JSON, polling status endpoints.",
     category="http",
     system=True,
+    runner="http",
     config_schema={
         "url": BrickParam(type="string", description="The URL to request", required=True),
         "headers": BrickParam(type="object", description="HTTP headers as key-value pairs"),
@@ -20,11 +21,12 @@ HTTP_GET = BrickSchema(
 
 HTTP_POST = BrickSchema(
     name="http_post",
-    type="http",
+    type="http.request",
     description="Make an HTTP POST request with a JSON or text body.",
     when_to_use="Sending data to REST APIs, triggering webhooks, uploading content.",
     category="http",
     system=True,
+    runner="http",
     config_schema={
         "url": BrickParam(type="string", description="The URL to request", required=True),
         "headers": BrickParam(type="object", description="HTTP headers"),
@@ -54,11 +56,12 @@ RUN_CLI = BrickSchema(
 
 PYTHON_SCRIPT = BrickSchema(
     name="python_script",
-    type="python",
+    type="script.python",
     description="Run a Python script file. Script reads JSON from argv[1] or stdin, writes JSON to stdout.",
     when_to_use="Data transformation, filtering, file processing — anything that needs Python logic.",
     category="python",
     system=True,
+    runner="python",
     config_schema={
         "script": BrickParam(type="string", description="Path to Python script file", required=True),
         "params": BrickParam(type="object", description="Parameters passed as JSON to the script"),
@@ -111,11 +114,12 @@ MCP_CALL = BrickSchema(
 
 FILTER = BrickSchema(
     name="filter",
-    type="filter",
+    type="flow.filter",
     description="Filter a list using a Jinja2 boolean expression. No Python script needed.",
     when_to_use="Filtering lists by condition: only PDFs, only items matching a keyword, removing empty entries.",
     category="transform",
     system=True,
+    runner="filter",
     config_schema={
         "input": BrickParam(type="array", description="List to filter", required=True),
         "where": BrickParam(
@@ -130,11 +134,12 @@ FILTER = BrickSchema(
 
 TRANSFORM = BrickSchema(
     name="transform",
-    type="transform",
+    type="flow.transform",
     description="Transform data using a Jinja2 expression. Maps, renames, restructures.",
     when_to_use="Renaming fields, extracting nested values, reshaping data between steps.",
     category="transform",
     system=True,
+    runner="transform",
     config_schema={
         "input": BrickParam(type="object", description="Data to transform"),
         "expression": BrickParam(type="string", description="Jinja2 expression for transformation", required=True),
@@ -336,7 +341,7 @@ SOURCE_FETCH_FILES = BrickSchema(
 
 SOURCE_HTTP_FETCH = BrickSchema(
     name="source.http_fetch",
-    type="http",
+    type="http.request",
     description="Make an HTTP GET or POST request to fetch data from an external API or webhook.",
     when_to_use=(
         "When the data source is a REST API, web service, or webhook endpoint. "
@@ -349,6 +354,7 @@ SOURCE_HTTP_FETCH = BrickSchema(
     ),
     category="source",
     system=True,
+    runner="http",
     aliases=[
         "http get", "api call", "rest api", "fetch url", "http request", "api anfrage",
         "webhook", "json api", "endpoint", "http fetch", "url abrufen", "api abrufen",
@@ -397,7 +403,7 @@ SOURCE_HTTP_FETCH = BrickSchema(
 
 CONVERT_TO_MARKDOWN = BrickSchema(
     name="convert.to_markdown",
-    type="http",
+    type="http.request",
     description=(
         "Convert any document (PDF, DOCX, XLSX, HTML, image) to clean Markdown text "
         "via the markitdown service."
@@ -413,6 +419,7 @@ CONVERT_TO_MARKDOWN = BrickSchema(
     ),
     category="convert",
     system=True,
+    runner="http",
     aliases=[
         "pdf to markdown", "docx to markdown", "to markdown", "dokument konvertieren",
         "markitdown", "pdf text", "dokument zu text", "convert document", "pdf lesen",
@@ -440,7 +447,7 @@ CONVERT_TO_MARKDOWN = BrickSchema(
 
 CONVERT_TO_JSON = BrickSchema(
     name="convert.to_json",
-    type="python",
+    type="script.python",
     description="Parse structured data files (CSV, XML, YAML) and return them as a JSON object or list.",
     when_to_use=(
         "When you need to load structured data from a file format into the pipeline context. "
@@ -453,6 +460,7 @@ CONVERT_TO_JSON = BrickSchema(
     ),
     category="convert",
     system=True,
+    runner="python",
     aliases=[
         "csv to json", "xml to json", "yaml to json", "parse csv", "csv parsen",
         "structured data", "csv lesen", "xml parsen", "config laden", "datei parsen",
@@ -499,7 +507,7 @@ CONVERT_TO_JSON = BrickSchema(
 
 CONVERT_EXTRACT_TEXT = BrickSchema(
     name="convert.extract_text",
-    type="python",
+    type="script.python",
     description="Extract plain text from PDF, DOCX, or image files using native parsing or OCR.",
     when_to_use=(
         "When you need raw text from documents, especially scanned PDFs or images where "
@@ -512,6 +520,7 @@ CONVERT_EXTRACT_TEXT = BrickSchema(
     ),
     category="convert",
     system=True,
+    runner="python",
     aliases=[
         "extract text", "text extrahieren", "ocr", "pdf text extrahieren", "text aus pdf",
         "text aus bild", "image ocr", "bild zu text", "docx text", "text lesen",
@@ -553,7 +562,7 @@ CONVERT_EXTRACT_TEXT = BrickSchema(
 
 LLM_EXTRACT = BrickSchema(
     name="llm.extract",
-    type="python",
+    type="script.python",
     description=(
         "Use an LLM to extract structured fields from unstructured text based on a prompt template "
         "and an output schema."
@@ -571,6 +580,7 @@ LLM_EXTRACT = BrickSchema(
     ),
     category="llm",
     system=True,
+    runner="python",
     aliases=[
         "llm extraction", "ki extraktion", "daten extrahieren", "felder extrahieren",
         "structured extraction", "field extraction", "extract fields", "llm parsen",
@@ -620,7 +630,7 @@ LLM_EXTRACT = BrickSchema(
 
 LLM_CLASSIFY = BrickSchema(
     name="llm.classify",
-    type="python",
+    type="script.python",
     description=(
         "Use an LLM to classify text or a document into one of several predefined categories."
     ),
@@ -637,6 +647,7 @@ LLM_CLASSIFY = BrickSchema(
     ),
     category="llm",
     system=True,
+    runner="python",
     aliases=[
         "classify", "kategorisieren", "klassifizieren", "einordnen", "document classification",
         "email classification", "intent detection", "tagging", "kategorien", "klasse bestimmen",
@@ -680,7 +691,7 @@ LLM_CLASSIFY = BrickSchema(
 
 DB_INGEST = BrickSchema(
     name="db.ingest",
-    type="python",
+    type="script.python",
     description="Write one or more records into a database table, with optional upsert (insert-or-update).",
     when_to_use=(
         "When you need to persist structured data into SQLite or PostgreSQL at the end of a pipeline. "
@@ -693,6 +704,7 @@ DB_INGEST = BrickSchema(
     ),
     category="db",
     system=True,
+    runner="python",
     aliases=[
         "datenbank schreiben", "db insert", "db upsert", "in datenbank speichern",
         "datensatz speichern", "record speichern", "insert", "upsert", "ingest",
@@ -933,7 +945,7 @@ ACTION_MOVE_FILE = BrickSchema(
 
 SYSTEM_SCRIPT_PYTHON = BrickSchema(
     name="script.python",
-    type="python",
+    type="script.python",
     description="Run a Python script (Brick-First canonical name for the python runner).",
     when_to_use="Use when you need Python logic, data processing, or a custom script.",
     runner="python",
@@ -944,7 +956,7 @@ SYSTEM_SCRIPT_PYTHON = BrickSchema(
 
 SYSTEM_HTTP_REQUEST = BrickSchema(
     name="http.request",
-    type="http",
+    type="http.request",
     description="Make an HTTP request (Brick-First canonical name for the http runner).",
     when_to_use="Use when you need to call a REST API or HTTP endpoint.",
     runner="http",
@@ -977,7 +989,7 @@ SYSTEM_SCRIPT_CLI = BrickSchema(
 
 SYSTEM_FLOW_FILTER = BrickSchema(
     name="flow.filter",
-    type="filter",
+    type="flow.filter",
     description="Filter a list using a Jinja2 expression (Brick-First canonical name for the filter runner).",
     when_to_use="Use to filter items in a foreach or list step.",
     runner="filter",
@@ -988,7 +1000,7 @@ SYSTEM_FLOW_FILTER = BrickSchema(
 
 SYSTEM_FLOW_TRANSFORM = BrickSchema(
     name="flow.transform",
-    type="transform",
+    type="flow.transform",
     description="Transform data using a Jinja2 expression (Brick-First canonical name for the transform runner).",
     when_to_use="Use to reshape or remap data between pipeline steps.",
     runner="transform",

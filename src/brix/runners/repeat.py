@@ -32,6 +32,7 @@ class RepeatRunner(BaseRunner):
                 "timeout": {"type": "string", "description": "Total timeout for the loop e.g. '1h'"},
                 "delay": {"type": "number", "description": "Delay in seconds between iterations (default 0)"},
             },
+            "required": ["sequence"],
         }
 
     def input_type(self) -> str:
@@ -50,6 +51,17 @@ class RepeatRunner(BaseRunner):
         except (TypeError, ValueError):
             max_iter = 100
         delay = float(getattr(step, "delay", 0) or 0)
+
+        if not sequence:
+            total_duration = time.monotonic() - start
+            self.report_progress(100.0, "repeat skipped: empty sequence", done=0, total=0)
+            return {
+                "success": True,
+                "data": None,
+                "duration": total_duration,
+                "iterations": 0,
+                "message": "Empty sequence; nothing to execute",
+            }
 
         from brix.models import Pipeline
         from brix.loader import PipelineLoader

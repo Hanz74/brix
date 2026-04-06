@@ -22,6 +22,18 @@ def _jinja_fail(msg):
     raise ValueError(msg)
 
 
+def register_brix_jinja_globals(env: SandboxedEnvironment) -> SandboxedEnvironment:
+    """Register Brix Jinja globals and callable helpers on an environment."""
+    env.globals["now"] = utcnow
+    env.globals["utcnow"] = utcnow
+    env.globals["uuid4"] = lambda: str(uuid.uuid4())
+    env.globals["zip"] = zip
+    env.globals["env"] = lambda name, default="": os.environ.get(name, default)
+    env.globals["fail"] = _jinja_fail
+    env.globals["fromjson"] = json.loads
+    return env
+
+
 class PipelineLoader:
     """Loads pipeline YAML files and renders Jinja2 templates."""
 
@@ -46,12 +58,7 @@ class PipelineLoader:
         ).decode()
         self.env.filters["b64decode"] = lambda s: base64.b64decode(s).decode()
         self.env.filters["fromjson"] = json.loads
-        self.env.globals["now"] = utcnow
-        self.env.globals["utcnow"] = utcnow
-        self.env.globals["uuid4"] = lambda: str(uuid.uuid4())
-        self.env.globals["zip"] = zip
-        self.env.globals["env"] = lambda name, default="": os.environ.get(name, default)
-        self.env.globals["fail"] = _jinja_fail
+        register_brix_jinja_globals(self.env)
 
     # ------------------------------------------------------------------
     # Loading

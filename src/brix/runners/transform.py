@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from brix.config import config
+from brix.loader import register_brix_jinja_globals
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
 
@@ -83,7 +84,7 @@ class TransformRunner(BaseRunner):
         self.report_progress(0.0, f"Transforming {n_items} items")
 
         from jinja2.sandbox import SandboxedEnvironment
-        env = SandboxedEnvironment()
+        env = register_brix_jinja_globals(SandboxedEnvironment())
 
         try:
             template = env.from_string(expression)

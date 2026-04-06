@@ -44,8 +44,14 @@ class DedupRunner(BaseRunner):
             "type": "object",
             "properties": {
                 "input": {"description": "List to deduplicate (Jinja2 expression or literal list)"},
-                "key": {"type": "string", "description": "Jinja2 expression evaluated per item to produce the dedup key"},
-                "field": {"type": "string", "description": "Field name to hash for content-based dedup"},
+                "key": {
+                    "type": "string",
+                    "description": "Jinja2 expression evaluated per item to produce the dedup key. Either 'key' or 'field' must be set.",
+                },
+                "field": {
+                    "type": "string",
+                    "description": "Field name to hash for content-based dedup. Either 'field' or 'key' must be set.",
+                },
                 "algorithm": {
                     "type": "string",
                     "enum": ["md5", "sha256"],
@@ -58,6 +64,7 @@ class DedupRunner(BaseRunner):
                 },
             },
             "required": [],
+            "oneOf": [{"required": ["key"]}, {"required": ["field"]}],
         }
 
     def validate_config(self, config: dict) -> list[str]:
