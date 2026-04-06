@@ -51,6 +51,35 @@ def test_step_from_db_row_populates_params_from_config():
     assert step.params == {"connection": "main", "query": "SELECT 1"}
 
 
+def test_step_row_to_dict_parses_raw_config_json_before_merge():
+    row = {
+        "step_key": "fetch",
+        "step_type": "db.query",
+        "config_json": '{"connection":"main","query":"SELECT 1"}',
+        "params_json": None,
+    }
+
+    step = step_row_to_dict(row)
+
+    assert step["config"] == {"connection": "main", "query": "SELECT 1"}
+    assert step["params"] == {"connection": "main", "query": "SELECT 1"}
+
+
+def test_step_row_to_dict_prefers_config_json_over_stale_config_field():
+    row = {
+        "step_key": "fetch",
+        "step_type": "db.query",
+        "config_json": '{"connection":"main","query":"SELECT 1"}',
+        "config": None,
+        "params_json": None,
+    }
+
+    step = step_row_to_dict(row)
+
+    assert step["config"] == {"connection": "main", "query": "SELECT 1"}
+    assert step["params"] == {"connection": "main", "query": "SELECT 1"}
+
+
 def test_specialist_step_keeps_config_separate_from_params():
     row = step_dict_to_row(
         {

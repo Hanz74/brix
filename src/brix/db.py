@@ -271,10 +271,16 @@ def step_dict_to_row(step_dict: dict) -> dict:
 def step_row_to_dict(row: dict) -> dict:
     """Convert a DB step row into a step dict using model field names."""
     step: dict[str, Any] = {}
+    has_config_json = "config_json" in row
+    parsed_config = _json_loads(row.get("config_json")) if has_config_json else None
+
     for key, value in row.items():
         if key == "id":
             continue
         if key in _STEP_STRUCTURAL_COLUMNS:
+            continue
+        if key == "config" and has_config_json:
+            # Prefer the raw DB JSON column when both shapes are present.
             continue
         if key in _STEP_JSON_COLUMNS and key.endswith("_json"):
             field = key[:-5]
@@ -286,6 +292,8 @@ def step_row_to_dict(row: dict) -> dict:
             step[field] = None if value is None else bool(value)
         else:
             step[field] = value
+    if has_config_json:
+        step["config"] = parsed_config
     return merge_step_config_into_params(step)
 
 
