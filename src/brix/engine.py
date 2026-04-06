@@ -907,7 +907,7 @@ class PipelineEngine:
                         _vc_config = _step_config_dict(step)
                         # Merge top-level step attributes that runners may read
                         for _vc_attr in (
-                            "connector", "script", "url", "method", "server", "tool",
+                            "connector", "script", "helper", "url", "method", "server", "tool",
                             "command", "args", "shell", "pipeline", "pipelines",
                             "message", "field", "cases", "default",
                             "connection", "query", "table",
