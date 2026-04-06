@@ -204,6 +204,21 @@ class Step(BaseModel):
     while_condition: Optional[str] = None      # Jinja2 condition — continue while true
     max_iterations: int = 100                  # Safety limit
     sequence: Optional[list[dict]] = None      # Steps to repeat
+    delay: Optional[float] = None              # Delay between iterations in seconds
+
+    # merge runner
+    inputs: Optional[list[str]] = None
+    mode: Optional[str] = None
+    key: Optional[str] = None
+
+    # switch runner
+    field: Optional[str] = None
+    cases: Optional[dict[str, Any]] = None
+    default: Optional[str] = None
+
+    # error_handler runner
+    try_step: Optional[str] = None
+    handler_step: Optional[str] = None
 
     # Common to all runners
     params: Optional[dict[str, Any]] = None

@@ -342,6 +342,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_refresh_db_only_persistence_docs_v73",
         "down": "",
     },
+    {
+        "version": 74,
+        "name": "add_missing_pipeline_step_runner_columns",
+        "up": "",
+        "up_fn": "_add_missing_pipeline_step_runner_columns_v74",
+        "down": "",
+    },
 ]
 
 
@@ -608,6 +615,27 @@ def _add_nested_step_json_columns_v72(db: "BrixDB") -> None:
         ("default_steps_json", "TEXT"),
         ("sequence_json", "TEXT"),
         ("sub_steps_json", "TEXT"),
+    ]
+    with db._connect() as conn:
+        for column, column_type in columns:
+            if not db._column_exists(conn, "pipeline_step", column):
+                conn.execute(
+                    f"ALTER TABLE pipeline_step ADD COLUMN {column} {column_type}"
+                )
+
+
+def _add_missing_pipeline_step_runner_columns_v74(db: "BrixDB") -> None:
+    """Add pipeline_step columns required by merge/switch/error_handler/repeat."""
+    columns = [
+        ("inputs_json", "TEXT"),
+        ("merge_mode", "TEXT"),
+        ("merge_key", "TEXT"),
+        ("switch_field", "TEXT"),
+        ("cases_json", "TEXT"),
+        ("switch_default", "TEXT"),
+        ("try_step", "TEXT"),
+        ("handler_step", "TEXT"),
+        ("delay", "REAL"),
     ]
     with db._connect() as conn:
         for column, column_type in columns:
