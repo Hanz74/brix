@@ -823,7 +823,14 @@ class PipelineEngine:
                                 continue
 
                         # stop step: end the pipeline immediately (T-BRIX-V4-04)
-                        if step.type == "stop":
+                        # Guard: only terminate if the step was NOT already skipped (e.g. by a
+                        # when-condition that evaluated to false).  A skipped stop step must
+                        # NOT abort the pipeline — execution continues with the next step.
+                        _stop_already_skipped = (
+                            step_statuses.get(step.id) is not None
+                            and step_statuses[step.id].status == "skipped"
+                        )
+                        if step.type == "stop" and not _stop_already_skipped:
                             jinja_ctx = context.to_jinja_context()
                             msg = step.message or "Pipeline stopped"
                             rendered_msg = self.loader.render_template(msg, jinja_ctx) if "{{" in msg else msg
@@ -2124,7 +2131,14 @@ class PipelineEngine:
                     return
 
             # --- stop step ---
-            if step.type == "stop":
+            # Guard: only terminate if the step was NOT already skipped (e.g. by a
+            # when-condition that evaluated to false).  A skipped stop step must
+            # NOT abort the pipeline — downstream steps continue normally.
+            _stop_already_skipped_dag = (
+                step_statuses.get(step.id) is not None
+                and step_statuses[step.id].status == "skipped"
+            )
+            if step.type == "stop" and not _stop_already_skipped_dag:
                 jinja_ctx = context.to_jinja_context()
                 msg = step.message or "Pipeline stopped"
                 rendered_msg = self.loader.render_template(msg, jinja_ctx) if "{{" in msg else msg
