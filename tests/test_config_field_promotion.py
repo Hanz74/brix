@@ -76,3 +76,47 @@ def test_config_values_override_existing_top_level_values():
 
     assert result["helper"] == "config_helper"
     assert result["script"] == "/tmp/config_script.py"
+
+
+def test_config_params_are_merged_into_step_params_for_mcp_call():
+    step = {
+        "id": "call_mcp",
+        "type": "mcp.call",
+        "config": {
+            "server": "m365",
+            "tool": "download-file",
+            "params": {"driveId": "me"},
+        },
+        "params": None,
+        "server": None,
+        "tool": None,
+    }
+
+    result = merge_step_config_into_params(step)
+
+    assert result["server"] == "m365"
+    assert result["tool"] == "download-file"
+    assert result["params"] == {"driveId": "me"}
+
+
+def test_config_params_override_existing_step_params_without_deleting_other_keys():
+    step = {
+        "id": "call_mcp",
+        "type": "mcp.call",
+        "config": {
+            "server": "m365",
+            "tool": "download-file",
+            "params": {"driveId": "me", "fileId": "from-config"},
+        },
+        "params": {"fileId": "from-db", "path": "/tmp/report.pdf"},
+        "server": None,
+        "tool": None,
+    }
+
+    result = merge_step_config_into_params(step)
+
+    assert result["params"] == {
+        "driveId": "me",
+        "fileId": "from-config",
+        "path": "/tmp/report.pdf",
+    }

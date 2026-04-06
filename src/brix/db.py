@@ -246,7 +246,7 @@ _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS: dict[frozenset[str], tuple[str, ...]] =
 
 
 def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
-    """Copy non-specialist ``config`` into ``params`` when params is empty.
+    """Merge DB-backed ``config`` into runner-facing step fields.
 
     DB-backed brick steps persist generic config in ``config_json`` / ``step.config``,
     while most engine paths and runners read ``step.params``. On the read path we
@@ -255,6 +255,12 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     - ``config`` is a non-empty dict
     - ``params`` is empty / missing
     - the step is not a specialist step, where ``config`` is semantic input
+
+    Independently of that legacy fallback, a nested ``config.params`` dict is
+    always merged into ``step.params`` for all step types. This lets DB-backed
+    steps persist runner arguments under ``config.params`` while still exposing
+    them through ``step.params``. Existing ``step.params`` keys are preserved
+    unless overridden by ``config.params``.
 
     Additionally, selected runner-consumed fields are promoted from
     ``step.config`` to top-level step fields when the runner or engine reads
@@ -265,13 +271,21 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     step_type = step.get("type")
     config = step.get("config")
     params = step.get("params")
+    nested_config_params = config.get("params") if isinstance(config, dict) else None
+
     if (
         step_type not in _SPECIALIST_STEP_TYPES
         and isinstance(config, dict)
         and config
+        and not isinstance(nested_config_params, dict)
         and not params
     ):
         step["params"] = dict(config)
+        params = step["params"]
+
+    if isinstance(nested_config_params, dict):
+        base_params = params if isinstance(params, dict) else {}
+        step["params"] = {**base_params, **nested_config_params}
 
     # Promote top-level fields stored inside config when the corresponding
     # runner reads them from a top-level step attribute.
