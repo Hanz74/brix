@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from brix.pipeline_store import PipelineStore
 from brix.runners.base import BaseRunner
 
 
@@ -32,6 +33,36 @@ class PipelineRunner(BaseRunner):
     def output_type(self) -> str:
         return "any"
 
+    def _resolve_pipeline_path(self, pipeline_ref: str) -> Path | None:
+        """Resolve a pipeline reference to a disk path as a fallback."""
+        pipeline_path = Path(pipeline_ref)
+        if pipeline_path.exists():
+            return pipeline_path
+
+        brix_dir = Path.home() / ".brix" / "pipelines"
+        brix_path = brix_dir / pipeline_ref
+        brix_yaml = brix_dir / f"{pipeline_ref}.yaml"
+        if brix_path.exists():
+            return brix_path
+        if brix_yaml.exists():
+            return brix_yaml
+
+        return None
+
+    def _load_sub_pipeline(self, pipeline_ref: str) -> Any:
+        """Load a sub-pipeline from DB first, then fall back to disk."""
+        store = PipelineStore()
+        try:
+            return store.load(pipeline_ref)
+        except FileNotFoundError:
+            pipeline_path = self._resolve_pipeline_path(pipeline_ref)
+            if pipeline_path is None:
+                raise FileNotFoundError(
+                    f"Sub-pipeline not found: {pipeline_ref} "
+                    f"(searched DB, absolute path, and ~/.brix/pipelines/)"
+                )
+            return self._engine.loader.load(str(pipeline_path))
+
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
 
@@ -42,27 +73,9 @@ class PipelineRunner(BaseRunner):
         if self._engine is None:
             return {"success": False, "error": "PipelineRunner not connected to engine", "duration": 0.0}
 
-        # Resolve pipeline path
-        # Try: 1) absolute path, 2) ~/.brix/pipelines/<name>, 3) ~/.brix/pipelines/<name>.yaml
-        pipeline_path = Path(pipeline_ref)
-        if not pipeline_path.exists():
-            brix_dir = Path.home() / ".brix" / "pipelines"
-            brix_path = brix_dir / pipeline_ref
-            brix_yaml = brix_dir / f"{pipeline_ref}.yaml"
-            if brix_path.exists():
-                pipeline_path = brix_path
-            elif brix_yaml.exists():
-                pipeline_path = brix_yaml
-            else:
-                return {
-                    "success": False,
-                    "error": f"Sub-pipeline not found: {pipeline_ref} (searched: {pipeline_ref}, {pipeline_ref}.yaml in ~/.brix/pipelines/)",
-                    "duration": time.monotonic() - start,
-                }
-
         try:
-            # Load sub-pipeline
-            sub_pipeline = self._engine.loader.load(str(pipeline_path))
+            # Load sub-pipeline from DB first, then disk fallback for system/file refs.
+            sub_pipeline = self._load_sub_pipeline(pipeline_ref)
 
             # Build sub-pipeline input from step params
             params = getattr(step, 'params', {}) or {}

@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from brix.pipeline_store import PipelineStore
 from brix.runners.base import BaseRunner
 
 
@@ -35,7 +36,7 @@ class PipelineGroupRunner(BaseRunner):
         return "dict"
 
     def _resolve_pipeline_path(self, pipeline_ref: str) -> Path | None:
-        """Resolve a pipeline reference to an absolute path.
+        """Resolve a pipeline reference to a disk path as a fallback.
 
         Resolution order:
         1. Absolute / relative path that exists on disk
@@ -55,6 +56,20 @@ class PipelineGroupRunner(BaseRunner):
             return brix_yaml
 
         return None
+
+    def _load_sub_pipeline(self, pipeline_ref: str) -> Any:
+        """Load a sub-pipeline from DB first, then fall back to disk."""
+        store = PipelineStore()
+        try:
+            return store.load(pipeline_ref)
+        except FileNotFoundError:
+            pipeline_path = self._resolve_pipeline_path(pipeline_ref)
+            if pipeline_path is None:
+                raise FileNotFoundError(
+                    f"Sub-pipeline not found: {pipeline_ref} "
+                    f"(searched DB, absolute path, and ~/.brix/pipelines/)"
+                )
+            return self._engine.loader.load(str(pipeline_path))
 
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
@@ -100,16 +115,8 @@ class PipelineGroupRunner(BaseRunner):
         async def run_one(pipeline_ref: str) -> tuple[str, bool, Any, str | None]:
             """Return (ref, success, result_data, error_msg)."""
             async with semaphore:
-                pipeline_path = self._resolve_pipeline_path(pipeline_ref)
-                if pipeline_path is None:
-                    return (
-                        pipeline_ref,
-                        False,
-                        None,
-                        f"Sub-pipeline not found: {pipeline_ref} (searched absolute path and ~/.brix/pipelines/)",
-                    )
                 try:
-                    sub_pipeline = self._engine.loader.load(str(pipeline_path))
+                    sub_pipeline = self._load_sub_pipeline(pipeline_ref)
                     sub_result = await self._engine.run(sub_pipeline, resolved_shared)
                     if sub_result.success:
                         return (pipeline_ref, True, sub_result.result, None)
@@ -120,6 +127,8 @@ class PipelineGroupRunner(BaseRunner):
                             None,
                             f"Sub-pipeline failed: {sub_pipeline.name}",
                         )
+                except FileNotFoundError as e:
+                    return (pipeline_ref, False, None, str(e))
                 except Exception as e:
                     return (pipeline_ref, False, None, f"Sub-pipeline error: {e}")
 
