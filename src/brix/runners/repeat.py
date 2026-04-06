@@ -41,7 +41,10 @@ class RepeatRunner(BaseRunner):
         sequence = getattr(step, "sequence", None) or []
         until_cond = getattr(step, "until", None)
         while_cond = getattr(step, "while_condition", None)
-        max_iter = getattr(step, "max_iterations", 100)
+        try:
+            max_iter = int(getattr(step, "max_iterations", 100))
+        except (TypeError, ValueError):
+            max_iter = 100
         delay = float(getattr(step, "delay", 0) or 0)
 
         from brix.models import Pipeline

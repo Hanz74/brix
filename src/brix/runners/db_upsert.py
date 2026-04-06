@@ -180,6 +180,8 @@ class DbUpsertRunner(BaseRunner):
             conflict_keys = []
 
         set_columns: list[str] | None = params.get("set_columns") or getattr(step, "set_columns", None)
+        if isinstance(set_columns, str):
+            set_columns = [col.strip() for col in set_columns.split(",") if col.strip()]
 
         # Resolve connection
         try:

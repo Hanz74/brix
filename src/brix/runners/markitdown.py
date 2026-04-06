@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from brix.config import config
-from brix.runners.base import BaseRunner
+from brix.runners.base import BaseRunner, _coerce_bool
 
 
 def _get_markitdown_base_url() -> str:
@@ -92,7 +92,7 @@ class MarkitdownRunner(BaseRunner):
 
         raw_input: str | None = _get("input")
         filename: str | None = _get("filename")
-        auto_extract: bool = bool(_get("auto_extract", False))
+        auto_extract: bool = _coerce_bool(_get("auto_extract", False))
         language: str = _get("language", "de") or "de"
         template: str | None = _get("template")
 

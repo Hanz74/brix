@@ -79,11 +79,10 @@ class RespondRunner(BaseRunner):
                 # Build template variables from context if available
                 ctx_vars: dict = {}
                 if context is not None:
-                    # If context is a dict-like, expose its keys directly
                     if isinstance(context, dict):
                         ctx_vars = context
-                    elif hasattr(context, "__dict__"):
-                        ctx_vars = vars(context)
+                    elif hasattr(context, "to_jinja_context"):
+                        ctx_vars = context.to_jinja_context() or {}
 
                 body = tmpl.render(**ctx_vars)
             except Exception as e:

@@ -8,6 +8,15 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
+def _coerce_bool(val: Any) -> bool:
+    """Convert common string and scalar inputs to a predictable boolean."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() not in ("false", "0", "no", "none", "")
+    return bool(val)
+
+
 class BaseRunner(ABC):
     """Base interface for all pipeline step runners.
 

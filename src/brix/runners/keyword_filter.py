@@ -98,7 +98,7 @@ class KeywordFilterRunner(BaseRunner):
 
         # Prepare keywords for matching
         if not case_sensitive:
-            match_keywords = [kw.lower() for kw in keywords]
+            match_keywords = [str(kw).lower() for kw in keywords]
         else:
             match_keywords = list(keywords)
 

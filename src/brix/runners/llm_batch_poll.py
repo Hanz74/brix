@@ -124,8 +124,10 @@ class LlmBatchPollRunner(BaseRunner):
         provider = params.get("provider", "mistral")
         model = params.get("model")
         requests = params.get("requests")
-        timeout = int(params.get("timeout", _DEFAULT_TIMEOUT) or _DEFAULT_TIMEOUT)
-        poll_interval = int(params.get("poll_interval", _DEFAULT_POLL_INTERVAL) or _DEFAULT_POLL_INTERVAL)
+        raw_timeout = params.get("timeout")
+        timeout = int(raw_timeout) if raw_timeout is not None else _DEFAULT_TIMEOUT
+        raw_poll_interval = params.get("poll_interval")
+        poll_interval = int(raw_poll_interval) if raw_poll_interval is not None else _DEFAULT_POLL_INTERVAL
 
         # Fall back to previous step output if no requests provided
         if not requests and context is not None and hasattr(context, "last_output"):

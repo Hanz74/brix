@@ -18,7 +18,7 @@ from typing import Any
 
 from brix.config import config
 from brix.connectors import CONNECTOR_REGISTRY, NormalizedItem
-from brix.runners.base import BaseRunner
+from brix.runners.base import BaseRunner, _coerce_bool
 from brix.runners.cli import parse_timeout
 
 
@@ -260,7 +260,7 @@ class SourceRunner(BaseRunner):
             raise ValueError(f"Path is not a directory: {path_str}")
 
         pattern = step_cfg.get("pattern", "*")
-        recursive = step_cfg.get("recursive", False)
+        recursive = _coerce_bool(step_cfg.get("recursive", False))
 
         self.report_progress(10.0, f"scanning {path_str}")
 

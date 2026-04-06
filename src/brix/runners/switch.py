@@ -84,6 +84,8 @@ class SwitchRunner(BaseRunner):
     async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
         field_expr = getattr(step, "field", None)
         cases = getattr(step, "cases", None) or {}
+        if isinstance(cases, dict):
+            cases = {str(k): v for k, v in cases.items()}
         default = getattr(step, "default", None)
 
         if not field_expr:
@@ -110,7 +112,7 @@ class SwitchRunner(BaseRunner):
             }
 
         # Match against cases (string comparison)
-        target = cases.get(evaluated)
+        target = cases.get(str(evaluated))
         if target is not None:
             matched_case = evaluated
         elif default is not None:

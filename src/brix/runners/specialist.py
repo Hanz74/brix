@@ -260,7 +260,7 @@ class SpecialistRunner(BaseRunner):
 
     async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
         # --- Parse SpecialistConfig from step.config -------------------------
-        raw_config = getattr(step, "config", None) or {}
+        raw_config = getattr(step, "params", None) or getattr(step, "config", None) or {}
         if not raw_config:
             self.report_progress(0.0, "error: missing config")
             return {

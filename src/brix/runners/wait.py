@@ -73,8 +73,10 @@ class WaitRunner(BaseRunner):
 
         seconds = getattr(step, "seconds", None)
         until_expr = getattr(step, "until", None)
-        poll_interval = float(getattr(step, "poll_interval", None) or _DEFAULT_POLL_INTERVAL)
-        timeout = float(getattr(step, "timeout", None) or _DEFAULT_MAX_TIMEOUT)
+        raw_poll_interval = getattr(step, "poll_interval", None)
+        poll_interval = float(raw_poll_interval) if raw_poll_interval is not None else _DEFAULT_POLL_INTERVAL
+        raw_timeout = getattr(step, "timeout", None)
+        timeout = float(raw_timeout) if raw_timeout is not None else _DEFAULT_MAX_TIMEOUT
 
         if seconds is not None:
             return await self._wait_seconds(float(seconds), start)

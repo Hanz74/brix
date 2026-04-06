@@ -6,17 +6,11 @@ from typing import Any
 
 import httpx
 
-from brix.runners.base import BaseRunner
+from brix.runners.base import BaseRunner, _coerce_bool
 from brix.runners.cli import parse_timeout, get_default_timeout
 
 # Regex to extract URL from Link: <url>; rel="next" header
 _LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel=["\']next["\']', re.IGNORECASE)
-
-
-def _coerce_bool(val: Any) -> bool:
-    """Treat common false-like strings as False; everything else is truthy."""
-    return str(val).lower() not in ("false", "0", "no", "none", "")
-
 
 def _normalize_headers(headers: Any) -> tuple[dict | None, str | None]:
     """Validate headers input and return a plain dict or a user-facing error."""

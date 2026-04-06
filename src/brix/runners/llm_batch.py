@@ -160,7 +160,8 @@ class LlmBatchRunner(BaseRunner):
         user_template: str = _get("user_template", "")
         output_schema: dict | None = _get("output_schema", None)
         batch_size: int = int(_get("batch_size", 500))
-        timeout: int = int(_get("timeout", 0) or config.TIMEOUT_LLM)
+        raw_timeout = _get("timeout", None)
+        timeout: int = int(raw_timeout) if raw_timeout is not None else int(config.TIMEOUT_LLM)
         temperature: float = float(_get("temperature", 0.1))
         max_tokens: int = int(_get("max_tokens", 1000))
 

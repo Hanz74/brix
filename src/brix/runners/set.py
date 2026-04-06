@@ -1,4 +1,5 @@
 """Set runner — assigns computed values to pipeline context (T-BRIX-V4-03)."""
+import json
 import time
 from typing import Any
 
@@ -60,7 +61,7 @@ class SetRunner(BaseRunner):
                         pipeline_name = getattr(context, attr) or ""
                         break
                 for key, val in values.items():
-                    db.store_set(key, str(val), pipeline_name)
+                    db.store_set(key, json.dumps(val), pipeline_name)
             except Exception:
                 pass  # Non-fatal: persist failure should not break run
 
