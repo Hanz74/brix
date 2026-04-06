@@ -371,6 +371,41 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_import_legacy_helper_code_v76",
         "down": "",
     },
+    {
+        "version": 77,
+        "name": "create_mcp_server_and_env_profile_tables",
+        "up": """
+        CREATE TABLE IF NOT EXISTS mcp_server (
+            name TEXT PRIMARY KEY,
+            command TEXT NOT NULL DEFAULT '',
+            args_json TEXT DEFAULT '[]',
+            env_json TEXT DEFAULT '{}',
+            tools_prefix TEXT DEFAULT '',
+            transport TEXT DEFAULT 'stdio',
+            url TEXT DEFAULT '',
+            unwrap_json INTEGER DEFAULT 0,
+            description TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "up_fn": "_create_env_profile_table_v77",
+        "down": "",
+    },
+    {
+        "version": 78,
+        "name": "import_mcp_servers_from_yaml",
+        "up": "",
+        "up_fn": "_import_mcp_servers_from_yaml_v78",
+        "down": "",
+    },
+    {
+        "version": 79,
+        "name": "import_env_profiles_from_yaml",
+        "up": "",
+        "up_fn": "_import_env_profiles_from_yaml_v79",
+        "down": "",
+    },
 ]
 
 
@@ -1651,6 +1686,109 @@ def _import_legacy_helper_code_v76(
         skipped_orphans,
         hash_updates,
     )
+
+
+def _create_env_profile_table_v77(db: "BrixDB") -> None:
+    """Create env_profile for databases that predate v77."""
+    with db._connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS env_profile (
+                name TEXT PRIMARY KEY,
+                is_default INTEGER DEFAULT 0,
+                env_json TEXT DEFAULT '{}',
+                input_defaults_json TEXT DEFAULT '{}',
+                description TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def _import_mcp_servers_from_yaml_v78(db: "BrixDB") -> None:
+    """Import MCP servers from ~/.brix/servers.yaml if present."""
+    servers_path = Path.home() / ".brix" / "servers.yaml"
+    if not servers_path.exists():
+        return
+
+    try:
+        raw = yaml.safe_load(servers_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        logger.warning("migration v78: failed reading %s: %s", servers_path, exc)
+        return
+
+    if not isinstance(raw, dict):
+        logger.warning("migration v78: %s did not contain a mapping", servers_path)
+        return
+
+    servers = raw.get("servers", raw)
+    if not isinstance(servers, dict):
+        logger.warning("migration v78: invalid servers structure in %s", servers_path)
+        return
+
+    imported = 0
+    for name, cfg in servers.items():
+        if not isinstance(name, str) or not isinstance(cfg, dict):
+            continue
+
+        db.upsert_mcp_server(
+            name=name,
+            command=str(cfg.get("command", "") or ""),
+            args=cfg.get("args") if isinstance(cfg.get("args"), list) else [],
+            env=cfg.get("env") if isinstance(cfg.get("env"), dict) else {},
+            tools_prefix=str(cfg.get("tools_prefix", "") or ""),
+            transport=str(cfg.get("transport", "stdio") or "stdio"),
+            url=str(cfg.get("url", "") or ""),
+            unwrap_json=bool(cfg.get("unwrap_json", False)),
+            description=str(cfg.get("description", "") or ""),
+        )
+        imported += 1
+
+    logger.info("migration v78: imported %d MCP servers from %s", imported, servers_path)
+
+
+def _import_env_profiles_from_yaml_v79(db: "BrixDB") -> None:
+    """Import env profiles from ~/.brix/profiles.yaml if present."""
+    profiles_path = Path.home() / ".brix" / "profiles.yaml"
+    if not profiles_path.exists():
+        return
+
+    try:
+        raw = yaml.safe_load(profiles_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        logger.warning("migration v79: failed reading %s: %s", profiles_path, exc)
+        return
+
+    if not isinstance(raw, dict):
+        logger.warning("migration v79: %s did not contain a mapping", profiles_path)
+        return
+
+    profiles = raw.get("profiles", raw)
+    if not isinstance(profiles, dict):
+        logger.warning("migration v79: invalid profiles structure in %s", profiles_path)
+        return
+
+    default_profile = raw.get("default_profile")
+    imported = 0
+    for name, cfg in profiles.items():
+        if not isinstance(name, str):
+            continue
+        if cfg is None:
+            cfg = {}
+        if not isinstance(cfg, dict):
+            continue
+
+        db.upsert_env_profile(
+            name=name,
+            env=cfg.get("env") if isinstance(cfg.get("env"), dict) else {},
+            input_defaults=cfg.get("input_defaults") if isinstance(cfg.get("input_defaults"), dict) else {},
+            is_default=(name == default_profile),
+            description=str(cfg.get("description", "") or ""),
+        )
+        imported += 1
+
+    logger.info("migration v79: imported %d env profiles from %s", imported, profiles_path)
 
 
 # ---------------------------------------------------------------------------

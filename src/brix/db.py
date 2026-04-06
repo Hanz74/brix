@@ -880,6 +880,22 @@ _DDL = [
         updated_at TEXT
     )
     """,
+    # T-BRIX-FDB-01: MCP servers stored in DB
+    """
+    CREATE TABLE IF NOT EXISTS mcp_server (
+        name TEXT PRIMARY KEY,
+        command TEXT NOT NULL DEFAULT '',
+        args_json TEXT DEFAULT '[]',
+        env_json TEXT DEFAULT '{}',
+        tools_prefix TEXT DEFAULT '',
+        transport TEXT DEFAULT 'stdio',
+        url TEXT DEFAULT '',
+        unwrap_json INTEGER DEFAULT 0,
+        description TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
     # T-BRIX-DB-06: DB-First — help_topics
     """
     CREATE TABLE IF NOT EXISTS help_topic (
@@ -1041,6 +1057,18 @@ _DDL = [
         project     TEXT DEFAULT '',
         tags        TEXT DEFAULT '[]',
         group_name  TEXT DEFAULT ''
+    )
+    """,
+    # T-BRIX-FDB-02: Environment profiles stored in DB
+    """
+    CREATE TABLE IF NOT EXISTS env_profile (
+        name TEXT PRIMARY KEY,
+        is_default INTEGER DEFAULT 0,
+        env_json TEXT DEFAULT '{}',
+        input_defaults_json TEXT DEFAULT '{}',
+        description TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
     )
     """,
     # T-BRIX-DB-24: Step Pins — Mock-Daten für Testing
@@ -4911,6 +4939,104 @@ class BrixDB:
         return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
+    # T-BRIX-FDB-01: MCP servers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _mcp_server_row_to_dict(row: dict) -> dict:
+        """Parse JSON/bool fields in an mcp_server row."""
+        args_raw = row.get("args_json", "[]")
+        env_raw = row.get("env_json", "{}")
+
+        try:
+            row["args"] = json.loads(args_raw) if args_raw else []
+        except (json.JSONDecodeError, TypeError):
+            row["args"] = []
+
+        try:
+            row["env"] = json.loads(env_raw) if env_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            row["env"] = {}
+
+        row["unwrap_json"] = bool(row.get("unwrap_json", 0))
+        row.pop("args_json", None)
+        row.pop("env_json", None)
+        return row
+
+    def upsert_mcp_server(
+        self,
+        name: str,
+        command: str,
+        args: Optional[list] = None,
+        env: Optional[dict] = None,
+        tools_prefix: str = "",
+        transport: str = "stdio",
+        url: str = "",
+        unwrap_json: bool = False,
+        description: str = "",
+    ) -> dict:
+        """Create or update an MCP server definition."""
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO mcp_server
+                   (name, command, args_json, env_json, tools_prefix, transport,
+                    url, unwrap_json, description, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET
+                     command=excluded.command,
+                     args_json=excluded.args_json,
+                     env_json=excluded.env_json,
+                     tools_prefix=excluded.tools_prefix,
+                     transport=excluded.transport,
+                     url=excluded.url,
+                     unwrap_json=excluded.unwrap_json,
+                     description=excluded.description,
+                     updated_at=excluded.updated_at""",
+                (
+                    name,
+                    command,
+                    json.dumps(args or []),
+                    json.dumps(env or {}),
+                    tools_prefix,
+                    transport,
+                    url,
+                    1 if unwrap_json else 0,
+                    description,
+                    now,
+                    now,
+                ),
+            )
+        return self.get_mcp_server(name) or {}
+
+    def get_mcp_server(self, name: str) -> Optional[dict]:
+        """Return an MCP server definition by name, or None."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM mcp_server WHERE name=?",
+                (name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._mcp_server_row_to_dict(dict(row))
+
+    def list_mcp_servers(self) -> list[dict]:
+        """Return all MCP server definitions ordered by name."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM mcp_server ORDER BY name"
+            ).fetchall()
+        return [self._mcp_server_row_to_dict(dict(row)) for row in rows]
+
+    def delete_mcp_server(self, name: str) -> bool:
+        """Delete an MCP server definition by name."""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM mcp_server WHERE name=?", (name,))
+            return cursor.rowcount > 0
+
+    # ------------------------------------------------------------------
     # T-BRIX-DB-06: DB-First — help_topics
     # ------------------------------------------------------------------
 
@@ -5548,6 +5674,108 @@ class BrixDB:
         """Delete a profile by name. Returns True if found and deleted."""
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM profile WHERE name=?", (name,))
+            return cursor.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # T-BRIX-FDB-02: Environment profiles
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _env_profile_row_to_dict(row: dict) -> dict:
+        """Parse JSON/bool fields in an env_profile row."""
+        env_raw = row.get("env_json", "{}")
+        defaults_raw = row.get("input_defaults_json", "{}")
+
+        try:
+            row["env"] = json.loads(env_raw) if env_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            row["env"] = {}
+
+        try:
+            row["input_defaults"] = json.loads(defaults_raw) if defaults_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            row["input_defaults"] = {}
+
+        row["is_default"] = bool(row.get("is_default", 0))
+        row.pop("env_json", None)
+        row.pop("input_defaults_json", None)
+        return row
+
+    def upsert_env_profile(
+        self,
+        name: str,
+        env: Optional[dict] = None,
+        input_defaults: Optional[dict] = None,
+        is_default: bool = False,
+        description: str = "",
+    ) -> dict:
+        """Create or update an environment profile."""
+        now = _now_iso()
+        with self._connect() as conn:
+            if is_default:
+                conn.execute(
+                    "UPDATE env_profile SET is_default=0, updated_at=? WHERE is_default=1 AND name != ?",
+                    (now, name),
+                )
+
+            conn.execute(
+                """INSERT INTO env_profile
+                   (name, is_default, env_json, input_defaults_json, description, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET
+                     is_default=excluded.is_default,
+                     env_json=excluded.env_json,
+                     input_defaults_json=excluded.input_defaults_json,
+                     description=excluded.description,
+                     updated_at=excluded.updated_at""",
+                (
+                    name,
+                    1 if is_default else 0,
+                    json.dumps(env or {}),
+                    json.dumps(input_defaults or {}),
+                    description,
+                    now,
+                    now,
+                ),
+            )
+        return self.get_env_profile(name) or {}
+
+    def get_env_profile(self, name: str) -> Optional[dict]:
+        """Return an environment profile by name, or None."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM env_profile WHERE name=?",
+                (name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._env_profile_row_to_dict(dict(row))
+
+    def list_env_profiles(self) -> list[dict]:
+        """Return all environment profiles ordered by default first, then name."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM env_profile ORDER BY is_default DESC, name"
+            ).fetchall()
+        return [self._env_profile_row_to_dict(dict(row)) for row in rows]
+
+    def get_default_env_profile(self) -> Optional[dict]:
+        """Return the default environment profile, or None if none is marked."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM env_profile WHERE is_default=1 ORDER BY name LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return self._env_profile_row_to_dict(dict(row))
+
+    def delete_env_profile(self, name: str) -> bool:
+        """Delete an environment profile by name."""
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM env_profile WHERE name=?", (name,))
             return cursor.rowcount > 0
 
     # ------------------------------------------------------------------

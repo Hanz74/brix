@@ -152,26 +152,29 @@ class PythonRunner(BaseRunner):
                 }
 
             helper_code = getattr(helper_entry, "code", "") or registry.get_code(helper)
-            if not helper_code:
-                return {
-                    "success": False,
-                    "error": f"Helper '{helper}' has no code in registry",
-                    "duration": time.monotonic() - start,
-                }
-            try:
-                script = str(
-                    _write_helper_cache_file(
-                        helper,
-                        helper_code,
-                        getattr(helper_entry, "content_hash", "") or None,
+            if helper_code:
+                try:
+                    script = str(
+                        _write_helper_cache_file(
+                            helper,
+                            helper_code,
+                            getattr(helper_entry, "content_hash", "") or None,
+                        )
                     )
-                )
-            except OSError as exc:
-                return {
-                    "success": False,
-                    "error": f"Failed to materialize helper '{helper}' cache file: {exc}",
-                    "duration": time.monotonic() - start,
-                }
+                except OSError as exc:
+                    return {
+                        "success": False,
+                        "error": f"Failed to materialize helper '{helper}' cache file: {exc}",
+                        "duration": time.monotonic() - start,
+                    }
+            else:
+                script = getattr(helper_entry, "script", "") or ""
+                if not script:
+                    return {
+                        "success": False,
+                        "error": f"Helper '{helper}' has no script or code in registry",
+                        "duration": time.monotonic() - start,
+                    }
 
         # Build the command: python3 <script> <json_params>
         # Params are passed as JSON string in sys.argv[1]

@@ -62,7 +62,7 @@ class HelperRegistry:
         """Convert a DB helper row to a HelperEntry."""
         return HelperEntry(
             name=row["name"],
-            script=row.get("script_path", "") or f"db://{row['name']}",
+            script=row.get("script_path", ""),
             description=row.get("description", ""),
             requirements=row.get("requirements", []),
             input_schema=row.get("input_schema", {}),
@@ -109,7 +109,7 @@ class HelperRegistry:
 
         entry = HelperEntry(
             name=name,
-            script=script or f"db://{name}",
+            script=script or "",
             description=description,
             requirements=requirements or [],
             input_schema=input_schema or {},
@@ -182,7 +182,7 @@ class HelperRegistry:
 
         raw = {
             "name": name,
-            "script": db_row.get("script_path", "") or f"db://{name}",
+            "script": db_row.get("script_path", ""),
             "description": db_row.get("description", ""),
             "requirements": db_row.get("requirements", []),
             "input_schema": db_row.get("input_schema", {}),
@@ -200,7 +200,7 @@ class HelperRegistry:
                 raw[key] = value
 
         raw["updated_at"] = _now_iso()
-        raw["script"] = raw.get("script") or f"db://{name}"
+        raw["script"] = raw.get("script") or ""
         raw["content_hash"] = hashlib.sha256((raw.get("code") or "").encode("utf-8")).hexdigest()
         updated_entry = HelperEntry.from_dict(raw)
 
