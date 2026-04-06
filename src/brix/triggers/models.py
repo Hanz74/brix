@@ -51,3 +51,4 @@ class TriggerConfig(BaseModel):
     debounce: Optional[str] = None  # Duration string, e.g. "5m", "30s"
     # T-BRIX-BUG-19: Schedule trigger (cron)
     cron: Optional[str] = None  # 5-field cron expression, e.g. "0 */3 * * *"
+    timezone: Optional[str] = None

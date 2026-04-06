@@ -107,9 +107,10 @@ class TriggerStore:
         name: str,
         run_id: Optional[str] = None,
         status: str = "fired",
+        fired_at: Optional[str] = None,
     ) -> None:
         """Update last_fired_at, last_run_id, last_status after a trigger fires."""
-        self._db.trigger_record_fired(name=name, run_id=run_id, status=status)
+        self._db.trigger_record_fired(name=name, run_id=run_id, status=status, fired_at=fired_at)
 
 
 class TriggerGroupStore:

@@ -7,6 +7,7 @@ deprecated scheduler.py).
 import asyncio
 import json
 import yaml
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -49,6 +50,7 @@ class TriggerService:
                     params=cfg.get("params", {}),
                     interval=cfg.get("interval", "5m"),
                     cron=cfg.get("cron"),
+                    timezone=cfg.get("timezone"),
                     filter=cfg if row.get("type") in ("mail", "pipeline_done") else {},
                     path=cfg.get("path"),
                     pattern=cfg.get("pattern"),
@@ -81,7 +83,7 @@ class TriggerService:
         await asyncio.gather(*tasks)
 
     async def _poll_loop(self, trigger: TriggerConfig):
-        interval_seconds = parse_timeout(trigger.interval)
+        interval_seconds = 60.0 if trigger.type == "schedule" else parse_timeout(trigger.interval)
         while self._running:
             try:
                 await self._check_trigger(trigger)
@@ -92,6 +94,7 @@ class TriggerService:
 
     async def _check_trigger(self, trigger: TriggerConfig):
         from brix.triggers.runners import TRIGGER_RUNNERS
+        from brix.triggers.store import TriggerStore
 
         runner_class = TRIGGER_RUNNERS.get(trigger.type)
         if not runner_class:
@@ -99,6 +102,7 @@ class TriggerService:
             return
 
         runner = runner_class(trigger, self._state)
+        store = TriggerStore()
         events = await runner.poll()
         new_events = runner.dedupe(events)
 
@@ -108,7 +112,21 @@ class TriggerService:
         for event in new_events:
             log_event("INFO", "trigger", f"Trigger fired: {trigger.id}", {"trigger_id": trigger.id, "pipeline": trigger.pipeline})
             print(f"[trigger:{trigger.id}] Firing for event")
-            await runner.fire(event)
+            fired_at = datetime.now(timezone.utc).isoformat()
+            run_id = None
+            status = "failure"
+            try:
+                result = await runner.fire(event)
+                run_id = getattr(result, "run_id", None) if result is not None else None
+                if result is not None and getattr(result, "success", False):
+                    status = "success"
+            finally:
+                store.record_fired(
+                    name=trigger.id,
+                    run_id=run_id,
+                    status=status,
+                    fired_at=fired_at,
+                )
 
     async def _retention_loop(self) -> None:
         """Run the retention policy once per day while service is active.

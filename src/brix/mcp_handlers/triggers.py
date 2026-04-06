@@ -15,6 +15,53 @@ _scheduler_task: "asyncio.Task | None" = None
 _scheduler_running: bool = False
 
 
+def _on_scheduler_done(task: asyncio.Task) -> None:
+    """Handle scheduler task termination."""
+    global _scheduler_task, _scheduler_running
+
+    if task.cancelled():
+        if task is _scheduler_task:
+            _scheduler_task = None
+        return
+
+    exc = task.exception()
+    if exc is not None:
+        logger.error("Trigger scheduler task crashed: %s", exc)
+        if task is _scheduler_task:
+            _scheduler_task = None
+        if _scheduler_running:
+            asyncio.create_task(_restart_scheduler_after_delay(), name="brix-trigger-service-restart")
+        return
+
+    if task is _scheduler_task:
+        _scheduler_task = None
+    _scheduler_running = False
+
+
+def _start_scheduler_task() -> asyncio.Task:
+    """Create and register the background TriggerService task."""
+    global _scheduler_task
+
+    from brix.triggers.service import TriggerService
+
+    svc = TriggerService()
+    _scheduler_task = asyncio.create_task(svc.start(), name="brix-trigger-service")
+    _scheduler_task.add_done_callback(_on_scheduler_done)
+    return _scheduler_task
+
+
+async def _restart_scheduler_after_delay(delay_seconds: float = 10.0) -> None:
+    """Restart the scheduler after a crash if it is still meant to run."""
+    global _scheduler_task
+
+    await asyncio.sleep(delay_seconds)
+    if not _scheduler_running:
+        return
+    if _scheduler_task is not None and not _scheduler_task.done():
+        return
+    _start_scheduler_task()
+
+
 # ---------------------------------------------------------------------------
 # T-BRIX-SCHED-02: schedules.yaml -> DB trigger migration
 # ---------------------------------------------------------------------------
@@ -389,21 +436,7 @@ async def _handle_scheduler_start(arguments: dict) -> dict:
 
     # T-BRIX-BUG-18: Actually create a background asyncio task for the
     # TriggerService so triggers poll independently of MCP sessions.
-    from brix.triggers.service import TriggerService
-    svc = TriggerService()
-    _scheduler_task = asyncio.create_task(svc.start(), name="brix-trigger-service")
-
-    # Log exceptions from the background task without crashing
-    def _on_scheduler_done(task: asyncio.Task) -> None:
-        global _scheduler_running
-        _scheduler_running = False
-        if not task.cancelled() and task.exception():
-            import logging
-            logging.getLogger(__name__).error(
-                "Trigger scheduler task failed: %s", task.exception()
-            )
-
-    _scheduler_task.add_done_callback(_on_scheduler_done)
+    _start_scheduler_task()
 
     return {
         "success": True,

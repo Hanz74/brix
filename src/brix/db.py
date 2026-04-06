@@ -4210,17 +4210,19 @@ class BrixDB:
         name: str,
         run_id: Optional[str] = None,
         status: str = "fired",
+        fired_at: Optional[str] = None,
     ) -> None:
         """Update last_fired_at, last_run_id, last_status after a trigger fires."""
         existing = self.trigger_get(name)
         if existing is None:
             return
+        now = _now_iso()
         with self._connect() as conn:
             conn.execute(
                 """UPDATE trigger
                    SET last_fired_at=?, last_run_id=?, last_status=?, updated_at=?
                    WHERE id=?""",
-                (_now_iso(), run_id, status, _now_iso(), existing["id"]),
+                (fired_at or now, run_id, status, now, existing["id"]),
             )
 
     @staticmethod

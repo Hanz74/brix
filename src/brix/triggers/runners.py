@@ -3,12 +3,14 @@ import asyncio
 import hashlib
 import imaplib
 import json
+import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from brix.triggers.models import TriggerConfig
 from brix.triggers.state import TriggerState
@@ -18,6 +20,8 @@ from brix.pipeline_store import PipelineStore
 from brix.runners.mcp import McpRunner
 from brix.credential_store import CredentialStore, CredentialNotFoundError
 from brix.config import config
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTriggerRunner:
@@ -522,7 +526,7 @@ class ScheduleTriggerRunner(BaseTriggerRunner):
 
     Config fields:
         cron (str, required): 5-field cron expression.
-        timezone (str, optional): currently only "UTC" is supported (default).
+        timezone (str, optional): IANA timezone name, defaults to UTC.
     """
 
     async def poll(self) -> list[dict]:
@@ -534,27 +538,37 @@ class ScheduleTriggerRunner(BaseTriggerRunner):
             print(f"[trigger:{self.trigger.id}] schedule: 'cron' is required in config")
             return []
 
-        now = datetime.now(timezone.utc)
+        tz = timezone.utc
+        if self.trigger.timezone:
+            try:
+                tz = ZoneInfo(self.trigger.timezone)
+            except ZoneInfoNotFoundError:
+                logger.warning(
+                    "[trigger:%s] schedule: invalid timezone '%s', falling back to UTC",
+                    self.trigger.id,
+                    self.trigger.timezone,
+                )
+        now = datetime.now(tz)
+        last_check = self.state.get_last_check(self.trigger.id)
+        if last_check is None:
+            window_start = now - timedelta(minutes=5)
+        else:
+            window_start = datetime.fromtimestamp(last_check, tz=tz)
 
-        # Check if current minute matches the cron expression
-        if not cron_matches(cron_expr, now):
-            return []
+        matched = False
+        current = window_start.replace(second=0, microsecond=0)
+        end = now.replace(second=0, microsecond=0)
+        while current <= end:
+            if cron_matches(cron_expr, current):
+                if last_check is None or current.timestamp() > last_check:
+                    matched = True
+                    break
+            current += timedelta(minutes=1)
 
-        # Prevent double-firing within the same minute
-        last_fired = self.state.get_last_check(self.trigger.id)
-        if last_fired:
-            last_dt = datetime.fromtimestamp(last_fired, tz=timezone.utc)
-            if (
-                last_dt.year == now.year
-                and last_dt.month == now.month
-                and last_dt.day == now.day
-                and last_dt.hour == now.hour
-                and last_dt.minute == now.minute
-            ):
-                return []
-
-        # Record that we fired this minute
         self.state.set_last_check(self.trigger.id, now.timestamp())
+
+        if not matched:
+            return []
 
         return [{
             "type": "schedule",
