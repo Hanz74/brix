@@ -180,69 +180,18 @@ def _json_loads(value: Any) -> Any:
 
 _SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
 
+def _step_config_top_level_fields() -> tuple[str, ...]:
+    """Return Step model fields that may be promoted from config to top-level."""
+    from brix.models import Step
 
-_PIPELINE_STEP_TYPES = {"pipeline", "flow.pipeline"}
+    return tuple(
+        field_name
+        for field_name in Step.model_fields.keys()
+        if field_name not in {"id", "type", "config", "params"}
+    )
 
-# Top-level Step fields that may be stored inside config_json when the caller
-# used step.config instead of the dedicated column. These must be promoted to
-# the correct top-level field so that runners and the engine can find them.
-#
-# Config is the source of truth for these fields. We must not let model/DDL
-# defaults like method="GET", shell=False, parallel=False, concurrency=10, or
-# batch_size=0 block explicit config values during DB readback.
-_STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS: dict[frozenset[str], tuple[str, ...]] = {
-    frozenset(_PIPELINE_STEP_TYPES): ("pipeline",),
-    frozenset({"python", "script.python"}): ("helper", "script"),
-    frozenset({"http", "http.request"}): ("method", "url"),
-    frozenset({"db.query", "db.exec", "db.upsert"}): ("connection",),
-    frozenset({"mcp", "mcp.call"}): ("server", "tool"),
-    frozenset({"cli", "script.cli"}): ("command", "shell"),
-    frozenset({
-        "http", "http.request",
-        "cli", "script.cli",
-        "mcp", "mcp.call",
-        "pipeline", "flow.pipeline",
-        "pipeline_group", "flow.pipeline_group",
-        "python", "script.python",
-        "db.query", "db.exec", "db.upsert",
-        "filter", "flow.filter",
-        "transform", "flow.transform",
-        "set", "flow.set",
-        "stop",
-        "choose", "flow.choose",
-        "parallel", "flow.parallel",
-        "repeat", "flow.repeat",
-        "notify", "action.notify",
-        "approval", "action.approval",
-        "validate", "flow.validate",
-        "switch", "flow.switch",
-        "merge", "flow.merge",
-        "error_handler", "flow.error_handler",
-        "wait", "flow.wait",
-        "dedup", "flow.dedup",
-        "aggregate", "flow.aggregate",
-        "flatten", "flow.flatten",
-        "diff", "flow.diff",
-        "respond", "action.respond",
-        "queue",
-        "emit",
-        "file_read", "file.read",
-        "file_write", "file.write",
-        "file_read_base64", "file.read_base64",
-        "file_list", "file.list",
-        "file_load_json", "file.load_json",
-        "source.fetch",
-        "llm.batch",
-        "markitdown.convert",
-        "keyword_filter", "filter.keyword",
-        "extract_url", "extract.url",
-        "extract_ics", "extract.ics",
-        "convert_batch", "convert.batch",
-        "llm_batch", "llm.batch_poll",
-        "util_wait", "util.wait",
-        "util_load_dir", "util.load_dir",
-    }): ("parallel", "concurrency", "batch_size"),
-}
+
+_STEP_CONFIG_TOP_LEVEL_FIELDS: tuple[str, ...] = _step_config_top_level_fields()
 
 
 def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
@@ -262,11 +211,11 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     them through ``step.params``. Existing ``step.params`` keys are preserved
     unless overridden by ``config.params``.
 
-    Additionally, selected runner-consumed fields are promoted from
-    ``step.config`` to top-level step fields when the runner or engine reads
-    them from ``step.<field>``. For these promoted fields, ``config`` is the
-    source of truth and overrides any existing top-level value, including
-    create-time defaults from the Step model / DB schema.
+    Additionally, any dedicated top-level Step field stored inside
+    ``step.config`` is promoted back to ``step.<field>``. This keeps DB
+    readback aligned with the engine's Step-model-driven config handling.
+    Config remains the source of truth and overrides any existing top-level
+    value, including create-time defaults from the Step model / DB schema.
     """
     step_type = step.get("type")
     config = step.get("config")
@@ -287,15 +236,12 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
         base_params = params if isinstance(params, dict) else {}
         step["params"] = {**base_params, **nested_config_params}
 
-    # Promote top-level fields stored inside config when the corresponding
-    # runner reads them from a top-level step attribute.
+    # Promote any dedicated Step field stored inside config so runners and the
+    # engine see the same top-level shape they would get from YAML loading.
     if isinstance(config, dict):
-        for step_types, fields in _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS.items():
-            if step_type not in step_types:
-                continue
-            for field in fields:
-                if config.get(field) is not None:
-                    step[field] = config[field]
+        for field in _STEP_CONFIG_TOP_LEVEL_FIELDS:
+            if config.get(field) is not None:
+                step[field] = config[field]
 
     return step
 

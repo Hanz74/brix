@@ -169,8 +169,16 @@ class Step(BaseModel):
     server: Optional[str] = None
     tool: Optional[str] = None
 
+    # Database runners
+    connection: Optional[str] = None
+    query: Optional[str] = None
+    table: Optional[str] = None
+    conflict_key: Optional[str] = None
+    set_columns: Optional[list[str]] = None
+
     # Pipeline (sub-pipeline) runner
     pipeline: Optional[str] = None
+    pipeline_name: Optional[str] = None
 
     # pipeline_group runner (T-BRIX-V6-17): run multiple sub-pipelines in parallel
     pipelines: Optional[list[str]] = None
@@ -205,6 +213,10 @@ class Step(BaseModel):
     max_iterations: int = 100                  # Safety limit
     sequence: Optional[list[dict]] = None      # Steps to repeat
     delay: Optional[float] = None              # Delay between iterations in seconds
+
+    # wait runner
+    seconds: Optional[float] = None
+    poll_interval: Optional[float] = None
 
     # merge runner
     inputs: Optional[list[str]] = None

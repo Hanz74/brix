@@ -19,7 +19,7 @@ from brix.mcp_handlers._shared import (
     _find_step_recursive,
 )
 from brix.bricks.types import is_compatible, suggest_converter
-from brix.db import _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS
+from brix.db import _STEP_CONFIG_TOP_LEVEL_FIELDS
 from brix.pipeline_store import PipelineStore
 from brix.engine import LEGACY_ALIASES
 from brix.loader import PipelineLoader
@@ -802,12 +802,9 @@ async def _handle_diagnose_step(arguments: dict) -> dict:
 
     promoted_fields: dict[str, str] = {}
     if isinstance(raw_config, dict):
-        for step_types, fields in _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS.items():
-            if effective_type not in step_types and step.type not in step_types:
-                continue
-            for field in fields:
-                if raw_config.get(field) is not None:
-                    promoted_fields[field] = f"config.{field} -> step.{field}"
+        for field in _STEP_CONFIG_TOP_LEVEL_FIELDS:
+            if raw_config.get(field) is not None:
+                promoted_fields[field] = f"config.{field} -> step.{field}"
 
     if not brick:
         warnings.append(f"Brick '{effective_type}' not found in registry.")

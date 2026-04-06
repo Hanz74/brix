@@ -4,6 +4,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Optional
+from pydantic_core import PydanticUndefined
 
 import jinja2
 from jinja2 import nodes
@@ -12,12 +13,33 @@ import jsonschema
 from jsonschema import ValidationError
 import yaml
 
-from brix.models import Pipeline
+from brix.models import Pipeline, Step
 from brix.cache import SchemaCache
 from brix.bricks.registry import BrickRegistry
 from brix.engine import LEGACY_ALIASES
 from brix.pipeline_store import PipelineStore
 from brix.connections import ConnectionManager
+
+
+_STEP_CONFIG_CONFLICT_FIELDS = tuple(
+    field_name
+    for field_name in Step.model_fields.keys()
+    if field_name not in {"id", "type", "config", "params"}
+)
+
+_STEP_CONFIG_CONFLICT_DEFAULTS = {
+    field_name: (
+        field_info.default_factory()
+        if field_info.default_factory is not None
+        else field_info.default
+    )
+    for field_name, field_info in Step.model_fields.items()
+    if field_name in _STEP_CONFIG_CONFLICT_FIELDS
+    and (
+        field_info.default_factory is not None
+        or field_info.default is not PydanticUndefined
+    )
+}
 
 
 # ---------------------------------------------------------------------------
@@ -79,26 +101,8 @@ class ValidationResult:
 
 
 class PipelineValidator:
-    _CONFIG_CONFLICT_FIELDS = (
-        "method",
-        "url",
-        "headers",
-        "body",
-        "connection",
-        "query",
-        "helper",
-        "script",
-        "pipeline",
-        "server",
-        "tool",
-    )
-    _CONFIG_CONFLICT_DEFAULTS = {
-        "method": "GET",
-        "shell": False,
-        "parallel": False,
-        "concurrency": 10,
-        "batch_size": 0,
-    }
+    _CONFIG_CONFLICT_FIELDS = _STEP_CONFIG_CONFLICT_FIELDS
+    _CONFIG_CONFLICT_DEFAULTS = _STEP_CONFIG_CONFLICT_DEFAULTS
 
     def __init__(self, cache: SchemaCache = None, lint_rules: list = None):
         self.cache = cache or SchemaCache()
