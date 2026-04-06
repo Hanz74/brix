@@ -67,9 +67,10 @@ class FilterRunner(BaseRunner):
         input_data = params.get('input') or params.get('_input')
         where_expr = params.get('where')
 
+        # input is optional — default to empty list, matching flow.transform's
+        # "missing input should still be runnable" behavior.
         if input_data is None:
-            self.report_progress(0.0, "error: missing input")
-            return {"success": False, "error": "Filter brick needs 'input' (a list)", "duration": time.monotonic() - start}
+            input_data = []
         if not where_expr:
             self.report_progress(0.0, "error: missing where")
             return {"success": False, "error": "Filter brick needs 'where' (Jinja2 expression)", "duration": time.monotonic() - start}

@@ -1,10 +1,14 @@
 """Repeat runner — while/until loop execution (T-BRIX-V4-07)."""
 import asyncio
+import logging
 import time
 from typing import Any
 
+from brix.models import StepStatus
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout, get_default_timeout
+
+logger = logging.getLogger(__name__)
 
 
 class RepeatRunner(BaseRunner):
@@ -96,12 +100,19 @@ class RepeatRunner(BaseRunner):
                         context.set_output(sub_step_id, sub_output)
 
             except Exception as e:
+                logger.warning("Repeat sub-step sequence failed in iteration %s: %s", i, e)
                 # Build a failure placeholder so we can still report iterations
                 from brix.models import RunResult
                 dummy = RunResult(
                     success=False,
                     run_id=f"repeat_err_{i}",
-                    steps={},
+                    steps={
+                        f"repeat_exception_{i}": StepStatus(
+                            status="error",
+                            duration=0.0,
+                            error_message=str(e),
+                        )
+                    },
                     result=None,
                     duration=0.0,
                 )

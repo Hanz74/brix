@@ -1,9 +1,12 @@
 """Parallel step runner — runs sub-steps concurrently (T-BRIX-V4-06)."""
 import asyncio
+import logging
 import time
 from typing import Any
 
 from brix.runners.base import BaseRunner
+
+logger = logging.getLogger(__name__)
 
 
 class ParallelStepRunner(BaseRunner):
@@ -60,7 +63,8 @@ class ParallelStepRunner(BaseRunner):
                     result = await self._engine.run(mini)
                     return step_id, result
                 except Exception as e:
-                    return step_id, None  # Will be treated as failure below; store exc
+                    logger.warning("Parallel sub-step '%s' failed: %s", step_id, e)
+                    return step_id, {"success": False, "error": str(e)}
 
         # Run all sub-steps concurrently
         tasks = [run_sub(s) for s in sub_steps]
@@ -77,7 +81,10 @@ class ParallelStepRunner(BaseRunner):
                 output[step_id] = None
             else:
                 sid, result = r
-                if result is None:
+                if isinstance(result, dict):
+                    all_ok = False
+                    output[sid] = result
+                elif result is None:
                     all_ok = False
                     output[sid] = None
                 else:
