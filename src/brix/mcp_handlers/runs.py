@@ -22,6 +22,7 @@ from brix.mcp_pool import McpConnectionPool
 from brix.history import RunHistory
 from brix.pipeline_store import PipelineStore
 from brix.db import BrixDB
+from brix.validator import PipelineValidator
 
 
 async def _handle_run_pipeline(arguments: dict) -> dict:
@@ -64,6 +65,25 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
             },
         }
 
+    preflight = PipelineValidator().validate(pipeline, level="quick")
+
+    # Automatic quick preflight before any engine startup.
+    if not preflight.is_valid:
+        return {
+            "success": False,
+            "errors": preflight.errors,
+            "warnings": preflight.warnings,
+            "error": {
+                "code": "PREFLIGHT_FAILED",
+                "message": "Quick preflight validation failed",
+                "errors": preflight.errors,
+                "step_id": None,
+                "recoverable": True,
+                "agent_actions": ["validate_pipeline", "fix_pipeline_yaml"],
+                "resume_command": None,
+            },
+        }
+
     # Apply test_mode flag if requested (T-BRIX-DB-24)
     if arguments.get("test_mode"):
         pipeline.test_mode = True
@@ -77,6 +97,7 @@ async def _handle_run_pipeline(arguments: dict) -> dict:
         warnings.append(
             f"Unknown input parameters (ignored): {', '.join(sorted(unknown_params))}"
         )
+    warnings.extend(preflight.warnings)
 
     # Validate required input parameters are present (T-BRIX-V4-21)
     input_validation = _validator.validate_input_params(pipeline, user_params)
