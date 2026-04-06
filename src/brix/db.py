@@ -183,9 +183,15 @@ _SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
 _PIPELINE_STEP_TYPES = {"pipeline", "flow.pipeline"}
 
 # Top-level Step fields that may be stored inside config_json when the caller
-# used step.config instead of the dedicated column.  These must be promoted to
+# used step.config instead of the dedicated column. These must be promoted to
 # the correct top-level field so that runners and the engine can find them.
-_PIPELINE_TOP_LEVEL_FIELDS = ("pipeline",)
+_STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS: dict[frozenset[str], tuple[str, ...]] = {
+    frozenset(_PIPELINE_STEP_TYPES): ("pipeline",),
+    frozenset({"script.python"}): ("helper", "script"),
+    frozenset({"db.query", "db.exec", "db.upsert"}): ("connection",),
+    frozenset({"mcp.call"}): ("server", "tool"),
+    frozenset({"script.cli"}): ("command",),
+}
 
 
 def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
@@ -199,12 +205,11 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     - ``params`` is empty / missing
     - the step is not a specialist step, where ``config`` is semantic input
 
-    Additionally, for ``flow.pipeline`` / ``pipeline`` steps, if ``config``
-    contains a ``pipeline`` key but the top-level ``pipeline`` field is empty,
-    the value is promoted to ``step["pipeline"]`` so that PipelineRunner can
-    find it via ``getattr(step, 'pipeline', None)``.  This fixes the silent
-    pipeline-stop bug where a step stored its sub-pipeline name in
-    ``step.config.pipeline`` instead of the dedicated ``sub_pipeline`` column.
+    Additionally, selected runner-consumed fields are promoted from
+    ``step.config`` to top-level step fields when the runner reads them from
+    ``getattr(step, "<field>", None)``. This covers cases like
+    ``config.pipeline`` for ``flow.pipeline`` steps and similar brick-schema
+    fields for ``script.python``, ``db.*``, ``mcp.call``, and ``script.cli``.
     """
     step_type = step.get("type")
     config = step.get("config")
@@ -217,13 +222,16 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     ):
         step["params"] = dict(config)
 
-    # Promote top-level fields stored inside config for pipeline steps.
-    # This handles the case where a step was created with pipeline name inside
-    # config_json rather than the dedicated sub_pipeline column.
-    if step_type in _PIPELINE_STEP_TYPES and isinstance(config, dict):
-        for field in _PIPELINE_TOP_LEVEL_FIELDS:
-            if config.get(field) and not step.get(field):
-                step[field] = config[field]
+    # Promote top-level fields stored inside config when the corresponding
+    # runner reads them from a top-level step attribute.
+    if isinstance(config, dict):
+        for step_types, fields in _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS.items():
+            if step_type not in step_types:
+                continue
+            for field in fields:
+                if config.get(field) and not step.get(field):
+                    step[field] = config[field]
+            break
 
     return step
 
