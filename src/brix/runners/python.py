@@ -48,7 +48,7 @@ def _extract_helper_params(step: Any) -> dict[str, Any]:
         source_params = {}
 
     config = _step_value("config")
-    if isinstance(config, dict):
+    if not source_params and isinstance(config, dict):
         config_params = config.get("params")
         if isinstance(config_params, dict):
             source_params = dict(config_params)
