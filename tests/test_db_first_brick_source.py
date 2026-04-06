@@ -226,21 +226,34 @@ class TestRegistryReadsFromDB:
         assert brick.description == custom_desc
 
 
-class TestStartupSyncNoOp:
-    """_sync_builtin_bricks is now a no-op."""
+class TestStartupSyncBrickRepair:
+    """_sync_builtin_bricks repairs known brick registry gaps."""
 
-    def test_sync_builtin_bricks_returns_zero(self, fresh_db):
-        """_sync_builtin_bricks must always return 0 (no-op)."""
+    def test_sync_builtin_bricks_repairs_missing_rows(self, fresh_db):
+        """_sync_builtin_bricks repairs a partially populated registry."""
         from brix.startup_sync import _sync_builtin_bricks
 
-        result = _sync_builtin_bricks(fresh_db)
-        assert result == 0
+        fresh_db.brick_definitions_upsert({"name": "action.notify", "runner": "notify"})
+        fresh_db.brick_definitions_upsert({"name": "file_read", "runner": "file"})
+        fresh_db.brick_definitions_upsert({"name": "file_write", "runner": "file"})
 
-    def test_startup_sync_summary_shows_zero_bricks(self, fresh_db):
-        """run_startup_sync summary must show bricks_synced=0."""
+        result = _sync_builtin_bricks(fresh_db)
+        assert result >= 4
+        assert fresh_db.brick_definitions_get("db.exec") is not None
+        assert fresh_db.brick_definitions_get("action.queue") is not None
+        assert fresh_db.brick_definitions_get("action.emit") is not None
+        assert fresh_db.brick_definitions_get("file.read_base64") is not None
+        assert fresh_db.brick_definitions_get("file_read")["runner"] == "file_read"
+        assert fresh_db.brick_definitions_get("file_write")["runner"] == "file_write"
+
+    def test_startup_sync_keeps_seeded_bricks_healthy(self, fresh_db):
+        """run_startup_sync preserves healthy seeded brick rows."""
         from brix.seed import seed_if_empty
         from brix.startup_sync import run_startup_sync
 
         seed_if_empty(fresh_db)
         summary = run_startup_sync(fresh_db)
-        assert summary["bricks_synced"] == 0
+        assert summary["bricks_synced"] >= 0
+        assert fresh_db.brick_definitions_get("file_read")["runner"] == "file_read"
+        assert fresh_db.brick_definitions_get("file_write")["runner"] == "file_write"
+        assert fresh_db.brick_definitions_get("db.exec") is not None

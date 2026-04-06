@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from brix.db import BrixDB
 
-from brix.migrations import _normalize_pipeline_steps_common
+from brix.migrations import _normalize_pipeline_steps_common, _repair_brick_registry_v75
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ _TEST_PIPELINE_PREFIXES = (
 
 
 def _sync_builtin_bricks(db: "BrixDB") -> int:
-    """No-op — brick definitions live exclusively in the DB (T-BRIX-DBF-02)."""
-    return 0
+    """Repair known built-in brick registry gaps without overwriting healthy rows."""
+    return _repair_brick_registry_v75(db)
 
 
 def _sync_tool_schemas(db: "BrixDB") -> int:

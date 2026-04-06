@@ -349,7 +349,227 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_missing_pipeline_step_runner_columns_v74",
         "down": "",
     },
+    {
+        "version": 75,
+        "name": "repair_brick_registry_gaps_and_notify_schema",
+        "up": "",
+        "up_fn": "_repair_brick_registry_v75",
+        "down": "",
+    },
 ]
+
+
+def _runner_json_schema_to_brick_config(schema: dict) -> dict[str, dict]:
+    """Convert a runner JSON schema into brick_definition config_schema format."""
+    properties = schema.get("properties", {}) or {}
+    required = set(schema.get("required", []) or [])
+    config_schema: dict[str, dict] = {}
+    for name, spec in properties.items():
+        config_schema[name] = {
+            "type": spec.get("type", "any"),
+            "description": spec.get("description", ""),
+            "default": spec.get("default"),
+            "required": name in required,
+            "enum": spec.get("enum"),
+        }
+    return config_schema
+
+
+def _normalize_brick_record_for_compare(record: dict | None) -> dict | None:
+    """Normalize JSON-backed brick fields so DB rows compare like seed records."""
+    if record is None:
+        return None
+    normalized = dict(record)
+    for field in ("aliases", "examples", "config_schema", "org_tags"):
+        value = normalized.get(field)
+        if isinstance(value, str):
+            try:
+                normalized[field] = json.loads(value)
+            except (TypeError, json.JSONDecodeError):
+                pass
+    return normalized
+
+
+def _repair_brick_registry_v75(db: "BrixDB") -> int:
+    """Repair broken brick_definition rows and backfill missing built-ins."""
+    from brix.runners.db_exec import DbExecRunner
+    from brix.runners.emit import EmitRunner
+    from brix.runners.file_io import FileReadBase64Runner
+    from brix.runners.notify import NotifyRunner
+    from brix.runners.queue import QueueRunner
+
+    if db.brick_definitions_count() == 0:
+        return 0
+
+    desired_records = [
+        {
+            "name": "db.exec",
+            "runner": "db_exec",
+            "namespace": "db",
+            "category": "db",
+            "description": "Execute a SQL INSERT, UPDATE, or DELETE with commit.",
+            "when_to_use": (
+                "Use to modify database rows when you need affected row counts and transactional commit behavior."
+            ),
+            "when_NOT_to_use": "",
+            "aliases": [],
+            "input_type": "none",
+            "output_type": "dict",
+            "config_schema": _runner_json_schema_to_brick_config(DbExecRunner().config_schema()),
+            "examples": [],
+            "related_connector": "",
+            "system": True,
+            "org_tags": [],
+            "project": "",
+            "group_name": "",
+            "tags": "[]",
+        },
+        {
+            "name": "action.queue",
+            "runner": "queue",
+            "namespace": "action",
+            "category": "action",
+            "description": "Collect items into a persistent buffer until a threshold or time window is reached.",
+            "when_to_use": (
+                "Use when items should be batched across runs before downstream processing continues."
+            ),
+            "when_NOT_to_use": "",
+            "aliases": ["queue", "buffer", "batch buffer"],
+            "input_type": "any",
+            "output_type": "dict",
+            "config_schema": _runner_json_schema_to_brick_config(QueueRunner().config_schema()),
+            "examples": [],
+            "related_connector": "",
+            "system": True,
+            "org_tags": [],
+            "project": "",
+            "group_name": "",
+            "tags": "[]",
+        },
+        {
+            "name": "action.emit",
+            "runner": "emit",
+            "namespace": "action",
+            "category": "action",
+            "description": "Emit a named event to the persistent event bus.",
+            "when_to_use": (
+                "Use when a pipeline should publish an event for later consumption by another workflow."
+            ),
+            "when_NOT_to_use": "",
+            "aliases": ["emit", "publish event", "event bus"],
+            "input_type": "any",
+            "output_type": "dict",
+            "config_schema": _runner_json_schema_to_brick_config(EmitRunner().config_schema()),
+            "examples": [],
+            "related_connector": "",
+            "system": True,
+            "org_tags": [],
+            "project": "",
+            "group_name": "",
+            "tags": "[]",
+        },
+        {
+            "name": "file.read_base64",
+            "runner": "file_read_base64",
+            "namespace": "file",
+            "category": "file",
+            "description": "Read a file and return its content as a base64-encoded string.",
+            "when_to_use": (
+                "Use when you need to read binary files and pass them as base64 to downstream steps."
+            ),
+            "when_NOT_to_use": "When the file should be read as text (use file.read instead).",
+            "aliases": ["file read", "base64 encode", "read binary file"],
+            "input_type": "none",
+            "output_type": "dict",
+            "config_schema": _runner_json_schema_to_brick_config(FileReadBase64Runner().config_schema()),
+            "examples": [],
+            "related_connector": "",
+            "system": True,
+            "org_tags": [],
+            "project": "",
+            "group_name": "",
+            "tags": "[]",
+        },
+        {
+            "name": "action.notify",
+            "runner": "notify",
+            "namespace": "action",
+            "category": "action",
+            "description": "Send a notification via Mattermost, email, or log output at the end of a pipeline step.",
+            "when_to_use": (
+                "When you need to alert a user or channel about pipeline results, errors, or completion. "
+                "Use at the end of pipelines or in error handlers."
+            ),
+            "when_NOT_to_use": (
+                "When you need to send a full formatted email with attachments (use mcp_call with the M365 "
+                "server). When the target channel does not exist yet (create it first). When you only need "
+                "debug output, use log channel and the pipeline's built-in step logging instead."
+            ),
+            "aliases": [
+                "benachrichtigung",
+                "notify",
+                "notification",
+                "alert",
+                "mattermost",
+                "senden",
+                "nachricht senden",
+                "message senden",
+                "kanal benachrichtigen",
+                "send notification",
+                "send message",
+                "benachrichtigen",
+                "meldung",
+                "ping",
+            ],
+            "input_type": "none",
+            "output_type": "object (sent_at, channel, status)",
+            "config_schema": _runner_json_schema_to_brick_config(NotifyRunner().config_schema()),
+            "examples": [
+                {
+                    "goal": "Send a Slack notification when a pipeline finishes",
+                    "config": {
+                        "channel": "slack",
+                        "to": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+                        "message": "Pipeline finished successfully.",
+                    },
+                },
+                {
+                    "goal": "Write a completion notice to the log channel",
+                    "config": {
+                        "channel": "log",
+                        "message": "Done. Processed {{ steps.fetch.result | length }} emails.",
+                    },
+                },
+            ],
+            "related_connector": "mattermost",
+            "system": True,
+            "org_tags": [],
+            "project": "",
+            "group_name": "",
+            "tags": "[]",
+        },
+    ]
+
+    repaired = 0
+    with db._connect() as conn:
+        repaired += conn.execute(
+            "UPDATE brick_definition SET runner = 'file_read', updated_at = datetime('now') "
+            "WHERE name = 'file_read' AND runner <> 'file_read'"
+        ).rowcount
+        repaired += conn.execute(
+            "UPDATE brick_definition SET runner = 'file_write', updated_at = datetime('now') "
+            "WHERE name = 'file_write' AND runner <> 'file_write'"
+        ).rowcount
+
+    for record in desired_records:
+        current = _normalize_brick_record_for_compare(db.brick_definitions_get(record["name"]))
+        if current is None or any(current.get(key) != value for key, value in record.items()):
+            db.brick_definitions_upsert(record)
+            repaired += 1
+
+    if repaired:
+        logger.info("migration v75: repaired %d brick_definition rows", repaired)
+    return repaired
 
 
 def _add_db_only_pipeline_persistence_v70(db: "BrixDB") -> None:

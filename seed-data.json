@@ -134,44 +134,44 @@
       "config_schema": {
         "channel": {
           "type": "string",
-          "description": "Notification channel to use",
+          "description": "Notification channel",
           "default": "log",
           "required": false,
           "enum": [
-            "mattermost",
-            "email",
+            "whatsapp",
+            "slack",
             "log"
           ]
         },
-        "message_template": {
+        "to": {
           "type": "string",
-          "description": "Jinja2 message template. Use {{ steps.<id>.result }} to reference step results. Markdown is supported for mattermost.",
-          "default": null,
-          "required": true,
-          "enum": null
-        },
-        "target": {
-          "type": "string",
-          "description": "For mattermost: channel name or user handle (e.g. '@hans' or '#general'). For email: recipient email address.",
+          "description": "Recipient address / webhook URL",
           "default": null,
           "required": false,
+          "enum": null
+        },
+        "message": {
+          "type": "string",
+          "description": "Message text (Jinja2 template)",
+          "default": null,
+          "required": true,
           "enum": null
         }
       },
       "examples": [
         {
-          "goal": "Notify Mattermost channel when pipeline completes",
+          "goal": "Send a Slack notification when a pipeline finishes",
           "config": {
-            "channel": "mattermost",
-            "target": "#buddy-notifications",
-            "message_template": "Pipeline finished: {{ steps.ingest.result.insert_count }} records imported."
+            "channel": "slack",
+            "to": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+            "message": "Pipeline finished successfully."
           }
         },
         {
-          "goal": "Log completion to pipeline output",
+          "goal": "Write a completion notice to the log channel",
           "config": {
             "channel": "log",
-            "message_template": "Done. Processed {{ steps.fetch.result | length }} emails."
+            "message": "Done. Processed {{ steps.fetch.result | length }} emails."
           }
         }
       ],
@@ -194,6 +194,66 @@
       "input_type": "*",
       "output_type": "*",
       "config_schema": {},
+      "examples": [],
+      "related_connector": "",
+      "system": 1,
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
+    },
+    {
+      "name": "action.queue",
+      "runner": "queue",
+      "namespace": "action",
+      "category": "action",
+      "description": "Collect items into a persistent buffer until a threshold or time window is reached.",
+      "when_to_use": "Use when items should be batched across runs before downstream processing continues.",
+      "when_NOT_to_use": "",
+      "aliases": [
+        "queue",
+        "buffer",
+        "batch buffer"
+      ],
+      "input_type": "any",
+      "output_type": "dict",
+      "config_schema": {
+        "queue_name": {
+          "type": "string",
+          "description": "Unique name for this queue/buffer",
+          "default": null,
+          "required": true,
+          "enum": null
+        },
+        "collect_until": {
+          "type": "integer",
+          "description": "Flush after this many items are buffered",
+          "default": null,
+          "required": false,
+          "enum": null
+        },
+        "collect_for": {
+          "type": "string",
+          "description": "Flush after this time window (e.g. '5m', '1h')",
+          "default": null,
+          "required": false,
+          "enum": null
+        },
+        "flush_to": {
+          "type": "string",
+          "description": "Informational: step_id to pass flushed items to",
+          "default": null,
+          "required": false,
+          "enum": null
+        },
+        "pipeline_name": {
+          "type": "string",
+          "description": "Optional pipeline name stored in buffer metadata",
+          "default": null,
+          "required": false,
+          "enum": null
+        }
+      },
       "examples": [],
       "related_connector": "",
       "system": 1,
@@ -682,6 +742,45 @@
       "tags": "[]"
     },
     {
+      "name": "action.emit",
+      "runner": "emit",
+      "namespace": "action",
+      "category": "action",
+      "description": "Emit a named event to the persistent event bus.",
+      "when_to_use": "Use when a pipeline should publish an event for later consumption by another workflow.",
+      "when_NOT_to_use": "",
+      "aliases": [
+        "emit",
+        "publish event",
+        "event bus"
+      ],
+      "input_type": "any",
+      "output_type": "dict",
+      "config_schema": {
+        "event": {
+          "type": "string",
+          "description": "Event name (e.g. 'order.received')",
+          "default": null,
+          "required": true,
+          "enum": null
+        },
+        "data": {
+          "type": "any",
+          "description": "Data payload to emit (Jinja2 rendered before execution)",
+          "default": null,
+          "required": false,
+          "enum": null
+        }
+      },
+      "examples": [],
+      "related_connector": "",
+      "system": 1,
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
+    },
+    {
       "name": "db.upsert",
       "runner": "db_upsert",
       "namespace": "db",
@@ -693,6 +792,48 @@
       "input_type": "*",
       "output_type": "*",
       "config_schema": {},
+      "examples": [],
+      "related_connector": "",
+      "system": 1,
+      "org_tags": [],
+      "project": "",
+      "group_name": "",
+      "tags": "[]"
+    },
+    {
+      "name": "db.exec",
+      "runner": "db_exec",
+      "namespace": "db",
+      "category": "db",
+      "description": "Execute a SQL INSERT, UPDATE, or DELETE with commit.",
+      "when_to_use": "Use to modify database rows when you need affected row counts and transactional commit behavior.",
+      "when_NOT_to_use": "",
+      "aliases": [],
+      "input_type": "none",
+      "output_type": "dict",
+      "config_schema": {
+        "connection": {
+          "type": "string",
+          "description": "Named connection (ConnectionManager) or bare DSN string",
+          "default": null,
+          "required": true,
+          "enum": null
+        },
+        "query": {
+          "type": "string",
+          "description": "SQL DML query to execute",
+          "default": null,
+          "required": true,
+          "enum": null
+        },
+        "params": {
+          "type": "array",
+          "description": "Positional query parameters for parametrised execution",
+          "default": null,
+          "required": false,
+          "enum": null
+        }
+      },
       "examples": [],
       "related_connector": "",
       "system": 1,
@@ -723,26 +864,31 @@
     },
     {
       "name": "file.read_base64",
-      "runner": "python",
+      "runner": "file_read_base64",
       "namespace": "file",
-      "category": "custom",
-      "description": "Liest Datei von Disk und gibt base64 + filename + size zurueck",
-      "when_to_use": "Wenn eine Datei fuer einen nachfolgenden Step als base64 benoetigt wird (z.B. vor http.request Upload)",
-      "when_NOT_to_use": "Wenn die Datei als Text gelesen werden soll (nutze file.read stattdessen)",
+      "category": "file",
+      "description": "Read a file and return its content as a base64-encoded string.",
+      "when_to_use": "Use when you need to read binary files and pass them as base64 to downstream steps.",
+      "when_NOT_to_use": "When the file should be read as text (use file.read instead).",
       "aliases": [
-        "datei lesen",
         "file read",
         "base64 encode",
-        "datei encodieren"
+        "read binary file"
       ],
       "input_type": "none",
       "output_type": "dict",
       "config_schema": {
-        "helper": "file_to_base64"
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the file to read",
+          "default": null,
+          "required": true,
+          "enum": null
+        }
       },
       "examples": [],
       "related_connector": "",
-      "system": 0,
+      "system": 1,
       "org_tags": [],
       "project": "",
       "group_name": "",
@@ -777,7 +923,7 @@
     },
     {
       "name": "file_read",
-      "runner": "file",
+      "runner": "file_read",
       "namespace": "",
       "category": "file",
       "description": "Read a file and return its content.",
@@ -819,7 +965,7 @@
     },
     {
       "name": "file_write",
-      "runner": "file",
+      "runner": "file_write",
       "namespace": "",
       "category": "file",
       "description": "Write content to a file.",
