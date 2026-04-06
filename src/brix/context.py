@@ -1,4 +1,5 @@
 """Pipeline execution context — holds state, outputs, credentials."""
+import datetime
 import hashlib
 import json
 import os
@@ -19,6 +20,11 @@ CACHE_BASE = Path.home() / ".brix" / "cache" / "steps"
 # brix__server_health and the mcp_server_down alert condition to access
 # health data without coupling those modules directly to the engine.
 _active_pool: "Any | None" = None
+
+
+def now() -> datetime.datetime:
+    """Return the current UTC time as a timezone-aware datetime."""
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 class CacheManager:
@@ -500,6 +506,8 @@ class PipelineContext:
             ctx: dict[str, Any] = {
                 "input": self.input,
                 "credentials": self.credentials,
+                "now": now,
+                "utcnow": now,
             }
             # Load managed variables as var.* (T-BRIX-DB-13)
             # Secret variables are decrypted at runtime but their plaintext values

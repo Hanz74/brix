@@ -5,15 +5,21 @@ import base64
 import copy
 import json
 import os
+import uuid
 
 import yaml
 from jinja2 import ChainableUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
+from brix.context import now as utcnow
 from brix.models import Pipeline, Step
 
 # Sentinel for _resolve_pure_expression to distinguish "not resolved" from None
 _SENTINEL = object()
+
+
+def _jinja_fail(msg):
+    raise ValueError(msg)
 
 
 class PipelineLoader:
@@ -39,6 +45,13 @@ class PipelineLoader:
             s.encode() if isinstance(s, str) else s
         ).decode()
         self.env.filters["b64decode"] = lambda s: base64.b64decode(s).decode()
+        self.env.filters["fromjson"] = json.loads
+        self.env.globals["now"] = utcnow
+        self.env.globals["utcnow"] = utcnow
+        self.env.globals["uuid4"] = lambda: str(uuid.uuid4())
+        self.env.globals["zip"] = zip
+        self.env.globals["env"] = lambda name, default="": os.environ.get(name, default)
+        self.env.globals["fail"] = _jinja_fail
 
     # ------------------------------------------------------------------
     # Loading

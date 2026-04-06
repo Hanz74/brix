@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import time
+import traceback
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -1376,6 +1377,7 @@ class PipelineEngine:
             except Exception as e:
                 # Unexpected exception (e.g. schema validation error, MCP crash) —
                 # treat the run as failed but always reach the finally block.
+                logger.error(traceback.format_exc())
                 print(f"✗ Pipeline error: {e}", file=sys.stderr)
                 pipeline_aborted = True
 
