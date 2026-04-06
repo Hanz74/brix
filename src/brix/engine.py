@@ -823,14 +823,30 @@ class PipelineEngine:
                                 continue
 
                         # stop step: end the pipeline immediately (T-BRIX-V4-04)
-                        # Guard: only terminate if the step was NOT already skipped (e.g. by a
-                        # when-condition that evaluated to false).  A skipped stop step must
-                        # NOT abort the pipeline — execution continues with the next step.
-                        _stop_already_skipped = (
-                            step_statuses.get(step.id) is not None
-                            and step_statuses[step.id].status == "skipped"
-                        )
-                        if step.type == "stop" and not _stop_already_skipped:
+                        # Evaluate the when condition directly so that a bool False (from YAML
+                        # `when: false` or Pydantic coercion) is handled correctly.  When the
+                        # when-block above is entered, `step.when` is a non-empty truthy string
+                        # and the condition is evaluated there.  But when `step.when` is Python
+                        # bool False, `if step.when:` is skipped entirely — so we must re-check
+                        # here to avoid firing the stop unconditionally.
+                        if step.type == "stop":
+                            _should_stop = True
+                            if step.when is not None:
+                                if isinstance(step.when, bool):
+                                    _should_stop = step.when
+                                elif isinstance(step.when, str) and step.when.strip():
+                                    _should_stop = self.loader.evaluate_condition(
+                                        step.when,
+                                        jinja_ctx if "jinja_ctx" in dir() else context.to_jinja_context(),
+                                    )
+                                else:
+                                    _should_stop = False  # empty string → don't stop
+                            if not _should_stop:
+                                step_statuses[step.id] = StepStatus(
+                                    status="skipped", duration=0.0, reason="condition not met"
+                                )
+                                self.progress.step_skipped(step.id)
+                                continue
                             jinja_ctx = context.to_jinja_context()
                             msg = step.message or "Pipeline stopped"
                             rendered_msg = self.loader.render_template(msg, jinja_ctx) if "{{" in msg else msg
@@ -2131,14 +2147,29 @@ class PipelineEngine:
                     return
 
             # --- stop step ---
-            # Guard: only terminate if the step was NOT already skipped (e.g. by a
-            # when-condition that evaluated to false).  A skipped stop step must
-            # NOT abort the pipeline — downstream steps continue normally.
-            _stop_already_skipped_dag = (
-                step_statuses.get(step.id) is not None
-                and step_statuses[step.id].status == "skipped"
-            )
-            if step.type == "stop" and not _stop_already_skipped_dag:
+            # Evaluate the when condition directly so that a bool False (from YAML
+            # `when: false` or Pydantic coercion) is handled correctly — same logic
+            # as the sequential path above.
+            if step.type == "stop":
+                _should_stop = True
+                if step.when is not None:
+                    if isinstance(step.when, bool):
+                        _should_stop = step.when
+                    elif isinstance(step.when, str) and step.when.strip():
+                        _should_stop = self.loader.evaluate_condition(
+                            step.when,
+                            jinja_ctx if "jinja_ctx" in dir() else context.to_jinja_context(),
+                        )
+                    else:
+                        _should_stop = False  # empty string → don't stop
+                if not _should_stop:
+                    step_statuses[step.id] = StepStatus(
+                        status="skipped", duration=0.0, reason="condition not met"
+                    )
+                    self.progress.step_skipped(step.id)
+                    step_ok[step.id] = True
+                    done_events[step.id].set()
+                    return
                 jinja_ctx = context.to_jinja_context()
                 msg = step.message or "Pipeline stopped"
                 rendered_msg = self.loader.render_template(msg, jinja_ctx) if "{{" in msg else msg

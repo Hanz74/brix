@@ -22,6 +22,66 @@ def load_pipeline(yaml_str: str):
 
 
 @pytest.mark.asyncio
+async def test_stop_skipped_when_bool_false():
+    """stop step with when=False (Python bool, from YAML `when: false`) is skipped; pipeline continues."""
+    pipeline = load_pipeline("""
+name: stop-skip-bool-false
+steps:
+  - id: before
+    type: set
+    values: {ran_before: true}
+  - id: stopper
+    type: stop
+    when: false
+    message: "Should not stop"
+  - id: after
+    type: set
+    values: {ran_after: true}
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True, f"Pipeline should succeed, got: {result}"
+    assert result.steps["stopper"].status == "skipped", (
+        "stop step with when=False (bool) must be skipped"
+    )
+    assert "after" in result.steps, "Step after the skipped stop must have been executed"
+    assert result.steps["after"].status == "ok", (
+        "Step after skipped stop must be ok"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stop_skipped_when_empty_string():
+    """stop step with when='' (empty string) is skipped; pipeline continues."""
+    pipeline = load_pipeline("""
+name: stop-skip-empty-string
+steps:
+  - id: before
+    type: set
+    values: {ran_before: true}
+  - id: stopper
+    type: stop
+    when: ""
+    message: "Should not stop"
+  - id: after
+    type: set
+    values: {ran_after: true}
+""")
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is True, f"Pipeline should succeed, got: {result}"
+    assert result.steps["stopper"].status == "skipped", (
+        "stop step with when='' (empty string) must be skipped"
+    )
+    assert "after" in result.steps, "Step after the skipped stop must have been executed"
+    assert result.steps["after"].status == "ok", (
+        "Step after skipped stop must be ok"
+    )
+
+
+@pytest.mark.asyncio
 async def test_stop_skipped_when_false_string():
     """stop step with when='false' is skipped; pipeline continues to next step."""
     pipeline = load_pipeline("""

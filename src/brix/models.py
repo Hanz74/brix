@@ -333,6 +333,16 @@ class Step(BaseModel):
     # When None (default), falls back to the ServerConfig.unwrap_json setting.
     unwrap_json: Optional[bool] = None
 
+    @field_validator("when", mode="before")
+    @classmethod
+    def coerce_when_bool(cls, v: Any) -> Any:
+        """Accept bool values for ``when`` (e.g. YAML ``when: false``) and
+        convert them to the canonical lowercase string so the rest of the
+        engine can handle them uniformly."""
+        if isinstance(v, bool):
+            return "false" if not v else "true"
+        return v
+
     @field_validator("concurrency")
     @classmethod
     def concurrency_must_be_positive(cls, v: int) -> int:
