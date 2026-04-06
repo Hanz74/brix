@@ -1,75 +1,55 @@
-"""TriggerService — async background polling.
-
-T-BRIX-SCHED-02: Now loads triggers from DB (TriggerStore) instead of
-triggers.yaml.  Also runs a daily retention loop (migrated from the
-deprecated scheduler.py).
-"""
+"""TriggerService — async background polling from DB-backed triggers."""
 import asyncio
 import json
-import yaml
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
 
 from brix.triggers.models import TriggerConfig
 from brix.triggers.state import TriggerState
 from brix.runners.cli import parse_timeout
 from brix.app_logging import log_event
 
-TRIGGERS_CONFIG_PATH = Path.home() / ".brix" / "triggers.yaml"
-
 
 class TriggerService:
     def __init__(self, config_path=None, state=None):
-        self._config_path = config_path or TRIGGERS_CONFIG_PATH
+        self._config_path = config_path
         self._state = state or TriggerState()
         self._triggers: list[TriggerConfig] = []
         self._running = False
 
     def load_triggers(self):
-        """Load triggers from DB.  Falls back to YAML only if DB is empty."""
+        """Load triggers from DB."""
         self._triggers = []
+        from brix.triggers.store import TriggerStore
 
-        # Primary: load from DB via TriggerStore
-        try:
-            from brix.triggers.store import TriggerStore
-            store = TriggerStore()
-            rows = store.list_all()
-            for row in rows:
-                cfg = row.get("config") or {}
-                if isinstance(cfg, str):
-                    try:
-                        cfg = json.loads(cfg)
-                    except Exception:
-                        cfg = {}
-                tc = TriggerConfig(
-                    id=row.get("name") or row.get("id", ""),
-                    type=row.get("type", ""),
-                    pipeline=row.get("pipeline", ""),
-                    enabled=row.get("enabled", True),
-                    params=cfg.get("params", {}),
-                    interval=cfg.get("interval", "5m"),
-                    cron=cfg.get("cron"),
-                    timezone=cfg.get("timezone"),
-                    filter=cfg if row.get("type") in ("mail", "pipeline_done") else {},
-                    path=cfg.get("path"),
-                    pattern=cfg.get("pattern"),
-                    url=cfg.get("url"),
-                    headers=cfg.get("headers", {}),
-                    hash_field=cfg.get("hash_field"),
-                    status=cfg.get("status"),
-                    pipeline_target=cfg.get("pipeline"),
-                    debounce=cfg.get("debounce"),
-                )
-                self._triggers.append(tc)
-        except Exception:
-            pass
-
-        # Fallback: load from YAML if DB yielded nothing
-        if not self._triggers and self._config_path.exists():
-            with open(self._config_path) as f:
-                data = yaml.safe_load(f) or {}
-            self._triggers = [TriggerConfig(**t) for t in data.get("triggers", [])]
+        store = TriggerStore()
+        rows = store.list_all()
+        for row in rows:
+            cfg = row.get("config") or {}
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except Exception:
+                    cfg = {}
+            tc = TriggerConfig(
+                id=row.get("name") or row.get("id", ""),
+                type=row.get("type", ""),
+                pipeline=row.get("pipeline", ""),
+                enabled=row.get("enabled", True),
+                params=cfg.get("params", {}),
+                interval=cfg.get("interval", "5m"),
+                cron=cfg.get("cron"),
+                timezone=cfg.get("timezone"),
+                filter=cfg if row.get("type") in ("mail", "pipeline_done") else {},
+                path=cfg.get("path"),
+                pattern=cfg.get("pattern"),
+                url=cfg.get("url"),
+                headers=cfg.get("headers", {}),
+                hash_field=cfg.get("hash_field"),
+                status=cfg.get("status"),
+                pipeline_target=cfg.get("pipeline"),
+                debounce=cfg.get("debounce"),
+            )
+            self._triggers.append(tc)
 
     async def start(self):
         self.load_triggers()

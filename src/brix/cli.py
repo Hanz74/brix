@@ -35,7 +35,7 @@ def _get_server_manager():
     "--profile",
     default=None,
     envvar="BRIX_PROFILE",
-    help="Environment profile to use (overrides BRIX_PROFILE env var and default_profile).",
+    help="Environment profile to use (overrides BRIX_PROFILE env var and DB default).",
 )
 @click.option(
     "--dry-run-steps",
@@ -49,7 +49,7 @@ def run(pipeline_file, dry_run, resume, keep_workdir, param, profile, dry_run_st
     JSON result is written to stdout, progress to stderr.
 
     Use --profile (or BRIX_PROFILE env var) to select an environment profile
-    that injects credentials and input defaults defined in ~/.brix/profiles.yaml.
+    that injects credentials and input defaults from the DB-backed env_profile store.
 
     Use --dry-run-steps to skip specific steps without executing them (status=dry_run).
     """
@@ -89,7 +89,7 @@ def run(pipeline_file, dry_run, resume, keep_workdir, param, profile, dry_run_st
         from brix.profiles import ProfileManager, ProfileNotFoundError
         mgr = ProfileManager()
         try:
-            mgr.load_profile(profile)
+            mgr.get_profile(profile)
         except ProfileNotFoundError as e:
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
@@ -168,7 +168,7 @@ def _dry_run(pipeline, user_input: dict, profile: str = None):
     active_profile = mgr.active_profile_name(override=profile)
     if active_profile:
         try:
-            profile_config = mgr.load_profile(active_profile)
+            profile_config = mgr.get_profile(active_profile)
             click.echo(f"Profile: {active_profile}", err=True)
             env_keys = list(profile_config["env"].keys())
             if env_keys:
@@ -330,8 +330,8 @@ def _find_step_dependencies(template_str: str, executed_ids: set[str], pipeline)
 def profile():
     """Manage environment profiles (dev/prod/staging).
 
-    Profiles are stored in ~/.brix/profiles.yaml and define env vars and input
-    defaults that apply when the profile is active.
+    Profiles are stored in the DB-backed env_profile table and define env vars
+    and input defaults that apply when the profile is active.
 
     Activate a profile with --profile <name> or BRIX_PROFILE=<name>.
     """
@@ -344,7 +344,7 @@ def profile_list():
     from brix.profiles import ProfileManager
     mgr = ProfileManager()
     profiles = mgr.list_profiles()
-    default = mgr.get_default_profile()
+    default = mgr.get_default()
     active = mgr.active_profile_name()
 
     if not profiles:
@@ -368,7 +368,7 @@ def profile_show(name):
     from brix.profiles import ProfileManager, ProfileNotFoundError
     mgr = ProfileManager()
     try:
-        config = mgr.load_profile(name)
+        config = mgr.get_profile(name)
     except ProfileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
         import sys
@@ -473,7 +473,7 @@ def profile_default(name, clear):
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
     else:
-        current = mgr.get_default_profile()
+        current = mgr.get_default()
         if current:
             click.echo(f"Default profile: {current}", err=True)
         else:
@@ -798,19 +798,6 @@ def triggers_status():
     # Show recent events
     events = state.get_unprocessed_events()
     click.echo(f"  Unprocessed events: {len(events)}")
-
-
-@main.command("scheduler")
-def run_scheduler():
-    """Start the cron scheduler.
-
-    Reads schedule config from ~/.brix/schedules.yaml and runs
-    pipelines on their configured intervals.
-    """
-    import asyncio
-    from brix.scheduler import BrixScheduler
-    scheduler = BrixScheduler()
-    asyncio.run(scheduler.start())
 
 
 @main.command()

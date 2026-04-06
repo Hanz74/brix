@@ -1,38 +1,10 @@
-"""Environment profile management for Brix pipelines.
+"""Environment profile management backed by the ``env_profile`` DB table."""
 
-Profiles allow different configurations (credentials, input defaults) for
-different environments (dev, prod, staging, etc.).
-
-Profile file location: ~/.brix/profiles.yaml
-
-Example profiles.yaml:
-    default_profile: dev
-
-    profiles:
-      dev:
-        env:
-          MY_API_KEY: "dev-key-123"
-          BASE_URL: "https://api.dev.example.com"
-        input_defaults:
-          limit: 10
-
-      prod:
-        env:
-          MY_API_KEY: "${PROD_API_KEY}"   # resolved from OS env
-          BASE_URL: "https://api.example.com"
-        input_defaults:
-          limit: 1000
-
-Usage:
-    brix run pipeline.yaml --profile prod
-    BRIX_PROFILE=prod brix run pipeline.yaml
-"""
+from __future__ import annotations
 
 import os
 from pathlib import Path
 from typing import Any, Optional
-
-import yaml
 
 PROFILES_PATH = Path.home() / ".brix" / "profiles.yaml"
 BRIX_PROFILE_ENV = "BRIX_PROFILE"
@@ -43,166 +15,129 @@ class ProfileNotFoundError(Exception):
 
 
 class ProfileManager:
-    """Loads and applies environment profiles from ~/.brix/profiles.yaml."""
+    """Loads and applies environment profiles from ``env_profile`` in ``brix.db``."""
 
     def __init__(self, profiles_path: Path = PROFILES_PATH) -> None:
-        self._path = profiles_path
-        self._data: Optional[dict] = None
+        # ``profiles_path`` is retained for compatibility with older tests/callers.
+        # Storage is DB-backed; the path is no longer read or written.
+        self._path = Path(profiles_path)
 
-    def _load(self) -> dict:
-        """Load profiles YAML file. Returns empty dict if file does not exist."""
-        if self._data is None:
-            if self._path.exists():
-                with open(self._path) as f:
-                    raw = yaml.safe_load(f) or {}
-            else:
-                raw = {}
-            self._data = raw
-        return self._data
+    def _db(self):
+        """Import BrixDB lazily to avoid circular imports."""
+        from brix.db import BrixDB
+
+        return BrixDB()
 
     def list_profiles(self) -> list[str]:
         """Return all defined profile names."""
-        data = self._load()
-        return list(data.get("profiles", {}).keys())
+        return [row.get("name", "") for row in self._db().list_env_profiles()]
+
+    def get_default(self) -> Optional[str]:
+        """Return the configured default profile name, or ``None``."""
+        row = self._db().get_default_env_profile()
+        if row is None:
+            return None
+        return row.get("name")
 
     def get_default_profile(self) -> Optional[str]:
-        """Return the configured default profile name, or None."""
-        data = self._load()
-        return data.get("default_profile")
+        """Compatibility alias for older callers."""
+        return self.get_default()
 
     def active_profile_name(self, override: Optional[str] = None) -> Optional[str]:
-        """Resolve the active profile name.
-
-        Priority (highest to lowest):
-        1. ``override`` argument (e.g. from --profile CLI flag)
-        2. ``BRIX_PROFILE`` environment variable
-        3. ``default_profile`` from profile.yaml
-        4. ``None`` (no profile active)
-        """
+        """Resolve the active profile name."""
         if override:
             return override
         env_profile = os.environ.get(BRIX_PROFILE_ENV)
         if env_profile:
             return env_profile
-        return self.get_default_profile()
+        return self.get_default()
 
-    def load_profile(self, name: str) -> dict[str, Any]:
-        """Load a profile by name and return its configuration dict.
-
-        Returns a dict with keys:
-        - ``env``: dict of env var name → value to inject
-        - ``input_defaults``: dict of pipeline input param overrides
-
-        Env var values starting with ``$`` are resolved from the current
-        OS environment (e.g. ``${PROD_SECRET}`` → os.environ["PROD_SECRET"]).
-
-        Raises ProfileNotFoundError if the profile does not exist.
-        """
-        data = self._load()
-        profiles = data.get("profiles", {})
-        if name not in profiles:
-            available = list(profiles.keys())
+    def get_profile(self, name: str) -> dict[str, Any]:
+        """Load a profile by name and return its configuration dict."""
+        row = self._db().get_env_profile(name)
+        if row is None:
+            available = self.list_profiles()
             raise ProfileNotFoundError(
                 f"Profile '{name}' not found. Available: {available}"
             )
 
-        raw = profiles[name] or {}
-        env = _resolve_env_values(raw.get("env", {}))
-        input_defaults = raw.get("input_defaults", {})
-
         return {
-            "env": env,
-            "input_defaults": input_defaults,
+            "env": _resolve_env_values(row.get("env", {})),
+            "input_defaults": row.get("input_defaults", {}) or {},
         }
 
-    def apply_profile(self, name: Optional[str]) -> dict[str, Any]:
-        """Load and apply a profile's env vars to ``os.environ``.
+    def load_profile(self, name: str) -> dict[str, Any]:
+        """Compatibility alias for older callers."""
+        return self.get_profile(name)
 
-        If ``name`` is None, does nothing and returns empty config.
-        Returns the full profile config dict (for further use by context).
-        """
+    def apply_profile(self, name: Optional[str]) -> dict[str, Any]:
+        """Load and apply a profile's env vars to ``os.environ``."""
         if not name:
             return {"env": {}, "input_defaults": {}}
 
-        config = self.load_profile(name)
+        config = self.get_profile(name)
         for key, value in config["env"].items():
             os.environ[key] = str(value)
 
         return config
 
-    def save_profile(self, name: str, env: dict[str, str] = None, input_defaults: dict = None) -> None:
-        """Save or update a profile in the profiles YAML file.
-
-        Creates the file (and parent directory) if it does not exist.
-        Merges into any existing profiles — does not overwrite other profiles.
-        """
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Re-load from disk to avoid overwriting concurrent changes
-        if self._path.exists():
-            with open(self._path) as f:
-                data = yaml.safe_load(f) or {}
-        else:
-            data = {}
-
-        data.setdefault("profiles", {})[name] = {
-            "env": env or {},
-            "input_defaults": input_defaults or {},
-        }
-
-        with open(self._path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-
-        # Invalidate in-memory cache
-        self._data = None
+    def save_profile(
+        self,
+        name: str,
+        env: dict[str, str] | None = None,
+        input_defaults: dict | None = None,
+    ) -> None:
+        """Create or update an environment profile in the DB."""
+        db = self._db()
+        existing = db.get_env_profile(name)
+        is_default = bool(existing and existing.get("is_default"))
+        description = existing.get("description", "") if existing else ""
+        db.upsert_env_profile(
+            name=name,
+            env=env or {},
+            input_defaults=input_defaults or {},
+            is_default=is_default,
+            description=description,
+        )
 
     def delete_profile(self, name: str) -> None:
-        """Remove a profile. Raises ProfileNotFoundError if not found."""
-        data = self._load()
-        profiles = data.get("profiles", {})
-        if name not in profiles:
+        """Remove a profile. Raises ``ProfileNotFoundError`` if not found."""
+        if not self._db().delete_env_profile(name):
             raise ProfileNotFoundError(f"Profile '{name}' not found.")
 
-        del profiles[name]
-        with open(self._path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-        self._data = None
-
     def set_default(self, name: Optional[str]) -> None:
-        """Set (or clear) the default profile in profiles.yaml."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        if self._path.exists():
-            with open(self._path) as f:
-                data = yaml.safe_load(f) or {}
-        else:
-            data = {}
+        """Set or clear the default profile in the DB."""
+        db = self._db()
 
         if name is None:
-            data.pop("default_profile", None)
-        else:
-            # Validate profile exists
-            if name not in data.get("profiles", {}):
-                raise ProfileNotFoundError(
-                    f"Profile '{name}' not found. Create it first with 'brix profile add'."
-                )
-            data["default_profile"] = name
+            for row in db.list_env_profiles():
+                if row.get("is_default"):
+                    db.upsert_env_profile(
+                        name=row["name"],
+                        env=row.get("env", {}),
+                        input_defaults=row.get("input_defaults", {}),
+                        is_default=False,
+                        description=row.get("description", ""),
+                    )
+            return
 
-        with open(self._path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-        self._data = None
+        row = db.get_env_profile(name)
+        if row is None:
+            raise ProfileNotFoundError(
+                f"Profile '{name}' not found. Create it first with 'brix profile add'."
+            )
 
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+        db.upsert_env_profile(
+            name=name,
+            env=row.get("env", {}),
+            input_defaults=row.get("input_defaults", {}),
+            is_default=True,
+            description=row.get("description", ""),
+        )
 
 
 def _resolve_env_values(env: dict) -> dict[str, str]:
-    """Resolve ``${VAR}`` references in env value strings.
-
-    Only simple ``${VAR_NAME}`` patterns are supported — the value is replaced
-    with the OS env var if it exists, otherwise kept as-is (minus the sigils).
-    """
+    """Resolve ``${VAR}`` references in env value strings."""
     import re
 
     resolved = {}
@@ -210,10 +145,9 @@ def _resolve_env_values(env: dict) -> dict[str, str]:
 
     for key, value in env.items():
         str_value = str(value)
-        m = pattern.match(str_value)
-        if m:
-            var_name = m.group(1)
-            resolved[key] = os.environ.get(var_name, "")
+        match = pattern.match(str_value)
+        if match:
+            resolved[key] = os.environ.get(match.group(1), "")
         else:
             resolved[key] = str_value
 

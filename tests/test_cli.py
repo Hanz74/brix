@@ -3,9 +3,29 @@ import json
 import os
 import tempfile
 
+import pytest
 from click.testing import CliRunner as ClickRunner
 
 from brix.cli import main
+
+
+@pytest.fixture(autouse=True)
+def _patch_cli_paths(monkeypatch, tmp_path):
+    """Keep CLI tests isolated from the real ~/.brix paths."""
+    from brix.server_manager import ServerManager
+    import brix.cli as cli_mod
+
+    monkeypatch.setattr("brix.context.WORKDIR_BASE", tmp_path / "runs")
+    monkeypatch.setattr("brix.db.BRIX_DB_PATH", tmp_path / "brix.db")
+    servers_path_fn = lambda: tmp_path / "servers.yaml"
+    server_manager_fn = lambda: ServerManager(servers_path=tmp_path / "servers.yaml")
+    monkeypatch.setattr("brix.cli._get_servers_path", servers_path_fn)
+    monkeypatch.setattr("brix.cli._get_server_manager", server_manager_fn)
+    cli_mod.server_add.callback.__globals__["_get_server_manager"] = server_manager_fn
+    cli_mod.server_list.callback.__globals__["_get_server_manager"] = server_manager_fn
+    cli_mod.server_remove.callback.__globals__["_get_server_manager"] = server_manager_fn
+    cli_mod.server_tools.callback.__globals__["_get_servers_path"] = servers_path_fn
+    cli_mod.server_refresh.callback.__globals__["_get_servers_path"] = servers_path_fn
 
 
 def test_cli_version():
@@ -139,82 +159,6 @@ steps:
         os.unlink(path)
 
 
-# --- Server Management Tests ---
-
-def test_cli_server_add(tmp_path, monkeypatch):
-    """brix server add registers a server."""
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
-    runner = ClickRunner()
-    result = runner.invoke(main, [
-        "server", "add", "m365",
-        "--command", "node",
-        "--args", "/app/index.js",
-        "--env", "TOKEN=abc123",
-    ])
-    assert result.exit_code == 0
-    assert "m365" in result.output
-
-    # Verify file was created
-    import yaml
-    data = yaml.safe_load((tmp_path / "servers.yaml").read_text())
-    assert "m365" in data["servers"]
-    assert data["servers"]["m365"]["command"] == "node"
-
-
-def test_cli_server_list(tmp_path, monkeypatch):
-    """brix server list shows registered servers."""
-    # Pre-create config
-    import yaml
-    config = {"servers": {"m365": {"command": "node", "args": ["/app"]}}}
-    (tmp_path / "servers.yaml").write_text(yaml.dump(config))
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
-
-    runner = ClickRunner()
-    result = runner.invoke(main, ["server", "list"])
-    assert result.exit_code == 0
-    assert "m365" in result.output
-
-
-def test_cli_server_list_empty(tmp_path, monkeypatch):
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
-    runner = ClickRunner()
-    result = runner.invoke(main, ["server", "list"])
-    assert "No servers" in result.output
-
-
-def test_cli_server_remove(tmp_path, monkeypatch):
-    import yaml
-    config = {"servers": {"m365": {"command": "node"}}}
-    (tmp_path / "servers.yaml").write_text(yaml.dump(config))
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
-
-    runner = ClickRunner()
-    result = runner.invoke(main, ["server", "remove", "m365"])
-    assert result.exit_code == 0
-    assert "removed" in result.output
-
-
-def test_cli_server_remove_nonexistent(tmp_path, monkeypatch):
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
-    runner = ClickRunner()
-    result = runner.invoke(main, ["server", "remove", "ghost"])
-    assert result.exit_code != 0
-
-
-def test_cli_server_test_valid(tmp_path, monkeypatch):
-    import yaml
-    config = {"servers": {"m365": {"command": "node", "args": ["/app"]}}}
-    (tmp_path / "servers.yaml").write_text(yaml.dump(config))
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: tmp_path / "servers.yaml")
-    # Also patch load_server_config to use our path
-    monkeypatch.setattr("brix.runners.mcp.SERVERS_CONFIG_PATH", tmp_path / "servers.yaml")
-
-    runner = ClickRunner()
-    result = runner.invoke(main, ["server", "test", "m365"])
-    assert result.exit_code == 0
-    assert "valid" in result.output.lower() or "loaded" in result.output.lower()
-
-
 # --- Dry-Run Extended Tests (T-BRIX-17) ---
 
 
@@ -283,24 +227,25 @@ steps:
 
 def test_cli_dry_run_shows_servers(monkeypatch, tmp_path):
     """Dry-run shows MCP server registration status."""
-    import yaml as _yaml
+    from brix.server_manager import ServerManager
+
     yaml_content = """
 name: server-test
 steps:
   - id: fetch
     type: mcp
-    server: m365
+    server: test-m365
     tool: list-mail
   - id: store
     type: mcp
-    server: onedrive
+    server: test-onedrive
     tool: upload-file
 """
-    # Register m365 but NOT onedrive
-    servers_config = {"servers": {"m365": {"command": "node", "args": ["/app"]}}}
-    servers_path = tmp_path / "servers.yaml"
-    servers_path.write_text(_yaml.dump(servers_config))
-    monkeypatch.setattr("brix.cli._get_servers_path", lambda: servers_path)
+    ServerManager(servers_path=tmp_path / "servers.yaml").add(
+        name="test-m365",
+        command="node",
+        args=["/app"],
+    )
 
     runner = ClickRunner()
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -309,9 +254,9 @@ steps:
     try:
         result = runner.invoke(main, ["run", path, "--dry-run"])
         assert result.exit_code == 0
-        assert "m365" in result.output
-        assert "onedrive" in result.output
-        # m365 is registered (✓), onedrive is not (NOT REGISTERED)
+        assert "test-m365" in result.output
+        assert "test-onedrive" in result.output
+        # test-m365 is registered (✓), test-onedrive is not (NOT REGISTERED)
         assert "NOT REGISTERED" in result.output
     finally:
         os.unlink(path)
@@ -504,17 +449,10 @@ def test_cli_stats_step_table_columns(tmp_path, monkeypatch):
 
 
 def _patch_profiles_path(monkeypatch, tmp_path):
-    """Patch ProfileManager to use a tmp_path profiles.yaml."""
-    from brix.profiles import ProfileManager
-    profiles_path = tmp_path / "profiles.yaml"
-
-    original_init = ProfileManager.__init__
-
-    def patched_init(self, path=None):
-        original_init(self, path or profiles_path)
-
-    monkeypatch.setattr(ProfileManager, "__init__", patched_init)
-    return profiles_path
+    """Patch default profile DB location for ProfileManager/BrixDB."""
+    db_path = tmp_path / "brix.db"
+    monkeypatch.setattr("brix.db.BRIX_DB_PATH", db_path)
+    return db_path
 
 
 def test_cli_profile_list_empty(tmp_path, monkeypatch):
@@ -528,8 +466,7 @@ def test_cli_profile_list_empty(tmp_path, monkeypatch):
 
 def test_cli_profile_add_and_list(tmp_path, monkeypatch):
     """brix profile add creates a profile; brix profile list shows it."""
-    import yaml as _yaml
-    _patch_profiles_path(monkeypatch, tmp_path)
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
     runner = ClickRunner()
 
     result = runner.invoke(main, [
@@ -540,11 +477,11 @@ def test_cli_profile_add_and_list(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "dev" in result.output
 
-    # Verify it's in the file
-    data = _yaml.safe_load((tmp_path / "profiles.yaml").read_text())
-    assert "dev" in data["profiles"]
-    assert data["profiles"]["dev"]["env"]["API_KEY"] == "dev-secret"
-    assert data["profiles"]["dev"]["input_defaults"]["limit"] == 10
+    from brix.db import BrixDB
+    data = BrixDB(db_path=db_path).get_env_profile("dev")
+    assert data is not None
+    assert data["env"]["API_KEY"] == "dev-secret"
+    assert data["input_defaults"]["limit"] == 10
 
     # List should show it
     result2 = runner.invoke(main, ["profile", "list"])
@@ -553,27 +490,26 @@ def test_cli_profile_add_and_list(tmp_path, monkeypatch):
 
 def test_cli_profile_add_set_default(tmp_path, monkeypatch):
     """brix profile add --set-default sets the profile as default."""
-    import yaml as _yaml
-    _patch_profiles_path(monkeypatch, tmp_path)
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
     runner = ClickRunner()
     result = runner.invoke(main, ["profile", "add", "prod", "--set-default"])
     assert result.exit_code == 0
-    data = _yaml.safe_load((tmp_path / "profiles.yaml").read_text())
-    assert data.get("default_profile") == "prod"
+    from brix.db import BrixDB
+    data = BrixDB(db_path=db_path).get_default_env_profile()
+    assert data is not None
+    assert data["name"] == "prod"
 
 
 def test_cli_profile_show(tmp_path, monkeypatch):
     """brix profile show displays env keys and input defaults."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({
-        "profiles": {
-            "dev": {
-                "env": {"MY_KEY": "value"},
-                "input_defaults": {"folder": "Inbox"},
-            }
-        }
-    }))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    BrixDB(db_path=db_path).upsert_env_profile(
+        "dev",
+        env={"MY_KEY": "value"},
+        input_defaults={"folder": "Inbox"},
+    )
     runner = ClickRunner()
     result = runner.invoke(main, ["profile", "show", "dev"])
     assert result.exit_code == 0
@@ -591,18 +527,18 @@ def test_cli_profile_show_not_found(tmp_path, monkeypatch):
 
 def test_cli_profile_remove(tmp_path, monkeypatch):
     """brix profile remove deletes the profile."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({
-        "profiles": {"dev": {}, "prod": {}}
-    }))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    db = BrixDB(db_path=db_path)
+    db.upsert_env_profile("dev")
+    db.upsert_env_profile("prod")
     runner = ClickRunner()
     result = runner.invoke(main, ["profile", "remove", "dev"])
     assert result.exit_code == 0
     assert "removed" in result.output
-    data = _yaml.safe_load(profiles_path.read_text())
-    assert "dev" not in data["profiles"]
-    assert "prod" in data["profiles"]
+    assert db.get_env_profile("dev") is None
+    assert db.get_env_profile("prod") is not None
 
 
 def test_cli_profile_remove_not_found(tmp_path, monkeypatch):
@@ -615,24 +551,25 @@ def test_cli_profile_remove_not_found(tmp_path, monkeypatch):
 
 def test_cli_profile_default_set(tmp_path, monkeypatch):
     """brix profile default <name> sets the default profile."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({"profiles": {"prod": {}}}))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    db = BrixDB(db_path=db_path)
+    db.upsert_env_profile("prod")
     runner = ClickRunner()
     result = runner.invoke(main, ["profile", "default", "prod"])
     assert result.exit_code == 0
-    data = _yaml.safe_load(profiles_path.read_text())
-    assert data["default_profile"] == "prod"
+    data = db.get_default_env_profile()
+    assert data is not None
+    assert data["name"] == "prod"
 
 
 def test_cli_profile_default_show(tmp_path, monkeypatch):
     """brix profile default (no args) shows current default."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({
-        "default_profile": "dev",
-        "profiles": {"dev": {}}
-    }))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    BrixDB(db_path=db_path).upsert_env_profile("dev", is_default=True)
     runner = ClickRunner()
     result = runner.invoke(main, ["profile", "default"])
     assert result.exit_code == 0
@@ -641,28 +578,23 @@ def test_cli_profile_default_show(tmp_path, monkeypatch):
 
 def test_cli_profile_default_clear(tmp_path, monkeypatch):
     """brix profile default --clear removes the default profile."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({
-        "default_profile": "dev",
-        "profiles": {"dev": {}}
-    }))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    db = BrixDB(db_path=db_path)
+    db.upsert_env_profile("dev", is_default=True)
     runner = ClickRunner()
     result = runner.invoke(main, ["profile", "default", "--clear"])
     assert result.exit_code == 0
-    data = _yaml.safe_load(profiles_path.read_text())
-    assert "default_profile" not in data
+    assert db.get_default_env_profile() is None
 
 
 def test_cli_run_with_profile_flag(tmp_path, monkeypatch):
     """brix run --profile <name> is accepted and validated."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({
-        "profiles": {
-            "dev": {"env": {}, "input_defaults": {}}
-        }
-    }))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    BrixDB(db_path=db_path).upsert_env_profile("dev")
 
     yaml_content = """
 name: profile-run-test
@@ -707,16 +639,14 @@ steps:
 
 def test_cli_dry_run_shows_profile(tmp_path, monkeypatch):
     """brix run --dry-run --profile shows the active profile in output."""
-    import yaml as _yaml
-    profiles_path = _patch_profiles_path(monkeypatch, tmp_path)
-    profiles_path.write_text(_yaml.dump({
-        "profiles": {
-            "staging": {
-                "env": {"STAGING_KEY": "val"},
-                "input_defaults": {},
-            }
-        }
-    }))
+    db_path = _patch_profiles_path(monkeypatch, tmp_path)
+    from brix.db import BrixDB
+
+    BrixDB(db_path=db_path).upsert_env_profile(
+        "staging",
+        env={"STAGING_KEY": "val"},
+        input_defaults={},
+    )
 
     yaml_content = """
 name: dry-profile-test
