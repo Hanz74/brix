@@ -1,6 +1,7 @@
 """Helper registry handler module."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from brix.mcp_handlers._shared import (
@@ -9,7 +10,6 @@ from brix.mcp_handlers._shared import (
     _source_summary,
     _make_helper_dict,
     _validate_python_code,
-    _managed_helper_dir,
     _code_line_count,
     _find_similar_helpers,
     _scan_pipelines_for_helper,
@@ -18,32 +18,44 @@ from brix.mcp_handlers._shared import (
 from brix.helper_registry import HelperRegistry
 
 
-def _helper_script_delete_roots() -> tuple[Path, ...]:
-    """Return helper directories whose files should be deleted with the helper."""
-    return (
-        _managed_helper_dir(),
-        Path("/app/helpers"),
-    )
+_HELPER_CACHE_DIR = Path("/tmp/brix-helpers")
 
 
-def _should_delete_helper_script(script_path: Path) -> bool:
-    """Return True when the helper script lives in a managed helper directory."""
-    try:
-        resolved_script = script_path.resolve(strict=False)
-    except OSError:
-        resolved_script = script_path
+def _validate_helper_metadata(arguments: dict, *, require_all: bool) -> str | None:
+    """Validate required helper metadata fields."""
+    description = arguments.get("description")
+    input_schema = arguments.get("input_schema")
+    output_schema = arguments.get("output_schema")
 
-    for root in _helper_script_delete_roots():
-        try:
-            resolved_root = root.resolve(strict=False)
-        except OSError:
-            resolved_root = root
-        try:
-            resolved_script.relative_to(resolved_root)
-            return True
-        except ValueError:
+    if require_all or "description" in arguments:
+        if not isinstance(description, str) or len(description.strip()) < 10:
+            return "Parameter 'description' is required and must be at least 10 characters"
+    if require_all or "input_schema" in arguments:
+        if not isinstance(input_schema, dict):
+            return "Parameter 'input_schema' is required and must be an object"
+    if require_all or "output_schema" in arguments:
+        if not isinstance(output_schema, dict):
+            return "Parameter 'output_schema' is required and must be an object"
+    return None
+
+
+def _delete_helper_cache_files(name: str, content_hash: str | None = None) -> list[str]:
+    """Delete cached helper files from /tmp."""
+    if content_hash:
+        candidates = [_HELPER_CACHE_DIR / f"{name}_{content_hash}.py"]
+    else:
+        candidates = list(_HELPER_CACHE_DIR.glob(f"{name}_*.py"))
+
+    deleted: list[str] = []
+    for path in candidates:
+        if not path.exists():
             continue
-    return False
+        try:
+            path.unlink()
+            deleted.append(str(path))
+        except OSError:
+            continue
+    return deleted
 
 
 async def _handle_create_helper(arguments: dict) -> dict:
@@ -57,6 +69,9 @@ async def _handle_create_helper(arguments: dict) -> dict:
         return {"success": False, "error": "Parameter 'name' is required"}
     if not code:
         return {"success": False, "error": "Parameter 'code' is required"}
+    metadata_error = _validate_helper_metadata(arguments, require_all=True)
+    if metadata_error:
+        return {"success": False, "error": metadata_error}
 
     # Validate Python syntax
     syntax_error = _validate_python_code(code)
@@ -82,23 +97,16 @@ async def _handle_create_helper(arguments: dict) -> dict:
             f"oder nutze Brix-Pipelines statt großer Python-Scripts."
         )
 
-    # Write to managed location
-    helpers_dir = _managed_helper_dir()
-    script_path = helpers_dir / f"{name}.py"
-    try:
-        script_path.write_text(code, encoding="utf-8")
-    except OSError as exc:
-        return {"success": False, "error": f"Could not write helper file: {exc}"}
-
-    # Register atomically
     registry = HelperRegistry()
+    content_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
     entry = registry.register(
         name=name,
-        script=str(script_path),
+        script=f"db://{name}",
         description=description,
         requirements=arguments.get("requirements") or [],
-        input_schema=arguments.get("input_schema") or {},
-        output_schema=arguments.get("output_schema") or {},
+        input_schema=arguments.get("input_schema"),
+        output_schema=arguments.get("output_schema"),
+        code=code,
     )
 
     # Update project/tags/group_name in DB (T-BRIX-ORG-01)
@@ -111,8 +119,13 @@ async def _handle_create_helper(arguments: dict) -> dict:
             _org_db = _BrixDB()
             _org_db.upsert_helper(
                 name=name,
-                script_path=str(script_path),
+                script_path=f"db://{name}",
                 description=description,
+                requirements=arguments.get("requirements") or [],
+                input_schema=arguments.get("input_schema"),
+                output_schema=arguments.get("output_schema"),
+                code=code,
+                content_hash=content_hash,
                 project=org_project,
                 tags=org_tags,
                 group_name=org_group,
@@ -142,9 +155,9 @@ async def _handle_create_helper(arguments: dict) -> dict:
     result: dict = {
         "success": True,
         "action": "created",
-        "path": str(script_path),
         "helper": _make_helper_dict(entry),
     }
+    result["content_hash"] = content_hash
     if org_project is not None:
         result["project"] = org_project
     if warnings:
@@ -315,9 +328,7 @@ async def _handle_update_helper(arguments: dict) -> dict:
             return {"success": True, "action": "removed", "name": name}
         return {"success": False, "error": f"Helper '{name}' not found in registry"}
 
-    # Handle inline code update
     code = arguments.get("code")
-    backup_path: "str | None" = None
     update_warnings: list[str] = []
     if code is not None:
         syntax_error = _validate_python_code(code)
@@ -331,39 +342,13 @@ async def _handle_update_helper(arguments: dict) -> dict:
                 f"WARNING: Helper hat {line_count} Zeilen. Erwäge Aufteilen in kleinere Helper "
                 f"oder nutze Brix-Pipelines statt großer Python-Scripts."
             )
-
-        # Get current entry to find existing script path
-        existing = registry.get(name)
-        if existing is None:
-            return {"success": False, "error": f"Helper '{name}' not found in registry"}
-
-        # Determine write target: managed location or existing path
-        existing_script = Path(existing.script) if existing.script else None
-        managed_dir = _managed_helper_dir()
-        write_path = managed_dir / f"{name}.py"
-
-        # Back up old file if it exists
-        old_file = existing_script if (existing_script and existing_script.exists()) else (write_path if write_path.exists() else None)
-        if old_file and old_file.exists():
-            bak_path = old_file.with_suffix(".py.bak")
-            try:
-                bak_path.write_bytes(old_file.read_bytes())
-                backup_path = str(bak_path)
-            except OSError:
-                pass  # Non-fatal
-
-        try:
-            write_path.write_text(code, encoding="utf-8")
-        except OSError as exc:
-            return {"success": False, "error": f"Could not write helper file: {exc}"}
-
-        # Inject updated script path into update_fields below
-        arguments = dict(arguments)
-        arguments["script"] = str(write_path)
+    metadata_error = _validate_helper_metadata(arguments, require_all=False)
+    if metadata_error:
+        return {"success": False, "error": metadata_error}
 
     # Update path
     update_fields: dict = {}
-    for field_name in ("script", "description", "requirements", "input_schema", "output_schema"):
+    for field_name in ("description", "requirements", "input_schema", "output_schema", "code"):
         if field_name in arguments:
             update_fields[field_name] = arguments[field_name]
 
@@ -394,17 +379,22 @@ async def _handle_update_helper(arguments: dict) -> dict:
             _org_db = _BrixDB()
             existing_reg = registry.get(name)
             existing_db = _org_db.get_helper(name) if existing_reg else None
-            script_p = update_fields.get("script", str(existing_reg.script) if existing_reg else "")
             _org_db.upsert_helper(
                 name=name,
-                script_path=script_p,
+                script_path=(existing_db.get("script_path") if existing_db else f"db://{name}") or f"db://{name}",
                 description=update_fields.get(
                     "description",
                     existing_db.get("description", "") if existing_db else "",
                 ),
-                requirements=existing_db.get("requirements") if existing_db else [],
-                input_schema=existing_db.get("input_schema") if existing_db else {},
-                output_schema=existing_db.get("output_schema") if existing_db else {},
+                requirements=update_fields.get("requirements", existing_db.get("requirements") if existing_db else []),
+                input_schema=update_fields.get("input_schema", existing_db.get("input_schema") if existing_db else {}),
+                output_schema=update_fields.get("output_schema", existing_db.get("output_schema") if existing_db else {}),
+                code=update_fields.get("code", existing_db.get("code") if existing_db else None),
+                content_hash=(
+                    hashlib.sha256(update_fields["code"].encode("utf-8")).hexdigest()
+                    if "code" in update_fields
+                    else existing_db.get("content_hash", "") if existing_db else ""
+                ),
                 project=org_project,
                 tags=org_tags,
                 group_name=org_group,
@@ -441,8 +431,6 @@ async def _handle_update_helper(arguments: dict) -> dict:
         "updated_fields": updated_fields_list,
         "helper": _make_helper_dict(entry),
     }
-    if backup_path:
-        result["backup_path"] = backup_path
     if update_warnings:
         result["warnings"] = update_warnings
     return result
@@ -454,7 +442,6 @@ async def _handle_delete_helper(arguments: dict) -> dict:
 
     name = arguments.get("name", "").strip()
     force = bool(arguments.get("force", False))
-    delete_script = bool(arguments.get("delete_script", False))
     source = _extract_source(arguments)
 
     if not name:
@@ -477,8 +464,9 @@ async def _handle_delete_helper(arguments: dict) -> dict:
             "affected_pipelines": affected_pipelines,
         }
 
-    # Remove from registry
+    content_hash = getattr(entry, "content_hash", "") or None
     registry.remove(name)
+    deleted_cache_files = _delete_helper_cache_files(name, content_hash)
 
     _audit_db.write_audit_entry(
         tool="brix__delete_helper",
@@ -491,20 +479,8 @@ async def _handle_delete_helper(arguments: dict) -> dict:
         "deleted_helper": name,
         "affected_pipelines": affected_pipelines,
     }
-
-    # Delete helper files from managed helper roots by default so startup sync
-    # cannot re-register a deleted helper on the next container start.
-    if entry.script:
-        script_path = Path(entry.script)
-        should_delete_script = delete_script or _should_delete_helper_script(script_path)
-        if should_delete_script and script_path.exists():
-            try:
-                script_path.unlink()
-                result["deleted_script"] = str(script_path)
-            except OSError as exc:
-                result["script_delete_error"] = str(exc)
-        elif should_delete_script:
-            result["script_not_found"] = str(script_path)
+    if deleted_cache_files:
+        result["deleted_cache_files"] = deleted_cache_files
 
     return result
 

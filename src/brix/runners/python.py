@@ -1,8 +1,10 @@
 """Python script runner — executes scripts via subprocess."""
 import asyncio
+import hashlib
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from brix.runners.base import BaseRunner
@@ -11,6 +13,7 @@ from brix.runners._subprocess import _terminate_subprocess
 
 # Prefix that helper scripts write to stderr to emit intra-step progress
 BRIX_PROGRESS_PREFIX = "BRIX_PROGRESS:"
+HELPER_CACHE_DIR = Path("/tmp/brix-helpers")
 
 
 def _parse_brix_progress_line(line: str) -> dict | None:
@@ -60,6 +63,16 @@ def _extract_helper_params(step: Any) -> dict[str, Any]:
         source_params = _sanitize_user_params(config)
 
     return source_params
+
+
+def _write_helper_cache_file(helper_name: str, code: str, content_hash: str | None = None) -> Path:
+    """Write DB-backed helper code into a stable hash-named cache file."""
+    helper_hash = content_hash or hashlib.sha256(code.encode("utf-8")).hexdigest()
+    HELPER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = HELPER_CACHE_DIR / f"{helper_name}_{helper_hash}.py"
+    if not cache_path.exists():
+        cache_path.write_text(code, encoding="utf-8")
+    return cache_path
 
 
 class PythonRunner(BaseRunner):
@@ -123,7 +136,7 @@ class PythonRunner(BaseRunner):
                 from brix.helper_registry import HelperRegistry
 
                 registry = HelperRegistry()
-                entry = registry.get(helper)
+                helper_entry = registry.get(helper)
             except Exception as exc:
                 return {
                     "success": False,
@@ -131,18 +144,32 @@ class PythonRunner(BaseRunner):
                     "duration": time.monotonic() - start,
                 }
 
-            if entry is None:
+            if helper_entry is None:
                 return {
                     "success": False,
                     "error": f"Helper '{helper}' not found in registry",
                     "duration": time.monotonic() - start,
                 }
 
-            script = getattr(entry, "script", None)
-            if not script:
+            helper_code = getattr(helper_entry, "code", "") or registry.get_code(helper)
+            if not helper_code:
                 return {
                     "success": False,
-                    "error": f"Helper '{helper}' has no script path in registry",
+                    "error": f"Helper '{helper}' has no code in registry",
+                    "duration": time.monotonic() - start,
+                }
+            try:
+                script = str(
+                    _write_helper_cache_file(
+                        helper,
+                        helper_code,
+                        getattr(helper_entry, "content_hash", "") or None,
+                    )
+                )
+            except OSError as exc:
+                return {
+                    "success": False,
+                    "error": f"Failed to materialize helper '{helper}' cache file: {exc}",
                     "duration": time.monotonic() - start,
                 }
 

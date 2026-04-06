@@ -1,12 +1,11 @@
-"""Startup Disk-DB Sync for Brix — T-BRIX-INTEGRITY-01.
+"""Startup DB integrity sync for Brix.
 
 Runs on every container start (after migrations and seeding, before serving).
 Idempotent: safe to run multiple times with the same result.
 
 Syncs:
-  - Helpers: disk files not in DB get auto-registered
   - Pipelines: DB rows are normalized if migration is incomplete
-  - Orphans: triggers pointing to missing pipelines, helpers without files
+  - Orphans: triggers pointing to missing pipelines
   - Test artifacts: known test helper files cleaned from ~/.brix/helpers/
 """
 from __future__ import annotations
@@ -22,12 +21,6 @@ if TYPE_CHECKING:
 from brix.migrations import _normalize_pipeline_steps_common, _repair_brick_registry_v75
 
 logger = logging.getLogger(__name__)
-
-# Directories to scan for helpers
-_HELPER_SEARCH_PATHS = [
-    Path.home() / ".brix" / "helpers",
-    Path("/app/helpers"),
-]
 
 # Directories to scan for pipelines (recursive for _system/ etc.)
 _PIPELINE_SEARCH_PATHS = [
@@ -130,18 +123,8 @@ def _is_test_pipeline(name: str) -> bool:
 
 
 def _scan_helper_files() -> dict[str, Path]:
-    """Return {helper_name: Path} for all .py files in helper dirs."""
-    found: dict[str, Path] = {}
-    for search_dir in _HELPER_SEARCH_PATHS:
-        if not search_dir.exists():
-            continue
-        for f in sorted(search_dir.glob("*.py")):
-            name = f.stem
-            if name.startswith("__"):
-                continue
-            if name not in found:
-                found[name] = f
-    return found
+    """DB-only mode: helper files are no longer scanned from disk."""
+    return {}
 
 
 def _scan_pipeline_files() -> dict[str, Path]:
@@ -166,12 +149,10 @@ def run_startup_sync(db: "BrixDB") -> dict:
     summary = {
         "bricks_synced": 0,
         "tool_schemas_synced": 0,
-        "helpers_registered": 0,
         "pipelines_imported": 0,
         "pipelines_normalized": 0,
         "descriptions_backfilled": 0,
         "orphan_triggers": 0,
-        "orphan_helpers": 0,
         "test_artifacts_cleaned": 0,
     }
 
@@ -186,11 +167,6 @@ def run_startup_sync(db: "BrixDB") -> dict:
         logger.warning("startup_sync: tool schema sync failed: %s", exc)
 
     try:
-        summary["helpers_registered"] = _sync_helpers(db)
-    except Exception as exc:
-        logger.warning("startup_sync: helper sync failed: %s", exc)
-
-    try:
         summary["pipelines_normalized"] = _sync_pipelines(db)
     except Exception as exc:
         logger.warning("startup_sync: pipeline sync failed: %s", exc)
@@ -203,7 +179,6 @@ def run_startup_sync(db: "BrixDB") -> dict:
     try:
         orphans = _detect_orphans(db)
         summary["orphan_triggers"] = orphans["triggers"]
-        summary["orphan_helpers"] = orphans["helpers"]
     except Exception as exc:
         logger.warning("startup_sync: orphan detection failed: %s", exc)
 
@@ -214,15 +189,13 @@ def run_startup_sync(db: "BrixDB") -> dict:
 
     # Log the summary
     logger.info(
-        "startup_sync: helpers_registered=%d, pipelines_imported=%d, pipelines_normalized=%d, "
-        "descriptions_backfilled=%d, orphan_triggers=%d, orphan_helpers=%d, "
+        "startup_sync: pipelines_imported=%d, pipelines_normalized=%d, "
+        "descriptions_backfilled=%d, orphan_triggers=%d, "
         "test_artifacts_cleaned=%d",
-        summary["helpers_registered"],
         summary["pipelines_imported"],
         summary["pipelines_normalized"],
         summary["descriptions_backfilled"],
         summary["orphan_triggers"],
-        summary["orphan_helpers"],
         summary["test_artifacts_cleaned"],
     )
 
@@ -234,28 +207,8 @@ def run_startup_sync(db: "BrixDB") -> dict:
 
 
 def _sync_helpers(db: "BrixDB") -> int:
-    """Register helper .py files from disk that are not yet in the DB."""
-    disk_helpers = _scan_helper_files()
-    db_helpers = {h["name"] for h in db.list_helpers()}
-
-    registered = 0
-    for name, path in disk_helpers.items():
-        if name in db_helpers:
-            continue
-        if _is_test_helper(name):
-            continue
-        try:
-            db.upsert_helper(
-                name=name,
-                script_path=str(path),
-                description="",
-            )
-            logger.info("startup_sync: registered helper '%s' from %s", name, path)
-            registered += 1
-        except Exception as exc:
-            logger.warning("startup_sync: failed to register helper '%s': %s", name, exc)
-
-    return registered
+    """DB-only mode: helper startup sync is a no-op."""
+    return 0
 
 
 def _sync_pipelines(db: "BrixDB") -> int:
@@ -308,16 +261,6 @@ def _detect_orphans(db: "BrixDB") -> dict:
                 t["name"], t["pipeline"],
             )
             result["triggers"] += 1
-
-    # Orphan helpers: DB entries whose script file doesn't exist on disk
-    for h in db.list_helpers():
-        script_path = h.get("script_path", "")
-        if script_path and not Path(script_path).exists():
-            logger.warning(
-                "startup_sync: orphan helper '%s' — file not found: %s",
-                h["name"], script_path,
-            )
-            result["helpers"] += 1
 
     return result
 

@@ -541,6 +541,7 @@ _DDL = [
         created_at       TEXT NOT NULL,
         updated_at       TEXT NOT NULL,
         code             TEXT DEFAULT '',
+        content_hash     TEXT DEFAULT '',
         project          TEXT DEFAULT '',
         tags             TEXT DEFAULT '[]',
         group_name       TEXT DEFAULT ''
@@ -1229,6 +1230,10 @@ class BrixDB:
             # Idempotent migration: add cancel columns (T-BRIX-V6-BUG-03)
             try:
                 conn.execute("ALTER TABLE run ADD COLUMN cancel_reason TEXT")
+            except Exception:
+                pass  # Column already exists — ignore
+            try:
+                conn.execute("ALTER TABLE helper ADD COLUMN content_hash TEXT DEFAULT ''")
             except Exception:
                 pass  # Column already exists — ignore
             try:
@@ -2984,6 +2989,7 @@ class BrixDB:
         output_schema: Optional[dict] = None,
         helper_id: Optional[str] = None,
         code: Optional[str] = None,
+        content_hash: Optional[str] = None,
         project: Optional[str] = None,
         tags: Optional[list] = None,
         group_name: Optional[str] = None,
@@ -3002,6 +3008,7 @@ class BrixDB:
                 created_at = now
 
             has_code_col = self._column_exists(conn, "helper", "code")
+            has_content_hash = self._column_exists(conn, "helper", "content_hash")
             has_project = self._column_exists(conn, "helper", "project")
             has_tags = self._column_exists(conn, "helper", "tags")
             has_group = self._column_exists(conn, "helper", "group_name")
@@ -3032,6 +3039,11 @@ class BrixDB:
                 cols.append("code")
                 vals.append(code)
                 updates.append("code=excluded.code")
+
+            if has_content_hash and content_hash is not None:
+                cols.append("content_hash")
+                vals.append(content_hash)
+                updates.append("content_hash=excluded.content_hash")
 
             if has_project and project is not None:
                 cols.append("project")
@@ -3149,6 +3161,7 @@ class BrixDB:
         row["requirements"] = json.loads(row.get("requirements_json") or "[]")
         row["input_schema"] = json.loads(row.get("input_schema_json") or "{}")
         row["output_schema"] = json.loads(row.get("output_schema_json") or "{}")
+        row["content_hash"] = row.get("content_hash") or ""
         return row
 
     def get_pipeline_yaml_content(self, name: str) -> Optional[str]:
