@@ -12,6 +12,16 @@ from brix.pipeline_store import PipelineStore
 logger = logging.getLogger(__name__)
 
 
+_HELPER_STORAGE_NOTE = (
+    "## Helper Storage since v8.0.0\n\n"
+    "Helpers sind seit v8.0.0 DB-only.\n"
+    "Der `code`-Wert in der DB ist die Source of Truth.\n"
+    "Das Feld `script` ist legacy Metadaten und zeigt nicht verlaesslich an, ob Code existiert.\n"
+    "`get_helper` zeigt deshalb `has_code`, `code_length`, `code_preview` und `source='db'`.\n"
+    "Nutze `legacy_script_path` nur fuer Alt-Kontext oder Migrationen."
+)
+
+
 def _get_help_topics() -> tuple[dict[str, str], dict[str, str]]:
     """Return (topics_dict, descriptions_dict) — from DB (DB-First).
 
@@ -29,6 +39,17 @@ def _get_help_topics() -> tuple[dict[str, str], dict[str, str]]:
                 descriptions[r["name"]] = r["title"]
     except Exception as e:
         logger.debug("Could not load help_topics from DB: %s", e)
+    helper_topic = topics.get("helpers", "")
+    if _HELPER_STORAGE_NOTE not in helper_topic:
+        topics["helpers"] = (
+            f"{helper_topic}\n\n{_HELPER_STORAGE_NOTE}".strip()
+            if helper_topic
+            else f"=== Helper-Scripts ===\n\n{_HELPER_STORAGE_NOTE}"
+        )
+        descriptions.setdefault(
+            "helpers",
+            "create_helper, register_helper, get_helper, DB-only helper storage.",
+        )
     return topics, descriptions
 
 
@@ -316,6 +337,14 @@ async def _handle_get_tips(arguments: dict) -> dict:
     # T-BRIX-TIPS-02: Load registry content (lessons, error patterns, best practices)
     registry_lines = _load_registry_content()
 
+    helper_tip_lines = [
+        "## HELPERS (v8.0.0+)",
+        "  Helpers sind DB-only. Der DB-`code` ist die Source of Truth.",
+        "  Das alte `script`-Feld ist legacy Metadaten und kein verlaesslicher Code-Indikator.",
+        "  `get_helper` zeigt `has_code`, `code_length`, `code_preview` und `source='db'`.",
+        "",
+    ]
+
     tips = [
         *integrity_alert_lines,
         *legacy_alert_lines,
@@ -323,6 +352,7 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "=== Brix Quick Reference ===",
         "",
         *db_tip_lines,
+        *helper_tip_lines,
         *registry_lines,
         "## VERFÜGBARE BRICK-KATEGORIEN",
         *category_lines,

@@ -289,9 +289,17 @@ async def _handle_get_helper(arguments: dict) -> dict:
             "success": False,
             "error": f"Helper '{name}' not found in registry",
         }
+    helper = _make_helper_dict(entry)
+    code = entry.code or ""
+    helper.pop("script", None)
+    helper["legacy_script_path"] = entry.script
+    helper["source"] = "db"
+    helper["has_code"] = bool(code)
+    helper["code_length"] = len(code)
+    helper["code_preview"] = code[:200]
     return {
         "success": True,
-        "helper": _make_helper_dict(entry),
+        "helper": helper,
     }
 
 
