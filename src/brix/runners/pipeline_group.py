@@ -91,7 +91,13 @@ class PipelineGroupRunner(BaseRunner):
 
         shared_params: dict = getattr(step, "shared_params", {}) or {}
         # concurrency from step; default 3 for pipeline_group
-        concurrency: int = getattr(step, "concurrency", 3)
+        raw_concurrency = getattr(step, "concurrency", 3)
+        try:
+            concurrency = int(raw_concurrency)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid concurrency value for pipeline_group step: {raw_concurrency!r}"
+            ) from exc
         concurrency = max(1, concurrency)
         semaphore = asyncio.Semaphore(concurrency)
 

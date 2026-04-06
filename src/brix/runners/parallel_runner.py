@@ -41,7 +41,13 @@ class ParallelStepRunner(BaseRunner):
         if not sub_steps:
             return {"success": True, "data": {}, "duration": 0.0}
 
-        concurrency = getattr(step, "concurrency", len(sub_steps))
+        raw_concurrency = getattr(step, "concurrency", len(sub_steps))
+        try:
+            concurrency = int(raw_concurrency)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid concurrency value for parallel step: {raw_concurrency!r}"
+            ) from exc
         semaphore = asyncio.Semaphore(max(1, concurrency))
 
         from brix.models import Pipeline
