@@ -41,23 +41,25 @@ def _extract_helper_params(step: Any) -> dict[str, Any]:
             return step.get(field)
         return getattr(step, field, None)
 
+    def _sanitize_user_params(raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        nested_params = raw.get("params")
+        source = dict(nested_params) if isinstance(nested_params, dict) else dict(raw)
+        return {
+            key: value
+            for key, value in source.items()
+            if not key.startswith("_") and key not in {"helper", "script"}
+        }
+
     params = _step_value("params")
-    if isinstance(params, dict):
-        source_params = dict(params)
-    else:
-        source_params = {}
+    source_params = _sanitize_user_params(params)
 
     config = _step_value("config")
     if not source_params and isinstance(config, dict):
-        config_params = config.get("params")
-        if isinstance(config_params, dict):
-            source_params = dict(config_params)
+        source_params = _sanitize_user_params(config)
 
-    return {
-        key: value
-        for key, value in source_params.items()
-        if not key.startswith("_") and key not in {"helper", "script"}
-    }
+    return source_params
 
 
 class PythonRunner(BaseRunner):

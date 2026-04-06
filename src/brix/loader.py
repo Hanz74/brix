@@ -488,12 +488,14 @@ class PipelineLoader:
 
         Returns a dict with the rendered ``params`` merged with rendered
         type-specific fields stored under ``_url``, ``_command``, ``_args``,
-        and ``_headers`` keys.
+        ``_headers``, and ``_config`` keys.
         """
         rendered: dict = {}
 
         if step.params:
             rendered = self.render_value(step.params, context)
+        if getattr(step, "config", None):
+            rendered["_config"] = self.render_value(step.config, context)
 
         # Render type-specific fields into reserved underscore keys so that
         # callers can retrieve them without risk of collision with user-defined

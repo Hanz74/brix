@@ -818,6 +818,24 @@ class TestBuilderHandlers:
         assert "limit" in pipeline["input"]
 
     @pytest.mark.asyncio
+    async def test_update_pipeline_input_alias(self, tmp_path, monkeypatch):
+        """update_pipeline also accepts the raw input key as an alias."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({"name": "test-upd-input-alias"})
+        new_input = {
+            "folder": {"type": "string", "description": "Target folder"},
+        }
+        result = await _handle_update_pipeline({
+            "name": "test-upd-input-alias",
+            "input": new_input,
+        })
+        assert result["success"] is True
+        assert "input_schema" in result["changed_fields"]
+        pipeline = await _handle_get_pipeline({"pipeline_id": "test-upd-input-alias"})
+        assert pipeline["input"]["folder"]["type"] == "string"
+        assert pipeline["input"]["folder"]["description"] == "Target folder"
+
+    @pytest.mark.asyncio
     async def test_update_pipeline_multiple_fields(self, tmp_path, monkeypatch):
         """update_pipeline can update description and version in one call."""
         monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)

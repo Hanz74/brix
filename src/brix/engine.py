@@ -2626,7 +2626,7 @@ class _RenderedStep:
         self.script = step.script
         self.server = step.server
         self.tool = step.tool
-        self.config = getattr(step, "config", None)
+        self.config = rendered.get("_config") if "_config" in rendered else getattr(step, "config", None)
         self.pipeline = rendered.get("_pipeline") or step.pipeline
         self.params = rendered if rendered else _step_config_dict(step)
         # set runner: rendered values under _values key, fall back to raw values field
