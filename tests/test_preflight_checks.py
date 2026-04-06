@@ -37,8 +37,8 @@ def test_brick_schema_missing_required_field_warns(monkeypatch):
     result = PipelineValidator().validate(pipeline)
 
     assert result.is_valid
-    assert any("does not match schema" in warning for warning in result.warnings)
-    assert any("required_field" in warning for warning in result.warnings)
+    assert any('missing required field "required_field"' in warning for warning in result.warnings)
+    assert any('get_brick_schema(name="script.python")' in warning for warning in result.warnings)
 
 
 def test_jinja_unknown_name_warns():
@@ -57,7 +57,8 @@ def test_jinja_unknown_name_warns():
     result = PipelineValidator().validate(pipeline)
 
     assert result.is_valid
-    assert any("unknown name 'mystery_name'" in warning for warning in result.warnings)
+    assert any("template references unknown 'mystery_name'" in warning for warning in result.warnings)
+    assert any("Available step IDs" in warning for warning in result.warnings)
 
 
 def test_jinja_syntax_error_is_error():
@@ -82,7 +83,8 @@ def test_missing_sub_pipeline_is_error(monkeypatch):
     result = PipelineValidator().validate(pipeline)
 
     assert not result.is_valid
-    assert any("sub-pipeline 'does-not-exist' does not exist" in error for error in result.errors)
+    assert any("sub-pipeline 'does-not-exist' not found" in error for error in result.errors)
+    assert any("list_pipelines()" in error for error in result.errors)
 
 
 def test_missing_connection_is_error(monkeypatch):
@@ -108,7 +110,8 @@ def test_missing_connection_is_error(monkeypatch):
     result = PipelineValidator().validate(pipeline)
 
     assert not result.is_valid
-    assert any("Connection 'missing_conn' does not exist" in error for error in result.errors)
+    assert any('connection "missing_conn" not found' in error for error in result.errors)
+    assert any("connection_list()" in error for error in result.errors)
 
 
 def test_known_step_refs_and_brix_globals_do_not_warn():

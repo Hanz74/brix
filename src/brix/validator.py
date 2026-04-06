@@ -1,4 +1,5 @@
 """Pipeline validation without execution."""
+import difflib
 import os
 import re
 from pathlib import Path
@@ -61,11 +62,20 @@ class ValidationResult:
     def add_check(self, msg: str):
         self.checks.append(msg)
 
-    def add_error(self, msg: str):
-        self.errors.append(msg)
+    @staticmethod
+    def _format_finding(msg: str, hint: str | None = None, schema_ref: str | None = None) -> str:
+        parts = [msg]
+        if hint:
+            parts.append(f"Hint: {hint}")
+        if schema_ref:
+            parts.append(f"Schema: {schema_ref}")
+        return " | ".join(parts)
 
-    def add_warning(self, msg: str):
-        self.warnings.append(msg)
+    def add_error(self, msg: str, hint: str | None = None, schema_ref: str | None = None):
+        self.errors.append(self._format_finding(msg, hint=hint, schema_ref=schema_ref))
+
+    def add_warning(self, msg: str, hint: str | None = None, schema_ref: str | None = None):
+        self.warnings.append(self._format_finding(msg, hint=hint, schema_ref=schema_ref))
 
 
 class PipelineValidator:
@@ -235,6 +245,8 @@ class PipelineValidator:
 
         # 14. Preflight validation (E-BRIX-PREFLIGHT)
         if level in {"standard", "deep"}:
+            self._check_deprecated_step_types(pipeline, result)
+            self._check_config_param_misplacement(pipeline, result)
             self._check_brick_config_schema(pipeline, result)
             self._check_jinja_ast(pipeline, result)
             self._check_sub_pipeline_existence(pipeline, result)
@@ -263,6 +275,34 @@ class PipelineValidator:
             result.add_check("All required input parameters present")
         return result
 
+    @staticmethod
+    def _schema_ref(brick_name: str | None) -> str | None:
+        if not brick_name:
+            return None
+        return f'get_brick_schema(name="{brick_name}")'
+
+    def _step_schema_ref(self, step: Any) -> str | None:
+        step_type = getattr(step, "type", None) or ""
+        return self._schema_ref(LEGACY_ALIASES.get(step_type, step_type))
+
+    @staticmethod
+    def _type_name(value: Any) -> str:
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, int) and not isinstance(value, bool):
+            return "integer"
+        if isinstance(value, float):
+            return "number"
+        if isinstance(value, str):
+            return "string"
+        if isinstance(value, list):
+            return "array"
+        if isinstance(value, dict):
+            return "object"
+        return type(value).__name__
+
     def _check_step_references(self, step, all_step_ids, pipeline, result):
         """Check that step references point to earlier steps."""
         step_idx = next(i for i, s in enumerate(pipeline.steps) if s.id == step.id)
@@ -284,11 +324,13 @@ class PipelineValidator:
                     if ref not in earlier_ids and ref != "input" and ref not in input_keys:
                         if ref in all_step_ids:
                             result.add_error(
-                                f"Step '{step.id}' references future step '{ref}'"
+                                f"Step '{step.id}' references future step '{ref}'",
+                                hint=f"Only earlier step IDs are available here: {sorted(earlier_ids)}",
                             )
                         elif ref not in ["item", "credentials"]:
                             result.add_warning(
-                                f"Step '{step.id}' references unknown '{ref}'"
+                                f"Step '{step.id}' references unknown '{ref}'",
+                                hint=f"Available step IDs: {all_step_ids}",
                             )
 
     def _check_when_default(self, when_step, all_steps, result):
@@ -307,7 +349,8 @@ class PipelineValidator:
                     if "default" not in str(field):
                         result.add_warning(
                             f"Step '{step.id}' references conditional step '{when_step.id}' "
-                            f"without | default() — may fail if skipped (D-16)"
+                            f"without | default() — may fail if skipped (D-16)",
+                            hint=f"Use something like {{ {when_step.id}.output | default(...) }} when '{when_step.id}' may be skipped.",
                         )
 
     def _check_helper_reference(self, step, result) -> None:
@@ -325,7 +368,9 @@ class PipelineValidator:
         if entry is None:
             result.add_error(
                 f"Step '{step.id}': Helper '{step.helper}' not found in registry. "
-                f"Register it with: brix__register_helper"
+                f"Register it with: brix__register_helper",
+                hint="Use list_helpers() to inspect registered helpers or register the missing helper first.",
+                schema_ref=self._schema_ref("script.python"),
             )
             return
 
@@ -342,7 +387,9 @@ class PipelineValidator:
                 if param_key not in schema_properties:
                     result.add_warning(
                         f"Step '{step.id}': param '{param_key}' is not declared in "
-                        f"helper '{step.helper}' input_schema (T-BRIX-V4-BUG-12)"
+                        f"helper '{step.helper}' input_schema (T-BRIX-V4-BUG-12)",
+                        hint=f"Check helper '{step.helper}' input_schema or remove the unexpected param.",
+                        schema_ref=self._schema_ref("script.python"),
                     )
 
     def _check_mcp_params(self, step, result):
@@ -375,7 +422,9 @@ class PipelineValidator:
             if req_key not in provided_keys:
                 result.add_warning(
                     f"Step '{step.id}': MCP tool '{step.tool}' requires param '{req_key}' "
-                    f"but it is not set in step params (T-BRIX-V4-21)"
+                    f"but it is not set in step params (T-BRIX-V4-21)",
+                    hint=f"Add '{req_key}' to step params or make it optional in the tool schema.",
+                    schema_ref=self._schema_ref("mcp.call"),
                 )
 
     def _get_runner_config_schema(self, runner_name: str) -> dict | None:
@@ -462,11 +511,41 @@ class PipelineValidator:
             if not schema:
                 continue
             instance = self._step_to_validation_config(step)
+            schema_ref = self._step_schema_ref(step)
             try:
                 jsonschema.validate(instance=instance, schema=schema)
             except ValidationError as exc:
+                if exc.validator == "required":
+                    missing_field = exc.message.split("'")[1] if "'" in exc.message else str(exc.validator_value)
+                    result.add_warning(
+                        f'Step "{step.id}": missing required field "{missing_field}".',
+                        hint=f'{schema_ref} shows required fields.' if schema_ref else "Check the brick schema for required fields.",
+                        schema_ref=schema_ref,
+                    )
+                    continue
+
+                if exc.validator == "type":
+                    field_name = str(exc.path[-1]) if exc.path else "<value>"
+                    actual_type = self._type_name(exc.instance)
+                    expected_type = (
+                        ", ".join(exc.validator_value)
+                        if isinstance(exc.validator_value, list)
+                        else str(exc.validator_value)
+                    )
+                    hint = "Use the value type required by the schema."
+                    if expected_type == "integer":
+                        hint = "Use int value or {{ input.limit | int }}"
+                    result.add_warning(
+                        f'Step "{step.id}": "{field_name}" is {actual_type}, schema expects {expected_type}.',
+                        hint=hint,
+                        schema_ref=schema_ref,
+                    )
+                    continue
+
                 result.add_warning(
-                    f"Step '{step.id}': config does not match schema: {exc.message}"
+                    f"Step '{step.id}': config does not match schema: {exc.message}",
+                    hint="Align the step fields with the brick schema.",
+                    schema_ref=schema_ref,
                 )
 
     @staticmethod
@@ -541,7 +620,8 @@ class PipelineValidator:
     def _check_jinja_ast(self, pipeline: Pipeline, result: ValidationResult) -> None:
         """Parse Jinja templates and warn on unknown root names."""
         env = jinja2.Environment()
-        known_names = {step.id for step in pipeline.steps}
+        step_ids = [step.id for step in pipeline.steps]
+        known_names = set(step_ids)
         known_names.update(
             {
                 "input",
@@ -593,7 +673,8 @@ class PipelineValidator:
                     ast = env.parse(template)
                 except jinja2.TemplateSyntaxError as exc:
                     result.add_error(
-                        f"Step '{step.id}': Jinja2 syntax error in {field_path}: {exc}"
+                        f"Step '{step.id}': Jinja2 syntax error in {field_path}: {exc}",
+                        hint="Check brackets and filters.",
                     )
                     continue
 
@@ -601,8 +682,51 @@ class PipelineValidator:
                 visitor.visit(ast)
                 unknown = sorted(name for name in visitor.names if name not in known_names)
                 for name in unknown:
+                    suggestion = difflib.get_close_matches(name, step_ids, n=1)
+                    suggestion_text = f' Did you mean "{suggestion[0]}"?' if suggestion else ""
                     result.add_warning(
-                        f"Step '{step.id}': Jinja2 template in {field_path} references unknown name '{name}'"
+                        f"Step '{step.id}': template references unknown '{name}' in {field_path}.",
+                        hint=f"Available step IDs: {step_ids}.{suggestion_text}".strip(),
+                    )
+
+    def _check_deprecated_step_types(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn on legacy flat step types that have dot-notation replacements."""
+        for step in pipeline.steps:
+            replacement = LEGACY_ALIASES.get(step.type)
+            if not replacement:
+                continue
+            result.add_warning(
+                f'Step "{step.id}": type "{step.type}" is deprecated.',
+                hint=f'Use "{replacement}" instead. See list_bricks().',
+                schema_ref=self._schema_ref(replacement),
+            )
+
+    def _check_config_param_misplacement(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when runner-consumed fields are placed in params instead of config."""
+        field_map: dict[str, tuple[str, ...]] = {
+            "flow.pipeline": ("pipeline",),
+            "script.python": ("helper", "script"),
+            "db.query": ("connection",),
+            "db.exec": ("connection",),
+            "db.upsert": ("connection",),
+            "mcp.call": ("server", "tool"),
+            "script.cli": ("command",),
+        }
+        for step in pipeline.steps:
+            effective_type = LEGACY_ALIASES.get(step.type, step.type)
+            candidate_fields = field_map.get(effective_type)
+            if not candidate_fields:
+                continue
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+            if not isinstance(params, dict):
+                continue
+            for field in candidate_fields:
+                if field in params and field not in config:
+                    result.add_warning(
+                        f'Step "{step.id}": "{field}" found in params but should be in config.',
+                        hint=f'{self._schema_ref(effective_type)} shows config structure.' if effective_type else "Move the field into config.",
+                        schema_ref=self._schema_ref(effective_type),
                     )
 
     @staticmethod
@@ -628,11 +752,13 @@ class PipelineValidator:
                 store.load(pipeline_name)
             except FileNotFoundError:
                 result.add_error(
-                    f"Step '{step.id}': sub-pipeline '{pipeline_name}' does not exist"
+                    f"Step '{step.id}': sub-pipeline '{pipeline_name}' not found.",
+                    hint="list_pipelines() shows available pipelines.",
+                    schema_ref=self._schema_ref("flow.pipeline"),
                 )
 
-    def _collect_connection_names(self, pipeline: Pipeline) -> set[str]:
-        names: set[str] = set()
+    def _collect_connection_refs(self, pipeline: Pipeline) -> list[tuple[str, str]]:
+        refs: list[tuple[str, str]] = []
         for step in pipeline.steps:
             params = getattr(step, "params", None) or {}
             config = getattr(step, "config", None) or {}
@@ -643,13 +769,13 @@ class PipelineValidator:
             )
             if not connection_name or self._is_dynamic_ref(connection_name):
                 continue
-            names.add(connection_name)
-        return names
+            refs.append((step.id, connection_name))
+        return refs
 
     def _check_connection_existence(self, pipeline: Pipeline, result: ValidationResult) -> None:
         """Ensure statically referenced named connections exist."""
-        names = self._collect_connection_names(pipeline)
-        if not names:
+        refs = self._collect_connection_refs(pipeline)
+        if not refs:
             return
 
         try:
@@ -661,14 +787,18 @@ class PipelineValidator:
             result.add_warning(f"Could not verify connection existence: {exc}")
             return
 
-        for name in sorted(names):
+        for step_id, name in refs:
             if name not in known:
-                result.add_error(f"Connection '{name}' does not exist")
+                result.add_error(
+                    f'Step "{step_id}": connection "{name}" not found.',
+                    hint="connection_list() shows registered connections.",
+                    schema_ref=self._schema_ref("db.query"),
+                )
 
     def _check_connection_health(self, pipeline: Pipeline, result: ValidationResult) -> None:
         """Active connection ping for deep validation mode."""
-        names = self._collect_connection_names(pipeline)
-        if not names:
+        refs = self._collect_connection_refs(pipeline)
+        if not refs:
             return
 
         try:
@@ -679,7 +809,11 @@ class PipelineValidator:
             result.add_warning(f"Could not initialize connection tests: {exc}")
             return
 
-        for name in sorted(names):
+        seen: set[str] = set()
+        for _, name in refs:
+            if name in seen:
+                continue
+            seen.add(name)
             test_result = manager.test(name)
             if test_result.get("success"):
                 result.add_check(f"Connection '{name}': test passed")
