@@ -75,26 +75,44 @@ class PythonRunner(BaseRunner):
 
         script = (
             _step_value("script")
-            or _step_value("helper")
             or params.get("script")
-            or params.get("helper")
             or config.get("script")
+        )
+        helper = (
+            _step_value("helper")
+            or params.get("helper")
             or config.get("helper")
         )
-        if not script:
+        if not script and not helper:
             return {"success": False, "error": "Python step needs 'script' or 'helper' field", "duration": 0.0}
 
-        # Resolve helper name to path via DB (helper_registry)
-        # If script doesn't look like a path, try the registry
-        if not script.startswith("/") and not script.startswith("./") and "/" not in script and not script.endswith(".py"):
+        if not script and helper:
             try:
                 from brix.helper_registry import HelperRegistry
+
                 registry = HelperRegistry()
-                entry = registry.get(script)
-                if entry and entry.get("script"):
-                    script = entry["script"]
-            except Exception:
-                pass  # Fall through to original behavior
+                entry = registry.get(helper)
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "error": f"Failed to resolve helper '{helper}' from registry: {exc}",
+                    "duration": time.monotonic() - start,
+                }
+
+            if entry is None:
+                return {
+                    "success": False,
+                    "error": f"Helper '{helper}' not found in registry",
+                    "duration": time.monotonic() - start,
+                }
+
+            script = getattr(entry, "script", None)
+            if not script:
+                return {
+                    "success": False,
+                    "error": f"Helper '{helper}' has no script path in registry",
+                    "duration": time.monotonic() - start,
+                }
 
         # Build the command: python3 <script> <json_params>
         # Params are passed as JSON string in sys.argv[1]
