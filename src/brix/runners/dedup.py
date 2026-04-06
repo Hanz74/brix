@@ -165,12 +165,9 @@ class DedupRunner(BaseRunner):
         self.report_progress(100.0, "done", done=len(result), total=original_count)
         return {
             "success": True,
-            "data": {
-                "items": result,
-                "removed": removed,
-                "total": original_count,
-            },
+            "data": result,
             "duration": duration,
             "items_count": len(result),
             "original_count": original_count,
+            "removed_count": removed,
         }

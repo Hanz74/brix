@@ -96,10 +96,7 @@ class FlattenRunner(BaseRunner):
         self.report_progress(100.0, "done", done=len(result), total=len(input_data))
         return {
             "success": True,
-            "data": {
-                "items": result,
-                "count": len(result),
-            },
+            "data": result,
             "duration": duration,
             "items_count": len(result),
         }
