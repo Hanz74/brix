@@ -84,6 +84,12 @@ def run_integrity_checks(db: "BrixDB") -> dict:
     except Exception as exc:
         logger.warning("integrity: check_helper_references failed: %s", exc)
 
+    try:
+        org_issues = _check_entity_org_metadata(db)
+        issues.extend(org_issues)
+    except Exception as exc:
+        logger.warning("integrity: check_entity_org_metadata failed: %s", exc)
+
     if issues:
         summary = "; ".join(f"[{i['code']}] {i['message']}" for i in issues)
         logger.warning("integrity: %d issue(s) found: %s", len(issues), summary)
@@ -378,5 +384,79 @@ def _check_helper_references(
             "severity": "warning",
             "steps": bad_refs,
         })
+
+
+def _check_entity_org_metadata(db: "BrixDB") -> list[dict]:
+    """Check pipeline, helper, and trigger_group rows for missing project/description.
+
+    Returns a list of issue dicts, each with keys:
+        code, severity, entity_type, entity_name, message
+    """
+    issues: list[dict] = []
+
+    _TABLES = [
+        ("pipeline", "pipeline"),
+        ("helper", "helper"),
+        ("trigger_group", "trigger_group"),
+    ]
+
+    for table, entity_type in _TABLES:
+        try:
+            with db._connect() as conn:  # type: ignore[attr-defined]
+                import sqlite3 as _sqlite3
+                conn.row_factory = _sqlite3.Row
+                # Check table exists
+                tbl_check = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ).fetchone()
+                if not tbl_check:
+                    continue
+
+                # table comes from _TABLES allowlist above — safe for interpolation
+                _ALLOWED = {t[0] for t in _TABLES}
+                assert table in _ALLOWED, f"unexpected table: {table}"  # noqa: S101
+                rows = conn.execute(  # noqa: S608
+                    f"SELECT name, project, description FROM {table}"  # nosec B608
+                ).fetchall()
+
+        except Exception as exc:
+            logger.warning("integrity: org_metadata check failed for table '%s': %s", table, exc)
+            continue
+
+        # pipeline and helper missing-project is already reported by
+        # _check_entities_without_project (codes ENTITY_NO_PROJECT /
+        # HELPER_NO_PROJECT).  Only report MISSING_PROJECT here for entity
+        # types NOT covered by that check (e.g. trigger_group).
+        _skip_project_check = {"pipeline", "helper"}
+
+        for row in rows:
+            name = row["name"]
+            project = (row["project"] or "").strip()
+            description = (row["description"] or "").strip()
+
+            if not project and entity_type not in _skip_project_check:
+                issues.append({
+                    "code": "MISSING_PROJECT",
+                    "severity": "info",
+                    "entity_type": entity_type,
+                    "entity_name": name,
+                    "message": (
+                        f"{entity_type} '{name}' has no project assigned."
+                    ),
+                })
+
+            if not description:
+                issues.append({
+                    "code": "MISSING_DESCRIPTION",
+                    "severity": "info",
+                    "entity_type": entity_type,
+                    "entity_name": name,
+                    "message": (
+                        f"{entity_type} '{name}' has no description."
+                    ),
+                })
+
+    return issues
 
 
