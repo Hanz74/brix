@@ -122,13 +122,8 @@ class DbQueryRunner(BaseRunner):
     named placeholders — this delegates escaping to the DB driver and avoids
     SQL-injection.
 
-    Result format::
-
-        {
-            "rows":      [...],      # list of row dicts
-            "row_count": <int>,
-            "columns":   [...]       # column names (order from cursor)
-        }
+    Step output ``data`` is the list of row dicts directly. Any auxiliary
+    information is returned as metadata on the runner result.
     """
 
     # ------------------------------------------------------------------
@@ -264,15 +259,18 @@ class DbQueryRunner(BaseRunner):
             }
 
         columns: list[str] = list(rows[0].keys()) if rows else []
-        data = {
-            "rows": rows,
-            "row_count": len(rows),
-            "columns": columns,
-        }
 
         duration = time.monotonic() - start
         self.report_progress(100, f"{len(rows)} rows returned")
-        return {"success": True, "data": data, "duration": duration}
+        return {
+            "success": True,
+            "data": rows,
+            "metadata": {
+                "row_count": len(rows),
+                "columns": columns,
+            },
+            "duration": duration,
+        }
 
     # ------------------------------------------------------------------
     # Helpers

@@ -105,23 +105,25 @@ async def test_select_all_rows(sqlite_dsn):
 
     assert result["success"] is True
     data = result["data"]
-    assert data["row_count"] == 2
-    assert data["rows"][0]["name"] == "Alice"
-    assert data["rows"][1]["name"] == "Bob"
-    assert set(data["columns"]) == {"id", "name", "age"}
+    assert isinstance(data, list)
+    assert len(data) == 2
+    assert data[0]["name"] == "Alice"
+    assert data[1]["name"] == "Bob"
+    assert result["metadata"]["row_count"] == 2
+    assert set(result["metadata"]["columns"]) == {"id", "name", "age"}
 
 
 async def test_empty_result(sqlite_dsn):
-    """SELECT with no matching rows returns empty list, row_count=0."""
+    """SELECT with no matching rows returns an empty list."""
     runner = DbQueryRunner()
     step = _Step(connection=sqlite_dsn, query="SELECT * FROM users WHERE id = 999")
     result = await runner.execute(step, context=None)
 
     assert result["success"] is True
     data = result["data"]
-    assert data["row_count"] == 0
-    assert data["rows"] == []
-    assert data["columns"] == []
+    assert data == []
+    assert result["metadata"]["row_count"] == 0
+    assert result["metadata"]["columns"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +142,8 @@ async def test_parameterized_query(sqlite_dsn):
     result = await runner.execute(step, context=None)
 
     assert result["success"] is True
-    assert result["data"]["row_count"] == 1
-    assert result["data"]["rows"][0]["name"] == "Alice"
+    assert len(result["data"]) == 1
+    assert result["data"][0]["name"] == "Alice"
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +162,8 @@ async def test_jinja2_in_query(sqlite_dsn):
     result = await runner.execute(step, context=ctx)
 
     assert result["success"] is True
-    assert result["data"]["row_count"] == 1
-    assert result["data"]["rows"][0]["name"] == "Alice"
+    assert len(result["data"]) == 1
+    assert result["data"][0]["name"] == "Alice"
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +183,7 @@ async def test_connection_manager_resolution(sqlite_dsn):
         result = await runner.execute(step, context=None)
 
     assert result["success"] is True
-    assert result["data"]["row_count"] == 2
+    assert len(result["data"]) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -248,5 +250,5 @@ async def test_in_memory_sqlite():
     result = await runner.execute(step, context=None)
 
     assert result["success"] is True
-    assert result["data"]["row_count"] == 1
-    assert result["data"]["rows"][0]["value"] == 1
+    assert len(result["data"]) == 1
+    assert result["data"][0]["value"] == 1

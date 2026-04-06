@@ -742,7 +742,7 @@ class TestIntegration:
         assert query_result["success"] is True, (
             f"db.query failed: {query_result.get('error')}"
         )
-        all_rows = query_result["data"]["rows"]
+        all_rows = query_result["data"]
         assert len(all_rows) == 3, f"Expected 3 rows, got {len(all_rows)}"
 
         # 3b. Run flow.filter directly

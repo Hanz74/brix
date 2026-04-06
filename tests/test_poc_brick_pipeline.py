@@ -192,10 +192,10 @@ class TestRunnerLevelE2E:
 
         assert result["success"] is True
         data = result["data"]
-        assert data["row_count"] == 4
-        assert data["columns"] == ["id", "text"]
-        assert data["rows"][0]["id"] == "doc1"
-        assert "AGB" in data["rows"][0]["text"]
+        assert len(data) == 4
+        assert result["metadata"]["columns"] == ["id", "text"]
+        assert data[0]["id"] == "doc1"
+        assert "AGB" in data[0]["text"]
 
     @pytest.mark.asyncio
     async def test_specialist_runner_detects_german_marker(self):
@@ -277,7 +277,7 @@ class TestRunnerLevelE2E:
         )
         query_result = await query_runner.execute(query_step, _FakeContext())
         assert query_result["success"] is True
-        rows = query_result["data"]["rows"]
+        rows = query_result["data"]
         assert len(rows) == 4
 
         # Step 2: extract.specialist → Sprache für jeden Text erkennen
