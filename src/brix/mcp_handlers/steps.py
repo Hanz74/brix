@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from brix.mcp_handlers._shared import (
     _registry,
@@ -15,10 +16,15 @@ from brix.mcp_handlers._shared import (
     record_schema_consultation,
     was_schema_consulted,
     _normalize_step_config,
+    _find_step_recursive,
 )
 from brix.bricks.types import is_compatible, suggest_converter
+from brix.db import _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS
 from brix.pipeline_store import PipelineStore
 from brix.engine import LEGACY_ALIASES
+from brix.loader import PipelineLoader
+from brix.models import Step
+from brix.validator import PipelineValidator
 
 _logger = logging.getLogger(__name__)
 
@@ -604,6 +610,231 @@ async def _handle_get_step(arguments: dict) -> dict:
         "pipeline_name": pipeline_name,
         "step_id": step_id,
         "step": step,
+    }
+
+
+def _diagnose_rendered_value(
+    loader: PipelineLoader,
+    value: Any,
+    context: dict,
+    *,
+    field_name: str,
+    warnings: list[str],
+) -> Any:
+    """Render a single template field and capture rendering failures as warnings."""
+    if value in (None, ""):
+        return None
+    try:
+        if isinstance(value, str):
+            if any(token in value for token in ("{{", "{%", "{#")):
+                return loader.render_value(value, context)
+            return value
+        return loader.render_value(value, context)
+    except Exception as exc:
+        warnings.append(f"{field_name}: render failed: {exc}")
+        return None
+
+
+def _step_user_fields(raw_step: dict) -> set[str]:
+    """Return runner-consumed user fields for schema/extra diagnostics."""
+    excluded = {
+        "id",
+        "type",
+        "enabled",
+        "params",
+        "config",
+        "when",
+        "foreach",
+        "parallel",
+        "concurrency",
+        "batch_size",
+        "flat_output",
+        "else_of",
+        "on_error",
+        "retry_profile",
+        "timeout",
+        "fetch_all_pages",
+        "progress",
+        "requirements",
+        "input_schema",
+        "output_schema",
+        "depends_on",
+        "cache",
+        "circuit_breaker",
+        "rate_limit",
+        "compensate",
+        "persist_output",
+        "pause_before",
+        "persist_data",
+        "profile",
+    }
+    fields = {
+        key
+        for key, value in raw_step.items()
+        if key not in excluded and value is not None
+    }
+    params = raw_step.get("params")
+    if isinstance(params, dict):
+        fields.update(params.keys())
+    config = raw_step.get("config")
+    if isinstance(config, dict):
+        fields.update(config.keys())
+    return fields
+
+
+async def _handle_diagnose_step(arguments: dict) -> dict:
+    """Diagnose one pipeline step: rendering, placement, promotions, and schema fit."""
+    pipeline_id = arguments.get("pipeline_id", "").strip()
+    step_id = arguments.get("step_id", "").strip()
+    input_params = arguments.get("input") or {}
+
+    if not pipeline_id:
+        return {"success": False, "error": "Parameter 'pipeline_id' is required."}
+    if not step_id:
+        return {"success": False, "error": "Parameter 'step_id' is required."}
+    if not isinstance(input_params, dict):
+        return {"success": False, "error": "Parameter 'input' must be an object when provided."}
+
+    store = PipelineStore(pipelines_dir=_pipeline_dir())
+    try:
+        pipeline = store.load(pipeline_id)
+        raw_pipeline = store.load_raw(pipeline_id)
+    except FileNotFoundError:
+        return {"success": False, "error": f"Pipeline '{pipeline_id}' not found."}
+    except Exception as exc:
+        return {"success": False, "error": f"Could not load pipeline '{pipeline_id}': {exc}"}
+
+    raw_step = _find_step_recursive(raw_pipeline.get("steps", []), step_id)
+    if raw_step is None:
+        return {
+            "success": False,
+            "error": f"Step '{step_id}' not found in pipeline '{pipeline_id}'.",
+        }
+
+    try:
+        step = Step.model_validate(raw_step)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Step '{step_id}' is invalid and could not be parsed: {exc}",
+        }
+
+    loader = PipelineLoader()
+    warnings: list[str] = []
+    context: dict[str, Any] = {
+        "input": input_params,
+        "credentials": {},
+        "var": {},
+        "store": {},
+    }
+
+    try:
+        rendered_params = loader.render_step_params(step, context)
+    except Exception as exc:
+        rendered_params = {}
+        warnings.append(f"params: render failed: {exc}")
+
+    rendered_when = _diagnose_rendered_value(
+        loader, step.when, context, field_name="when", warnings=warnings
+    )
+    rendered_foreach = _diagnose_rendered_value(
+        loader, step.foreach, context, field_name="foreach", warnings=warnings
+    )
+
+    effective_type = LEGACY_ALIASES.get(step.type, step.type)
+    brick = _registry.get(effective_type)
+    if brick is None:
+        brick = next((entry for entry in _registry.list_all() if entry.type == effective_type), None)
+
+    validator = PipelineValidator()
+    schema = validator._resolve_step_schema(step) or {}
+    schema_properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+    required_fields = list(schema.get("required", [])) if isinstance(schema, dict) else []
+
+    rendered_step_payload = dict(raw_step)
+    if isinstance(raw_step.get("params"), dict) and rendered_params:
+        rendered_step_payload["params"] = {
+            key: value
+            for key, value in rendered_params.items()
+            if not key.startswith("_")
+        }
+    if "_config" in rendered_params:
+        rendered_step_payload["config"] = rendered_params["_config"]
+    for raw_key, rendered_key in (
+        ("url", "_url"),
+        ("command", "_command"),
+        ("args", "_args"),
+        ("headers", "_headers"),
+        ("body", "_body"),
+        ("pipeline", "_pipeline"),
+        ("values", "_values"),
+    ):
+        if rendered_key in rendered_params:
+            rendered_step_payload[raw_key] = rendered_params[rendered_key]
+
+    rendered_step = Step.model_validate(rendered_step_payload)
+    schema_instance = validator._step_to_validation_config(rendered_step)
+
+    missing_fields = [field for field in required_fields if schema_instance.get(field) is None]
+    extra_fields = []
+    if schema_properties:
+        extra_fields = sorted(
+            field for field in _step_user_fields(raw_step) if field not in schema_properties
+        )
+
+    placement_fields: dict[str, tuple[str, ...]] = {
+        "flow.pipeline": ("pipeline",),
+        "script.python": ("helper", "script"),
+        "db.query": ("connection",),
+        "db.exec": ("connection",),
+        "db.upsert": ("connection",),
+        "mcp.call": ("server", "tool"),
+        "script.cli": ("command",),
+    }
+    raw_params = raw_step.get("params") if isinstance(raw_step.get("params"), dict) else {}
+    raw_config = raw_step.get("config") if isinstance(raw_step.get("config"), dict) else {}
+    config_vs_params: dict[str, str] = {}
+    for field in placement_fields.get(effective_type, ()):
+        if field in raw_config:
+            config_vs_params[field] = "in config ✓"
+        elif field in raw_params:
+            config_vs_params[field] = "in params ⚠ should be in config"
+
+    promoted_fields: dict[str, str] = {}
+    if isinstance(raw_config, dict):
+        for step_types, fields in _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS.items():
+            if effective_type not in step_types and step.type not in step_types:
+                continue
+            for field in fields:
+                if raw_config.get(field) is not None:
+                    promoted_fields[field] = f"config.{field} -> step.{field}"
+
+    if not brick:
+        warnings.append(f"Brick '{effective_type}' not found in registry.")
+    if missing_fields:
+        warnings.append(f"schema: missing required fields: {missing_fields}")
+    if extra_fields:
+        warnings.append(f"schema: extra fields outside schema: {extra_fields}")
+
+    return {
+        "success": True,
+        "pipeline_id": pipeline_id,
+        "step_id": step_id,
+        "type": step.type,
+        "rendered_params": rendered_params,
+        "rendered_when": rendered_when,
+        "rendered_foreach": rendered_foreach,
+        "raw_params": raw_params,
+        "raw_config": raw_config,
+        "config_vs_params": config_vs_params,
+        "promoted_fields": promoted_fields,
+        "schema_check": {
+            "required": required_fields,
+            "missing": missing_fields,
+            "extra": extra_fields,
+        },
+        "warnings": warnings,
+        "hint": f'get_brick_schema(name="{effective_type}") for full schema',
     }
 
 
