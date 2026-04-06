@@ -151,15 +151,34 @@ class DbExecRunner(BaseRunner):
     async def _execute_inner(self, step: Any, context: Any, start: float) -> dict:
         self.report_progress(0.0, "starting db_exec")
 
+        step_config = getattr(step, "config", None)
+        config_params = step_config if isinstance(step_config, dict) else {}
         step_params = getattr(step, "params", None)
-        if not step_params:
-            step_params = getattr(step, "config", None)
-        config_params = step_params if isinstance(step_params, dict) else {}
-        query_params = None if isinstance(step_params, dict) else step_params
+        query_params = None
+        use_config_params = False
 
-        connection_ref = config_params.get("connection") or getattr(step, "connection", None) or ""
-        query = config_params.get("query") or getattr(step, "query", None) or ""
-        params = config_params.get("params", query_params)
+        if step_params is None:
+            if not config_params and isinstance(step_config, dict):
+                config_params = step_config
+            query_params = config_params.get("params")
+            use_config_params = True
+        elif isinstance(step_params, (list, tuple)):
+            query_params = step_params
+        elif isinstance(step_params, dict):
+            if not config_params and (
+                "connection" in step_params or "query" in step_params or "params" in step_params
+            ):
+                config_params = step_params
+                query_params = step_params.get("params")
+                use_config_params = True
+            else:
+                query_params = step_params
+        else:
+            query_params = step_params
+
+        connection_ref = getattr(step, "connection", None) or config_params.get("connection") or ""
+        query = getattr(step, "query", None) or config_params.get("query") or ""
+        params = config_params.get("params") if use_config_params else query_params
 
         if not connection_ref:
             return {
