@@ -16,8 +16,6 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 if TYPE_CHECKING:
     from brix.db import BrixDB
 
@@ -160,17 +158,6 @@ def _scan_pipeline_files() -> dict[str, Path]:
     return found
 
 
-def _extract_description_from_yaml(yaml_text: str) -> str:
-    """Extract description from pipeline YAML content string."""
-    try:
-        raw = yaml.safe_load(yaml_text) or {}
-    except Exception:
-        return ""
-    if not isinstance(raw, dict):
-        return ""
-    return (raw.get("description") or "").strip()
-
-
 def run_startup_sync(db: "BrixDB") -> dict:
     """Run disk-DB sync at startup. Returns summary dict.
 
@@ -295,7 +282,7 @@ def _migrate_pipeline_steps(db: "BrixDB") -> int:
 
 
 def _backfill_descriptions(db: "BrixDB") -> int:
-    """No-op; descriptions live in the pipeline row and are not backfilled from YAML."""
+    """Compatibility no-op; descriptions are read from the pipeline row."""
     return 0
 
 

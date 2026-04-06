@@ -1,12 +1,7 @@
-"""Pipeline persistence: save, load, list, version.
-
-DB-first storage with dual-write rollback support.
-"""
+"""Pipeline persistence: save, load, list, version."""
 import json
 import logging
-import os
 import sqlite3
-import yaml
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -31,12 +26,7 @@ DEFAULT_SEARCH_PATHS = [
 
 
 class PipelineStore:
-    """Manages pipeline storage — DB-first with filesystem fallback.
-
-    Primary storage: brix.db (pipelines table, yaml_content column).
-    Fallback: filesystem search paths (for backward compatibility).
-    Saves always write to both DB and filesystem.
-    """
+    """Manages pipeline storage using normalized DB rows as the source of truth."""
 
     def __init__(
         self,
@@ -60,20 +50,6 @@ class PipelineStore:
         self.loader = PipelineLoader()
         # Shared BrixDB instance (or default central DB).
         self._db = db if db is not None else BrixDB()
-
-    def _step_source_mode(self) -> str:
-        mode = (os.environ.get("BRIX_STEP_SOURCE") or "db").strip().lower()
-        return mode if mode in {"db", "yaml", "dual"} else "db"
-
-    def _load_pipeline_from_yaml(self, yaml_content: str, name: str) -> Pipeline:
-        if yaml_content:
-            return self.loader.load_from_string(yaml_content)
-        raise FileNotFoundError(f"Pipeline '{name}' not found in DB")
-
-    def _load_raw_from_yaml(self, yaml_content: str, name: str) -> dict:
-        if yaml_content:
-            return yaml.safe_load(yaml_content) or {}
-        raise FileNotFoundError(f"Pipeline '{name}' not found in DB")
 
     def _load_pipeline_from_db_rows(self, pipeline_row: dict, name: str) -> Pipeline:
         pipeline_id = pipeline_row["id"]
@@ -99,20 +75,6 @@ class PipelineStore:
         if raw is None:
             raise FileNotFoundError(f"Pipeline '{pipeline_row['name']}' not found in DB")
         return raw
-
-    def _validate_dual_read(self, pipeline_row: dict, yaml_content: str) -> None:
-        if not yaml_content:
-            logger.warning(
-                "dual read validation skipped for pipeline '%s': missing yaml_content",
-                pipeline_row["name"],
-            )
-            return
-        db_dict = self._load_raw_from_db_rows(pipeline_row)
-        yaml_dict = yaml.safe_load(yaml_content) or {}
-        if db_dict != yaml_dict:
-            raise ValueError(
-                f"Pipeline '{pipeline_row['name']}' DB rows do not match yaml_content"
-            )
 
     def _pipeline_metadata_updates_from_raw(
         self,
@@ -177,53 +139,36 @@ class PipelineStore:
         return updates
 
     def save(self, pipeline_data: dict, name: Optional[str] = None) -> Path:
-        """Save pipeline data to DB with yaml_content dual-write. Returns the virtual path.
+        """Save pipeline data to normalized DB rows. Returns the virtual path.
 
         Automatically manages created_at / updated_at timestamps:
         - created_at is set on first save; preserved on subsequent saves.
         - updated_at is refreshed on every save.
 
-        Before overwriting an existing pipeline the old YAML content is archived
-        as an object version in brix.db (retention: last 10 versions).
+        Before overwriting an existing pipeline the old DB-backed pipeline dict is
+        archived as an object version in brix.db (retention: last 10 versions).
         """
         pipeline_name = name or pipeline_data.get("name", "unnamed")
         filename = f"{pipeline_name}.yaml"
         path = self.pipelines_dir / filename
 
         now = _now_iso()
-        # Preserve created_at: check DB first, then file
-        existing_content = self._db.get_pipeline_yaml_content(pipeline_name)
-        if existing_content:
-            try:
-                existing = yaml.safe_load(existing_content) or {}
-                pipeline_data.setdefault("created_at", existing.get("created_at") or now)
-                # Archive the *current* content before overwriting
-                self._db.record_object_version(
-                    obj_type="pipeline",
-                    name=pipeline_name,
-                    content=existing,
-                )
-                self._db.trim_object_versions("pipeline", pipeline_name, keep=10)
-            except Exception:
-                pipeline_data.setdefault("created_at", now)
-        elif path.exists():
-            try:
-                with open(path) as f:
-                    existing = yaml.safe_load(f) or {}
-                pipeline_data.setdefault("created_at", existing.get("created_at") or now)
-                self._db.record_object_version(
-                    obj_type="pipeline",
-                    name=pipeline_name,
-                    content=existing,
-                )
-                self._db.trim_object_versions("pipeline", pipeline_name, keep=10)
-            except Exception:
-                pipeline_data.setdefault("created_at", now)
+        existing_row = self._db.get_pipeline(pipeline_name)
+        existing = None
+        if existing_row is not None:
+            existing = self._db.pipeline_to_dict(existing_row["id"])
+        if isinstance(existing, dict):
+            pipeline_data.setdefault("created_at", existing.get("created_at") or now)
+            self._db.record_object_version(
+                obj_type="pipeline",
+                name=pipeline_name,
+                content=existing,
+            )
+            self._db.trim_object_versions("pipeline", pipeline_name, keep=10)
         else:
             pipeline_data.setdefault("created_at", now)
         pipeline_data["updated_at"] = now
 
-        yaml_content = yaml.dump(pipeline_data, default_flow_style=False, allow_unicode=True)
         requirements = pipeline_data.get("requirements", [])
         if not isinstance(requirements, list):
             requirements = []
@@ -232,7 +177,6 @@ class PipelineStore:
             name=pipeline_name,
             path=str(path),
             requirements=requirements,
-            yaml_content=yaml_content,
         )
 
         pipeline_row = self._db.get_pipeline(pipeline_name)
@@ -286,7 +230,6 @@ class PipelineStore:
                 )
 
             metadata_updates = self._pipeline_metadata_updates_from_raw(pipeline_data, pipeline_row)
-            metadata_updates["yaml_content"] = yaml_content
             metadata_updates["migration_status"] = "v71_complete"
             metadata_updates["updated_at"] = now
             assignments = ", ".join(f"{column}=?" for column in metadata_updates)
@@ -298,42 +241,18 @@ class PipelineStore:
         return path
 
     def load(self, name: str) -> Pipeline:
-        """Load a pipeline by name from DB rows or yaml_content."""
+        """Load a pipeline by name from normalized DB rows."""
         pipeline_row = self._db.get_pipeline(name)
         if pipeline_row is None:
             raise FileNotFoundError(f"Pipeline '{name}' not found in DB")
-
-        yaml_content = pipeline_row.get("yaml_content") or self._db.get_pipeline_yaml_content(name) or ""
-        mode = self._step_source_mode()
-
-        if mode == "yaml":
-            return self._load_pipeline_from_yaml(yaml_content, name)
-
-        if pipeline_row.get("migration_status") == "v71_complete":
-            if mode == "dual":
-                self._validate_dual_read(pipeline_row, yaml_content)
-            return self._load_pipeline_from_db_rows(pipeline_row, name)
-
-        return self._load_pipeline_from_yaml(yaml_content, name)
+        return self._load_pipeline_from_db_rows(pipeline_row, name)
 
     def load_raw(self, name: str) -> dict:
-        """Load pipeline as raw dict from DB rows or yaml_content."""
+        """Load pipeline as raw dict from normalized DB rows."""
         pipeline_row = self._db.get_pipeline(name)
         if pipeline_row is None:
             raise FileNotFoundError(f"Pipeline '{name}' not found in DB")
-
-        yaml_content = pipeline_row.get("yaml_content") or self._db.get_pipeline_yaml_content(name) or ""
-        mode = self._step_source_mode()
-
-        if mode == "yaml":
-            return self._load_raw_from_yaml(yaml_content, name)
-
-        if pipeline_row.get("migration_status") == "v71_complete":
-            if mode == "dual":
-                self._validate_dual_read(pipeline_row, yaml_content)
-            return self._load_raw_from_db_rows(pipeline_row)
-
-        return self._load_raw_from_yaml(yaml_content, name)
+        return self._load_raw_from_db_rows(pipeline_row)
 
     def exists(self, name: str) -> bool:
         """Check if a pipeline exists in DB or any search path."""
@@ -352,36 +271,30 @@ class PipelineStore:
     def list_all(self) -> list[dict]:
         """List all pipelines from DB only.
 
-        The filesystem is no longer scanned; all pipelines are read from the
-        DB (yaml_content column).  This ensures a single authoritative source
-        and avoids returning test-only files that live in mounted directories.
+        The filesystem is no longer scanned; all pipelines are reconstructed
+        from normalized DB rows.
         """
         results = []
         db_pipelines = self._db.list_pipelines()
         for p in db_pipelines:
             name = p["name"]
-            yaml_content = self._db.get_pipeline_yaml_content(name)
-            if yaml_content:
-                try:
-                    pipeline = self.loader.load_from_string(yaml_content)
-                    results.append({
-                        "name": pipeline.name,
-                        "version": pipeline.version,
-                        "description": pipeline.description or "",
-                        "steps": len(pipeline.steps),
-                        "path": p.get("path", ""),
-                    })
-                except Exception as e:
-                    results.append({
-                        "name": name,
-                        "version": "?",
-                        "description": f"Error: {e}",
-                        "steps": 0,
-                        "path": p.get("path", ""),
-                    })
-            else:
-                # Pipeline row exists but has no yaml_content — skip (no content to show)
-                pass
+            try:
+                raw = self.load_raw(name)
+                results.append({
+                    "name": raw.get("name", name),
+                    "version": raw.get("version", "1.0.0"),
+                    "description": raw.get("description") or "",
+                    "steps": len(raw.get("steps") or []),
+                    "path": p.get("path", ""),
+                })
+            except Exception as e:
+                results.append({
+                    "name": name,
+                    "version": "?",
+                    "description": f"Error: {e}",
+                    "steps": 0,
+                    "path": p.get("path", ""),
+                })
 
         return results
 

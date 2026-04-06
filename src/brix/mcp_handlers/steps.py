@@ -9,9 +9,7 @@ from brix.mcp_handlers._shared import (
     _extract_source,
     _source_summary,
     _load_pipeline_yaml,
-    _save_pipeline_yaml,
     _validate_pipeline_dict,
-    _find_step_recursive,
     _pipeline_dir,
     _now_iso_helper,
     record_schema_consultation,
@@ -36,11 +34,6 @@ def _get_pipeline_row(name: str) -> dict | None:
         return _BrixDB().get_pipeline(name)
     except Exception:
         return None
-
-
-def _is_v71_migrated(pipeline_row: dict | None) -> bool:
-    """Return True when the pipeline uses DB-backed step rows."""
-    return bool(pipeline_row and pipeline_row.get("migration_status") == "v71_complete")
 
 
 def _bump_pipeline_version_row(
@@ -241,7 +234,8 @@ async def _handle_add_step(arguments: dict) -> dict:
         }
 
     pipeline_row = _get_pipeline_row(name)
-    is_migrated = _is_v71_migrated(pipeline_row)
+    if pipeline_row is None:
+        return {"success": False, "error": f"Pipeline '{name}' not found."}
 
     try:
         data = _load_pipeline_yaml(name)
@@ -319,33 +313,28 @@ async def _handle_add_step(arguments: dict) -> dict:
     old_version = data.get("version", "1.0.0")
     data["version"] = _bump_version(old_version, "minor")
 
-    if is_migrated and pipeline_row is not None:
-        from brix.db import BrixDB as _BrixDB
-        from brix.models import Step as _StepModel
+    from brix.db import BrixDB as _BrixDB
+    from brix.models import Step as _StepModel
 
-        db = _BrixDB()
-        ordered_ids = [s.get("id") for s in steps if isinstance(s, dict) and s.get("id")]
-        insert_index = ordered_ids.index(step_id)
+    db = _BrixDB()
+    ordered_ids = [s.get("id") for s in steps if isinstance(s, dict) and s.get("id")]
+    insert_index = ordered_ids.index(step_id)
+    try:
         try:
-            try:
-                _StepModel.model_validate(step)
-            except Exception as exc:
-                _logger.warning(
-                    "_handle_add_step: step '%s' in pipeline '%s' failed validation; using raw data: %s",
-                    step_id,
-                    name,
-                    exc,
-                )
-            db.upsert_step(pipeline_row["id"], step, step_order=insert_index)
-            db.reorder_steps(pipeline_row["id"], ordered_ids)
-            _bump_pipeline_version_row(pipeline_row, bump="minor", db=db)
-            validation = _validate_pipeline_dict(data)
+            _StepModel.model_validate(step)
         except Exception as exc:
-            return {"success": False, "error": str(exc)}
-    else:
-        # Validate and save
+            _logger.warning(
+                "_handle_add_step: step '%s' in pipeline '%s' failed validation; using raw data: %s",
+                step_id,
+                name,
+                exc,
+            )
+        db.upsert_step(pipeline_row["id"], step, step_order=insert_index)
+        db.reorder_steps(pipeline_row["id"], ordered_ids)
+        _bump_pipeline_version_row(pipeline_row, bump="minor", db=db)
         validation = _validate_pipeline_dict(data)
-        _save_pipeline_yaml(name, data)
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
     # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
     try:
@@ -473,7 +462,8 @@ async def _handle_remove_step(arguments: dict) -> dict:
     source = _extract_source(arguments)
 
     pipeline_row = _get_pipeline_row(name)
-    is_migrated = _is_v71_migrated(pipeline_row)
+    if pipeline_row is None:
+        return {"success": False, "error": f"Pipeline '{name}' not found."}
 
     try:
         data = _load_pipeline_yaml(name)
@@ -497,23 +487,20 @@ async def _handle_remove_step(arguments: dict) -> dict:
     old_version = data.get("version", "1.0.0")
     data["version"] = _bump_version(old_version, "minor")
 
-    if is_migrated and pipeline_row is not None:
-        from brix.db import BrixDB as _BrixDB
+    from brix.db import BrixDB as _BrixDB
 
-        db = _BrixDB()
-        deleted = db.delete_step_row(pipeline_row["id"], step_id)
-        if not deleted:
-            return {
-                "success": False,
-                "error": f"Step '{step_id}' not found in pipeline '{name}'.",
-            }
-        db.reorder_steps(
-            pipeline_row["id"],
-            [s.get("id") for s in steps if isinstance(s, dict) and s.get("id")],
-        )
-        _bump_pipeline_version_row(pipeline_row, bump="minor", db=db)
-    else:
-        _save_pipeline_yaml(name, data)
+    db = _BrixDB()
+    deleted = db.delete_step_row(pipeline_row["id"], step_id)
+    if not deleted:
+        return {
+            "success": False,
+            "error": f"Step '{step_id}' not found in pipeline '{name}'.",
+        }
+    db.reorder_steps(
+        pipeline_row["id"],
+        [s.get("id") for s in steps if isinstance(s, dict) and s.get("id")],
+    )
+    _bump_pipeline_version_row(pipeline_row, bump="minor", db=db)
 
     # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
     try:
@@ -545,40 +532,16 @@ async def _handle_update_step(arguments: dict) -> dict:
 
     store = PipelineStore(pipelines_dir=_pipeline_dir())
     pipeline_row = _get_pipeline_row(name)
-    is_migrated = _is_v71_migrated(pipeline_row)
+    if pipeline_row is None:
+        return {"success": False, "error": f"Pipeline '{name}' not found"}
     sanitized_updates = {key: value for key, value in updates.items() if key != "id"}
 
-    if is_migrated and pipeline_row is not None:
-        from brix.db import BrixDB as _BrixDB
+    from brix.db import BrixDB as _BrixDB
 
-        db = _BrixDB()
-        if not db.update_step_row(pipeline_row["id"], step_id, sanitized_updates):
-            return {"success": False, "error": f"Step '{step_id}' not found in pipeline '{name}'"}
-        _bump_pipeline_version_row(pipeline_row, bump="patch", db=db)
-    else:
-        try:
-            raw = store.load_raw(name)
-        except FileNotFoundError:
-            return {"success": False, "error": f"Pipeline '{name}' not found"}
-
-        # Find step -- search top-level first, then recurse into nested containers
-        steps = raw.get("steps", [])
-        target = _find_step_recursive(steps, step_id)
-
-        if not target:
-            return {"success": False, "error": f"Step '{step_id}' not found in pipeline '{name}'"}
-
-        # Apply updates (id cannot be changed)
-        for key, value in sanitized_updates.items():
-            target[key] = value
-
-        # Auto-bump version (patch for config change)
-        from brix.mcp_handlers.pipelines import _bump_version
-        old_version = raw.get("version", "1.0.0")
-        raw["version"] = _bump_version(old_version, "patch")
-
-        # Save
-        store.save(raw, name)
+    db = _BrixDB()
+    if not db.update_step_row(pipeline_row["id"], step_id, sanitized_updates):
+        return {"success": False, "error": f"Step '{step_id}' not found in pipeline '{name}'"}
+    _bump_pipeline_version_row(pipeline_row, bump="patch", db=db)
 
     # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
     try:
@@ -623,19 +586,12 @@ async def _handle_get_step(arguments: dict) -> dict:
         return {"success": False, "error": "Parameter 'step_id' is required"}
 
     pipeline_row = _get_pipeline_row(pipeline_name)
-    if _is_v71_migrated(pipeline_row) and pipeline_row is not None:
-        from brix.db import BrixDB as _BrixDB
+    if pipeline_row is None:
+        return {"success": False, "error": f"Pipeline '{pipeline_name}' not found"}
 
-        step = _BrixDB().get_step_by_id(pipeline_row["id"], step_id)
-    else:
-        store = PipelineStore(pipelines_dir=_pipeline_dir())
-        try:
-            raw = store.load_raw(pipeline_name)
-        except FileNotFoundError:
-            return {"success": False, "error": f"Pipeline '{pipeline_name}' not found"}
+    from brix.db import BrixDB as _BrixDB
 
-        steps = raw.get("steps", [])
-        step = _find_step_recursive(steps, step_id)
+    step = _BrixDB().get_step_by_id(pipeline_row["id"], step_id)
 
     if step is None:
         return {

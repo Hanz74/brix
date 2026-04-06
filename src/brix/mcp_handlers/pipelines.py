@@ -34,7 +34,6 @@ from brix.mcp_handlers._shared import (
     _pipeline_path,
     _find_similar_pipelines,
     _scan_pipelines_for_sub_pipeline,
-    _now_iso_helper,
     _normalize_steps,
 )
 from brix.bricks.types import is_compatible, suggest_converter
@@ -42,15 +41,6 @@ from brix.pipeline_store import PipelineStore
 from brix.history import RunHistory
 from brix.config import config
 from brix.engine import LEGACY_ALIASES
-
-
-def _is_v71_migrated(pipeline_row: dict | None) -> bool:
-    """Return True when a pipeline is fully migrated to DB row storage."""
-    return bool(pipeline_row and pipeline_row.get("migration_status") == "v71_complete")
-
-
-def _json_or_none(value):
-    return None if value is None else _json.dumps(value)
 
 
 def _resolve_brick_def(step: dict):
@@ -343,9 +333,6 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
     except FileNotFoundError:
         return {"success": False, "error": f"Pipeline '{name}' not found."}
 
-    pipeline_row = db.get_pipeline(name)
-    is_migrated = _is_v71_migrated(pipeline_row)
-
     changed_fields: list[str] = []
 
     if "input_schema" in arguments and arguments["input_schema"] is not None:
@@ -395,80 +382,12 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
         }
 
     if changed_fields:
-        if is_migrated and pipeline_row is not None:
-            now = _now_iso_helper()
-            new_version = raw.get("version", pipeline_row.get("version", "1.0.0"))
-            if "version" not in changed_fields:
-                new_version = _bump_version(pipeline_row.get("version", "1.0.0"), "patch")
-                raw["version"] = new_version
-                changed_fields.append("version (auto-bump)")
-
-            with db._connect() as conn:
-                conn.execute(
-                    """
-                    UPDATE pipeline
-                    SET version=?,
-                        description=?,
-                        requirements_json=?,
-                        error_handling_json=?,
-                        groups_json=?,
-                        output_json=?,
-                        updated_at=?
-                    WHERE id=?
-                    """,
-                    (
-                        new_version,
-                        raw.get("description", ""),
-                        _json.dumps(raw.get("requirements", [])),
-                        _json_or_none(raw.get("error_handling", {})),
-                        _json_or_none(raw.get("groups", {})),
-                        _json_or_none(raw.get("output")),
-                        now,
-                        pipeline_row["id"],
-                    ),
-                )
-
-                if "credentials" in changed_fields:
-                    conn.execute(
-                        "DELETE FROM pipeline_credential WHERE pipeline_id=?",
-                        (pipeline_row["id"],),
-                    )
-                    for alias, credential in (raw.get("credentials") or {}).items():
-                        if isinstance(credential, str):
-                            env_ref = credential
-                            refresh = None
-                        else:
-                            env_ref = (credential or {}).get("env") or ""
-                            refresh = (credential or {}).get("refresh")
-                        db.upsert_pipeline_credential(
-                            pipeline_row["id"],
-                            alias,
-                            env_ref,
-                            refresh=refresh,
-                            conn=conn,
-                        )
-
-                if "input_schema" in changed_fields:
-                    conn.execute(
-                        "DELETE FROM pipeline_input WHERE pipeline_id=?",
-                        (pipeline_row["id"],),
-                    )
-                    for input_name, param in (raw.get("input") or {}).items():
-                        db.upsert_pipeline_input(
-                            pipeline_row["id"],
-                            input_name,
-                            (param or {}).get("type", "string"),
-                            default_value=(param or {}).get("default"),
-                            description=(param or {}).get("description"),
-                            conn=conn,
-                        )
-        else:
-            # Auto-bump version (patch for config changes, unless version was explicitly set)
-            if "version" not in changed_fields:
-                old_version = raw.get("version", "1.0.0")
-                raw["version"] = _bump_version(old_version, "patch")
-                changed_fields.append("version (auto-bump)")
-            store.save(raw, name)
+        # Auto-bump version (patch for config changes, unless version was explicitly set)
+        if "version" not in changed_fields:
+            old_version = raw.get("version", "1.0.0")
+            raw["version"] = _bump_version(old_version, "patch")
+            changed_fields.append("version (auto-bump)")
+        store.save(raw, name)
 
         # T-BRIX-DBQUAL-01: Refresh pipeline_helpers join table
         try:
