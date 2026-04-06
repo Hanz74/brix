@@ -79,6 +79,27 @@ class ValidationResult:
 
 
 class PipelineValidator:
+    _CONFIG_CONFLICT_FIELDS = (
+        "method",
+        "url",
+        "headers",
+        "body",
+        "connection",
+        "query",
+        "helper",
+        "script",
+        "pipeline",
+        "server",
+        "tool",
+    )
+    _CONFIG_CONFLICT_DEFAULTS = {
+        "method": "GET",
+        "shell": False,
+        "parallel": False,
+        "concurrency": 10,
+        "batch_size": 0,
+    }
+
     def __init__(self, cache: SchemaCache = None, lint_rules: list = None):
         self.cache = cache or SchemaCache()
         # lint_rules: explicit list (for testing), otherwise load from disk + defaults
@@ -247,6 +268,7 @@ class PipelineValidator:
         if level in {"standard", "deep"}:
             self._check_deprecated_step_types(pipeline, result)
             self._check_config_param_misplacement(pipeline, result)
+            self._check_config_toplevel_conflicts(pipeline, result)
             self._check_brick_config_schema(pipeline, result)
             self._check_jinja_ast(pipeline, result)
             self._check_sub_pipeline_existence(pipeline, result)
@@ -728,6 +750,29 @@ class PipelineValidator:
                         hint=f'{self._schema_ref(effective_type)} shows config structure.' if effective_type else "Move the field into config.",
                         schema_ref=self._schema_ref(effective_type),
                     )
+
+    def _check_config_toplevel_conflicts(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when config and top-level step fields disagree after merge semantics."""
+        for step in pipeline.steps:
+            config = getattr(step, "config", None)
+            if not isinstance(config, dict) or not config:
+                continue
+
+            for field in self._CONFIG_CONFLICT_FIELDS:
+                config_value = config.get(field)
+                toplevel_value = getattr(step, field, None)
+                if config_value is None or toplevel_value is None:
+                    continue
+                if field in self._CONFIG_CONFLICT_DEFAULTS and toplevel_value == self._CONFIG_CONFLICT_DEFAULTS[field]:
+                    continue
+                if config_value == toplevel_value:
+                    continue
+
+                result.add_warning(
+                    f"Step {step.id}: config.{field}={config_value!r} differs from step.{field}={toplevel_value!r}. Config takes precedence after merge.",
+                    hint="Remove the top-level value or set it to match config.",
+                    schema_ref=self._schema_ref(step.type),
+                )
 
     @staticmethod
     def _is_dynamic_ref(value: Any) -> bool:
