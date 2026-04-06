@@ -1137,12 +1137,15 @@ def _seed_tips_from_hardcoded(db: "BrixDB") -> None:
          "(python, http, mcp). Alte Namen funktionieren noch aber sind deprecated.\n"
          "KEIN create_helper für Standardaufgaben — nutze bestehende Bricks:\n"
          "  db.query         → Datenbankabfragen\n"
-         "  db.upsert        → Daten in DB schreiben\n"
+         "  db.upsert        → Daten in DB schreiben (INSERT/UPSERT)\n"
+         "  db.exec          → SQL DML ausfuehren (UPDATE/DELETE/INSERT mit Commit)\n"
          "  llm.batch        → LLM-Extraktion über viele Dokumente\n"
          "  markitdown.convert → Dokumente/PDFs in Markdown konvertieren\n"
          "  extract.specialist → Regex-Extraktion mit Schema\n"
          "  source.fetch     → Daten von Connectors holen (Outlook, OneDrive, ...)\n"
          "  flow.filter      → Listen filtern\n"
+         "  file.read        → Textdatei lesen\n"
+         "  file.read_base64 → Binaerdatei als Base64 lesen\n"
          "discover() zeigt alle verfügbaren Brick-Kategorien.", 10),
         ("COMPOSITOR-REGEL", "COMPOSITOR-REGEL",
          "IMMER search_helpers + search_pipelines aufrufen BEVOR ein neuer Helper\n"
