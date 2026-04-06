@@ -2261,6 +2261,157 @@ class PipelineEngine:
             rendered_params = self.loader.render_step_params(step, jinja_ctx)
             rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
 
+            # --- Step Pin check (T-BRIX-DB-24): use mock data if step is pinned ---
+            _pin_hit = None
+            try:
+                from brix.db import BrixDB as _PinDB
+                _pin_db = _PinDB()
+                _pin_record = _pin_db.get_pin(pipeline.name, step.id)
+                if _pin_record is not None:
+                    _pin_hit = _pin_record["pinned_data"]
+            except Exception as _pin_err:
+                logger.warning("Step pin check failed for '%s': %s", step.id, _pin_err)
+            if _pin_hit is not None:
+                logger.info("Step '%s' using pinned mock data (pipeline=%s)", step.id, pipeline.name)
+                context.set_output(step.id, _pin_hit)
+                last_output = _pin_hit
+                step_statuses[step.id] = StepStatus(
+                    status="ok",
+                    duration=0.0,
+                    reason="pin_mock",
+                )
+                self.progress.step_ok(step.id, 0.0, None)
+                step_ok[step.id] = True
+                done_events[step.id].set()
+                return
+
+            # --- Test-Mode: intercept db.upsert and action.notify (T-BRIX-DB-24) ---
+            _effective_step_type = LEGACY_ALIASES.get(step.type, step.type)
+            if pipeline.test_mode and _effective_step_type in ("db.upsert", "db_upsert"):
+                logger.info(
+                    "Test-mode: dry-running db.upsert step '%s' (pipeline=%s)",
+                    step.id, pipeline.name,
+                )
+                context.set_output(step.id, {"test_mode": True, "dry": True, "step_id": step.id})
+                last_output = {"test_mode": True, "dry": True, "step_id": step.id}
+                step_statuses[step.id] = StepStatus(
+                    status="ok",
+                    duration=0.0,
+                    reason="test_mode_dry",
+                )
+                self.progress.step_ok(step.id, 0.0, None)
+                step_ok[step.id] = True
+                done_events[step.id].set()
+                return
+            if pipeline.test_mode and _effective_step_type in ("action.notify", "notify"):
+                logger.info(
+                    "Test-mode: log-only action.notify step '%s' (pipeline=%s)",
+                    step.id, pipeline.name,
+                )
+                context.set_output(step.id, {"test_mode": True, "log_only": True, "step_id": step.id})
+                last_output = {"test_mode": True, "log_only": True, "step_id": step.id}
+                step_statuses[step.id] = StepStatus(
+                    status="ok",
+                    duration=0.0,
+                    reason="test_mode_log_only",
+                )
+                self.progress.step_ok(step.id, 0.0, None)
+                step_ok[step.id] = True
+                done_events[step.id].set()
+                return
+
+            # --- Step-Level Cache (T-BRIX-V6-24, legacy bool form) ---
+            if step.cache is True:
+                from brix.context import CacheManager
+                _cache_mgr = CacheManager()
+                _cached_output = _cache_mgr.get(step.id, rendered_params)
+                if _cached_output is not None:
+                    context.set_output(step.id, _cached_output)
+                    last_output = _cached_output
+                    step_statuses[step.id] = StepStatus(
+                        status="ok",
+                        duration=0.0,
+                        reason="cache_hit",
+                    )
+                    self.progress.step_ok(step.id, 0.0, None)
+                    step_ok[step.id] = True
+                    done_events[step.id].set()
+                    return
+
+            # --- Resilience: Brick Cache check (T-BRIX-DB-21, dict form) ---
+            _brick_cache_instance = None
+            _brick_cache_rendered_key = None
+            if isinstance(step.cache, dict):
+                try:
+                    from brix.resilience import BrickCache as _BrickCache, BrixDB as _res_BrixDB
+                    _brick_cache_instance = _BrickCache(step.cache, _res_BrixDB())
+                    _brick_cache_rendered_key = self.loader.render_template(
+                        step.cache.get("key", step.id), jinja_ctx
+                    )
+                    _bc_hit = _brick_cache_instance.get(_brick_cache_rendered_key)
+                    if _bc_hit is not None:
+                        context.set_output(step.id, _bc_hit)
+                        last_output = _bc_hit
+                        step_statuses[step.id] = StepStatus(
+                            status="ok",
+                            duration=0.0,
+                            reason="cache_hit",
+                        )
+                        self.progress.step_ok(step.id, 0.0, None)
+                        step_ok[step.id] = True
+                        done_events[step.id].set()
+                        return
+                except Exception as _bc_err:
+                    logger.warning("Brick cache check failed for '%s': %s", step.id, _bc_err)
+
+            # --- Resilience: Circuit Breaker pre-check (T-BRIX-DB-21) ---
+            _cb_instance = None
+            if step.circuit_breaker:
+                try:
+                    from brix.resilience import CircuitBreaker as _CircuitBreaker, BrixDB as _res_BrixDB
+                    _cb_instance = _CircuitBreaker(step.id, step.circuit_breaker, _res_BrixDB())
+                    _cb_pre = _cb_instance.pre_check(context)
+                    if _cb_pre is not None:
+                        if _cb_pre.get("success"):
+                            context.set_output(step.id, _cb_pre.get("data"))
+                            last_output = _cb_pre.get("data")
+                            step_statuses[step.id] = StepStatus(
+                                status="ok",
+                                duration=0.0,
+                                reason="circuit_breaker_fallback",
+                            )
+                            self.progress.step_ok(step.id, 0.0, None)
+                            step_ok[step.id] = True
+                        else:
+                            _cb_err_msg = _cb_pre.get("error", "Circuit breaker OPEN")
+                            step_statuses[step.id] = StepStatus(
+                                status="skipped",
+                                duration=0.0,
+                                reason=_cb_err_msg,
+                            )
+                            self.progress.step_skipped(step.id)
+                            step_ok[step.id] = True
+                        done_events[step.id].set()
+                        return
+                except Exception as _cb_err:
+                    logger.warning("Circuit breaker check failed for '%s': %s", step.id, _cb_err)
+
+            # --- Resilience: Rate Limiter (T-BRIX-DB-21) ---
+            _rl_instance = None
+            if step.rate_limit:
+                try:
+                    from brix.resilience import RateLimiter as _RateLimiter, BrixDB as _res_BrixDB
+                    _rl_instance = _RateLimiter(step.id, step.rate_limit, _res_BrixDB())
+                    _rl_wait = _rl_instance.wait_seconds()
+                    if _rl_wait > 0:
+                        await asyncio.sleep(_rl_wait)
+                except Exception as _rl_err:
+                    logger.warning("Rate limiter check failed for '%s': %s", step.id, _rl_err)
+
+            # --- Breakpoint (T-BRIX-V7-06) ---
+            if step.pause_before:
+                await self._wait_for_breakpoint_resume(context, step.id)
+
             self.progress.step_start(step.id, step.type)
             with self._step_credentials_context(context, step):
                 step_start = time.monotonic()
@@ -2270,6 +2421,24 @@ class PipelineEngine:
             if result.get("success"):
                 context.set_output(step.id, result.get("data"))
                 last_output = result.get("data")
+                if step.cache is True:
+                    from brix.context import CacheManager
+                    CacheManager().set(step.id, rendered_params, result.get("data"))
+                if _brick_cache_instance is not None and _brick_cache_rendered_key is not None:
+                    try:
+                        _brick_cache_instance.set(_brick_cache_rendered_key, result.get("data"))
+                    except Exception as _bc_set_err:
+                        logger.warning("Brick cache set failed for '%s': %s", step.id, _bc_set_err)
+                if _cb_instance is not None:
+                    try:
+                        _cb_instance.on_success()
+                    except Exception:
+                        pass
+                if _rl_instance is not None:
+                    try:
+                        _rl_instance.record_call()
+                    except Exception:
+                        pass
                 step_statuses[step.id] = StepStatus(
                     status="ok",
                     duration=step_duration,
@@ -2279,6 +2448,11 @@ class PipelineEngine:
                 step_ok[step.id] = True
             else:
                 error_msg = result.get("error", "unknown error")
+                if _cb_instance is not None:
+                    try:
+                        _cb_instance.on_failure()
+                    except Exception:
+                        pass
                 step_statuses[step.id] = StepStatus(
                     status="error", duration=step_duration, errors=1,
                     error_message=str(error_msg) if error_msg else None,
