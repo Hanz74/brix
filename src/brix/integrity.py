@@ -55,9 +55,9 @@ def run_integrity_checks(db: "BrixDB") -> dict:
     auto_fixed: list[str] = []
 
     try:
-        _check_pipelines_without_yaml(db, issues, auto_fixed)
+        _check_pipelines_without_steps(db, issues, auto_fixed)
     except Exception as exc:
-        logger.warning("integrity: check_pipelines_without_yaml failed: %s", exc)
+        logger.warning("integrity: check_pipelines_without_steps failed: %s", exc)
 
     try:
         _check_test_pipelines_in_db(db, issues, auto_fixed)
@@ -101,59 +101,40 @@ def run_integrity_checks(db: "BrixDB") -> dict:
 # Individual checks
 # ---------------------------------------------------------------------------
 
-def _check_pipelines_without_yaml(
+def _check_pipelines_without_steps(
     db: "BrixDB",
     issues: list[dict],
     auto_fixed: list[str],
 ) -> None:
-    """Find pipelines in DB that have no yaml_content. Try to auto-fix from disk."""
-    import yaml as _yaml
+    """Check that each pipeline has at least one pipeline_step row (T-BRIX-DBO-18).
 
-    yaml_files = _collect_yaml_files()
-    fixed = 0
-    missing = []
+    yaml_content is no longer the source of truth.  Pipelines that have zero
+    step rows are flagged with code "NO_STEP_ROWS" — they may have been created
+    without steps or failed to migrate from YAML.
+    """
+    pipelines_without_steps: list[str] = []
 
     for p in db.list_pipelines():
-        name = p["name"]
-        content = db.get_pipeline_yaml_content(name)
-        if content:
-            continue  # already has content
+        pipeline_id = p.get("id")
+        if not pipeline_id:
+            continue
+        try:
+            step_rows = db.get_steps(pipeline_id)
+        except Exception:
+            continue
+        if len(step_rows) == 0:
+            pipelines_without_steps.append(p["name"])
 
-        # Try to import from disk
-        if name in yaml_files:
-            try:
-                raw = yaml_files[name].read_text(encoding="utf-8")
-                data = _yaml.safe_load(raw) or {}
-                requirements = data.get("requirements", [])
-                if not isinstance(requirements, list):
-                    requirements = []
-                db.upsert_pipeline(
-                    name=name,
-                    path=str(yaml_files[name]),
-                    requirements=requirements,
-                    yaml_content=raw,
-                )
-                auto_fixed.append(f"pipeline_yaml_imported:{name}")
-                fixed += 1
-                logger.debug("integrity: imported yaml_content for pipeline '%s'", name)
-            except Exception as exc:
-                missing.append(name)
-                logger.warning(
-                    "integrity: could not import yaml for pipeline '%s': %s", name, exc
-                )
-        else:
-            missing.append(name)
-
-    if missing:
+    if pipelines_without_steps:
         issues.append({
-            "code": "PIPELINE_NO_YAML",
+            "code": "NO_STEP_ROWS",
             "message": (
-                f"{len(missing)} pipeline(s) have no yaml_content and no disk file: "
-                + ", ".join(missing[:5])
-                + ("..." if len(missing) > 5 else "")
+                f"{len(pipelines_without_steps)} pipeline(s) have 0 step rows in DB: "
+                + ", ".join(pipelines_without_steps[:5])
+                + ("..." if len(pipelines_without_steps) > 5 else "")
             ),
             "severity": "warning",
-            "pipelines": missing,
+            "pipelines": pipelines_without_steps,
         })
 
 
@@ -283,9 +264,10 @@ def _check_brick_references(
     db: "BrixDB",
     issues: list[dict],
 ) -> None:
-    """Find pipeline steps that reference non-existent brick types."""
-    import yaml as _yaml
+    """Find pipeline steps that reference non-existent brick types.
 
+    Reads step types from pipeline_step DB rows (T-BRIX-DBO-18 — no yaml_content).
+    """
     # Build set of known brick names from DB
     known_bricks: set[str] = set()
     try:
@@ -325,19 +307,20 @@ def _check_brick_references(
     bad_refs: list[str] = []
 
     for p in db.list_pipelines():
-        yaml_content = db.get_pipeline_yaml_content(p["name"])
-        if not yaml_content:
+        pipeline_id = p.get("id")
+        if not pipeline_id:
             continue
         try:
-            data = _yaml.safe_load(yaml_content) or {}
+            step_rows = db.get_steps(pipeline_id)
         except Exception:
             continue
 
-        steps = data.get("steps", [])
-        if not isinstance(steps, list):
-            continue
-
-        _collect_bad_brick_refs(p["name"], steps, all_known, bad_refs)
+        for step_row in step_rows:
+            # step_row_to_dict maps column step_type→"type", step_key→"id"
+            step_type = step_row.get("type", "")
+            step_id = step_row.get("id", "?")
+            if step_type and step_type not in all_known:
+                bad_refs.append(f"{p['name']}/{step_id}:{step_type}")
 
     if bad_refs:
         issues.append({
@@ -352,40 +335,14 @@ def _check_brick_references(
         })
 
 
-def _collect_bad_brick_refs(
-    pipeline_name: str,
-    steps: list,
-    known: set[str],
-    bad_refs: list[str],
-) -> None:
-    """Recursively check step types against known bricks."""
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        step_type = step.get("type", "")
-        if step_type and step_type not in known:
-            bad_refs.append(f"{pipeline_name}/{step.get('id', '?')}:{step_type}")
-
-        # Recurse into nested structures
-        if "sequence" in step and isinstance(step["sequence"], list):
-            _collect_bad_brick_refs(pipeline_name, step["sequence"], known, bad_refs)
-        if "choices" in step and isinstance(step["choices"], list):
-            for choice in step["choices"]:
-                if isinstance(choice, dict) and "steps" in choice:
-                    _collect_bad_brick_refs(pipeline_name, choice["steps"], known, bad_refs)
-        if "default_steps" in step and isinstance(step["default_steps"], list):
-            _collect_bad_brick_refs(pipeline_name, step["default_steps"], known, bad_refs)
-        if "sub_steps" in step and isinstance(step["sub_steps"], list):
-            _collect_bad_brick_refs(pipeline_name, step["sub_steps"], known, bad_refs)
-
-
 def _check_helper_references(
     db: "BrixDB",
     issues: list[dict],
 ) -> None:
-    """Find pipeline steps that reference non-existent helpers."""
-    import yaml as _yaml
+    """Find pipeline steps that reference non-existent helpers.
 
+    Reads helper references from pipeline_step DB rows (T-BRIX-DBO-18 — no yaml_content).
+    """
     known_helpers = {h["name"] for h in db.list_helpers()}
     if not known_helpers:
         return  # No helpers registered — skip check
@@ -393,19 +350,22 @@ def _check_helper_references(
     bad_refs: list[str] = []
 
     for p in db.list_pipelines():
-        yaml_content = db.get_pipeline_yaml_content(p["name"])
-        if not yaml_content:
+        pipeline_id = p.get("id")
+        if not pipeline_id:
             continue
         try:
-            data = _yaml.safe_load(yaml_content) or {}
+            step_rows = db.get_steps(pipeline_id)
         except Exception:
             continue
 
-        steps = data.get("steps", [])
-        if not isinstance(steps, list):
-            continue
-
-        _collect_bad_helper_refs(p["name"], steps, known_helpers, bad_refs)
+        for step_row in step_rows:
+            # step_row_to_dict maps column step_key→"id"
+            helper_ref = step_row.get("helper")
+            step_id = step_row.get("id", "?")
+            if helper_ref and isinstance(helper_ref, str) and helper_ref not in known_helpers:
+                bad_refs.append(
+                    f"{p['name']}/{step_id}:helper={helper_ref}"
+                )
 
     if bad_refs:
         issues.append({
@@ -420,30 +380,3 @@ def _check_helper_references(
         })
 
 
-def _collect_bad_helper_refs(
-    pipeline_name: str,
-    steps: list,
-    known_helpers: set[str],
-    bad_refs: list[str],
-) -> None:
-    """Recursively check helper references in steps."""
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        helper_ref = step.get("helper")
-        if helper_ref and isinstance(helper_ref, str) and helper_ref not in known_helpers:
-            bad_refs.append(
-                f"{pipeline_name}/{step.get('id', '?')}:helper={helper_ref}"
-            )
-
-        # Recurse into nested structures
-        if "sequence" in step and isinstance(step["sequence"], list):
-            _collect_bad_helper_refs(pipeline_name, step["sequence"], known_helpers, bad_refs)
-        if "choices" in step and isinstance(step["choices"], list):
-            for choice in step["choices"]:
-                if isinstance(choice, dict) and "steps" in choice:
-                    _collect_bad_helper_refs(pipeline_name, choice["steps"], known_helpers, bad_refs)
-        if "default_steps" in step and isinstance(step["default_steps"], list):
-            _collect_bad_helper_refs(pipeline_name, step["default_steps"], known_helpers, bad_refs)
-        if "sub_steps" in step and isinstance(step["sub_steps"], list):
-            _collect_bad_helper_refs(pipeline_name, step["sub_steps"], known_helpers, bad_refs)
