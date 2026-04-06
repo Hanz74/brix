@@ -79,7 +79,11 @@ class ValidateRunner(BaseRunner):
         from jinja2.sandbox import SandboxedEnvironment
 
         env = SandboxedEnvironment()
-        jinja_ctx = context.to_jinja_context()
+        jinja_ctx = (
+            context.to_jinja_context()
+            if context is not None and hasattr(context, "to_jinja_context")
+            else {}
+        )
 
         violations: list[dict] = []
         warnings: list[dict] = []

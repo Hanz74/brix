@@ -106,7 +106,15 @@ class QueueRunner(BaseRunner):
         queue_name: str = getattr(step, "queue_name", None) or (
             (getattr(step, "params", None) or {}).get("queue_name", "default_queue")
         )
-        collect_until: int | None = getattr(step, "collect_until", None)
+        collect_until_raw = getattr(step, "collect_until", None)
+        collect_until: int | None = None
+        if collect_until_raw is not None:
+            try:
+                collect_until = int(collect_until_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid collect_until value for queue step: {collect_until_raw!r}"
+                ) from exc
         collect_for: str | None = getattr(step, "collect_for", None)
         flush_to: str | None = getattr(step, "flush_to", None)  # noqa: F841 — informational
 
