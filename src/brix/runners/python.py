@@ -10,6 +10,7 @@ from typing import Any
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout, get_default_timeout
 from brix.runners._subprocess import _terminate_subprocess
+from brix.serialization import json_dumps, sanitize_for_json
 
 # Prefix that helper scripts write to stderr to emit intra-step progress
 BRIX_PROGRESS_PREFIX = "BRIX_PROGRESS:"
@@ -184,7 +185,7 @@ class PythonRunner(BaseRunner):
         input_data = None
 
         if clean_params:
-            params_json = json.dumps(clean_params)
+            params_json = json_dumps(clean_params)
             # Use stdin for large payloads (args have OS limits ~128KB)
             if len(params_json) > 100_000:
                 input_data = params_json.encode()
@@ -272,7 +273,7 @@ class PythonRunner(BaseRunner):
         # Parse stdout as JSON, fallback to raw string
         output = stdout.decode().strip()
         try:
-            data = json.loads(output)
+            data = sanitize_for_json(json.loads(output))
         except (json.JSONDecodeError, ValueError):
             data = output
 

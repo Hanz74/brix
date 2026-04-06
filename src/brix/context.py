@@ -11,6 +11,7 @@ from typing import Any
 from brix.models import Pipeline
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.config import config
+from brix.serialization import json_dumps, sanitize_for_json
 
 WORKDIR_BASE = Path.home() / ".brix" / "runs"
 CACHE_BASE = Path.home() / ".brix" / "cache" / "steps"
@@ -40,7 +41,7 @@ class CacheManager:
 
     def compute_key(self, step_id: str, params: Any) -> str:
         """Return the hex SHA256 hash for (step_id, params)."""
-        payload = json.dumps({"step_id": step_id, "params": params}, sort_keys=True, default=str)
+        payload = json_dumps({"step_id": step_id, "params": params}, sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def _entry_path(self, key: str) -> Path:
@@ -65,10 +66,10 @@ class CacheManager:
         entry = {
             "step_id": step_id,
             "key": key,
-            "output": output,
+            "output": sanitize_for_json(output),
         }
         try:
-            path.write_text(json.dumps(entry, default=str))
+            path.write_text(json_dumps(entry))
         except (OSError, TypeError, ValueError):
             pass  # Non-fatal: step will run normally on next invocation
 
@@ -131,10 +132,10 @@ class PipelineContext:
         Merges user_input with pipeline defaults.
 
         If *profile* is provided (or a profile is active via the ``BRIX_PROFILE``
-        env var or ``default_profile`` in ``~/.brix/profiles.yaml``), the
-        profile's env vars are injected into ``os.environ`` before credential
-        resolution, and its ``input_defaults`` fill gaps not covered by either
-        user_input or pipeline defaults.
+        env var or the default DB env_profile), the profile's env vars are
+        injected into ``os.environ`` before credential resolution, and its
+        ``input_defaults`` fill gaps not covered by either user_input or
+        pipeline defaults.
         """
         # Apply active profile: inject env vars + collect input_defaults
         from brix.profiles import ProfileManager
@@ -258,7 +259,7 @@ class PipelineContext:
         # Persist to disk for external polling
         sp_path = self.workdir / "step_progress.json"
         try:
-            sp_path.write_text(json.dumps(self.step_progress, default=str))
+            sp_path.write_text(json_dumps(self.step_progress))
         except (OSError, TypeError, ValueError):
             pass  # Non-fatal: progress won't be visible via polling but run continues
 
@@ -303,6 +304,7 @@ class PipelineContext:
         """
         if output_schema:
             self.validate_output_schema(step_id, output, output_schema)
+        output = sanitize_for_json(output)
         self._jinja_cache = None  # Invalidate cache on any output change
         self.last_output = output  # T-BRIX-BUG-10: expose for downstream steps
         if isinstance(output, dict) and "items" in output:
@@ -315,7 +317,7 @@ class PipelineContext:
                 over_size = False
                 if not over_count:
                     try:
-                        serialized = json.dumps(items, default=str)
+                        serialized = json_dumps(items)
                         over_size = len(serialized.encode()) > LARGE_OUTPUT_SIZE_BYTES
                     except (TypeError, ValueError):
                         pass
@@ -326,7 +328,7 @@ class PipelineContext:
                     jsonl_path.parent.mkdir(parents=True, exist_ok=True)
                     with open(jsonl_path, "w") as f:
                         for item in items:
-                            f.write(json.dumps(item, default=str) + "\n")
+                            f.write(json_dumps(item) + "\n")
 
                     # RAM entry: reference + summary only (no items array)
                     self.step_outputs[step_id] = {
@@ -342,7 +344,7 @@ class PipelineContext:
         output_file = self.workdir / "step_outputs" / f"{step_id}.json"
         output_file.parent.mkdir(parents=True, exist_ok=True)
         try:
-            output_file.write_text(json.dumps(output, default=str))
+            output_file.write_text(json_dumps(output))
         except (TypeError, ValueError):
             pass  # Non-serializable output — skip persistence
 
@@ -377,9 +379,9 @@ class PipelineContext:
             "last_heartbeat": time.time(),
         }
         if progress is not None:
-            meta["progress"] = progress
+            meta["progress"] = sanitize_for_json(progress)
         meta_file = self.workdir / "run.json"
-        meta_file.write_text(json.dumps(meta, default=str, indent=2))
+        meta_file.write_text(json_dumps(meta, indent=2))
 
     @classmethod
     def from_resume(cls, run_id: str) -> "PipelineContext":
@@ -445,9 +447,9 @@ class PipelineContext:
         """Write a single completed foreach item to checkpoint JSONL."""
         path = self.get_foreach_checkpoint_path(step_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {"index": item_index, "input": item_input, "result": result}
+        entry = sanitize_for_json({"index": item_index, "input": item_input, "result": result})
         with open(path, "a") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
+            f.write(json_dumps(entry) + "\n")
 
     def load_foreach_checkpoint(self, step_id: str) -> dict:
         """Load completed items from checkpoint. Returns {index: result}."""

@@ -20,6 +20,7 @@ from brix.config import config
 from brix.connectors import CONNECTOR_REGISTRY, NormalizedItem
 from brix.runners.base import BaseRunner, _coerce_bool
 from brix.runners.cli import parse_timeout
+from brix.serialization import sanitize_for_json
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ from brix.runners.cli import parse_timeout
 
 def _normalize_to_dict(item: NormalizedItem) -> dict:
     """Convert a NormalizedItem to a plain dict."""
-    return item.model_dump()
+    return sanitize_for_json(item.model_dump())
 
 
 def _build_local_file_item(file_path: Path, base_path: Path) -> dict:
@@ -241,7 +242,7 @@ class SourceRunner(BaseRunner):
 
         duration = time.monotonic() - start
         self.report_progress(100.0, "done", done=len(items), total=len(items))
-        return {"success": True, "data": items, "duration": duration}
+        return {"success": True, "data": sanitize_for_json(items), "duration": duration}
 
     # ------------------------------------------------------------------
     # local_files

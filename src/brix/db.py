@@ -32,6 +32,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from brix.config import config as _brix_config
+from brix.serialization import json_dumps, sanitize_for_json
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ _PIPELINE_BOOL_COLUMNS: dict[str, str] = {
 
 
 def _json_dumps(value: Any) -> str:
-    return json.dumps(value, default=str)
+    return json_dumps(value)
 
 
 def _json_loads(value: Any) -> Any:
@@ -1397,9 +1398,9 @@ class BrixDB:
             if value is None:
                 return None
             try:
-                return json.dumps(value)
+                return json_dumps(value)
             except (TypeError, ValueError):
-                return json.dumps(str(value))
+                return json_dumps(str(value))
 
         with self._connect() as conn:
             conn.execute(
@@ -1580,11 +1581,11 @@ class BrixDB:
     def _truncate_if_large(value: Any, label: str = "data") -> str:
         """Serialize value to JSON and truncate if it exceeds 1 MB."""
         try:
-            serialized = json.dumps(value)
+            serialized = json_dumps(value)
         except (TypeError, ValueError):
-            serialized = json.dumps(str(value))
+            serialized = json_dumps(str(value))
         if len(serialized.encode("utf-8")) > BrixDB._MAX_DATA_BYTES:
-            return json.dumps({"__truncated__": True, "label": label, "hint": "data exceeded 1MB limit"})
+            return json_dumps({"__truncated__": True, "label": label, "hint": "data exceeded 1MB limit"})
         return serialized
 
     def record_step_execution(
@@ -1615,9 +1616,9 @@ class BrixDB:
 
         if error_detail is not None:
             try:
-                error_str = json.dumps(error_detail)
+                error_str = json_dumps(error_detail)
             except (TypeError, ValueError):
-                error_str = json.dumps(str(error_detail))
+                error_str = json_dumps(str(error_detail))
         else:
             error_str = ""
 
@@ -1657,9 +1658,9 @@ class BrixDB:
         output_str = self._truncate_if_large(item_output, "item_output") if item_output is not None else ""
         if error_detail is not None:
             try:
-                error_str = json.dumps(error_detail)
+                error_str = json_dumps(error_detail)
             except (TypeError, ValueError):
-                error_str = json.dumps(str(error_detail))
+                error_str = json_dumps(str(error_detail))
         else:
             error_str = ""
 
@@ -1685,11 +1686,11 @@ class BrixDB:
         """Persist the input params and trigger data for a run (best-effort)."""
         now = _now_iso()
         try:
-            params_str = json.dumps(input_params) if input_params is not None else "{}"
+            params_str = json_dumps(input_params) if input_params is not None else "{}"
         except (TypeError, ValueError):
             params_str = "{}"
         try:
-            trigger_str = json.dumps(trigger_data) if trigger_data is not None else "{}"
+            trigger_str = json_dumps(trigger_data) if trigger_data is not None else "{}"
         except (TypeError, ValueError):
             trigger_str = "{}"
 
@@ -2189,9 +2190,9 @@ class BrixDB:
         env_json: Optional[str] = None
         if environment is not None:
             try:
-                env_json = json.dumps(environment)
+                env_json = json_dumps(environment)
             except (TypeError, ValueError):
-                env_json = json.dumps(str(environment))
+                env_json = json_dumps(str(environment))
         # T-BRIX-SCHEMA-03: resolve project from pipeline if not provided
         resolved_project = project or ""
         if not resolved_project:
@@ -2210,7 +2211,7 @@ class BrixDB:
                 (
                     run_id, pipeline, version,
                     _now_iso(),
-                    json.dumps(input_data) if input_data else None,
+                    json_dumps(input_data) if input_data else None,
                     triggered_by,
                     idempotency_key,
                     env_json,
@@ -2258,8 +2259,8 @@ class BrixDB:
                    steps_data=?, result_summary=?, cost_usd=? WHERE run_id=?""",
                 (
                     _now_iso(), duration, int(success),
-                    json.dumps(steps, default=str) if steps else None,
-                    json.dumps(result_summary, default=str) if result_summary else None,
+                    json_dumps(steps) if steps else None,
+                    json_dumps(result_summary) if result_summary else None,
                     cost_usd,
                     run_id,
                 ),
@@ -2285,9 +2286,9 @@ class BrixDB:
             any other environment details captured at run start.
         """
         try:
-            env_json = json.dumps(environment)
+            env_json = json_dumps(environment)
         except (TypeError, ValueError):
-            env_json = json.dumps(str(environment))
+            env_json = json_dumps(str(environment))
         with self._connect() as conn:
             conn.execute(
                 "UPDATE run SET environment_json=? WHERE run_id=?",
@@ -4554,8 +4555,8 @@ class BrixDB:
     ) -> None:
         """Record a pipeline completion event (pipeline_done)."""
         import time as _time
-        result_json = json.dumps(result, default=str) if result is not None else None
-        input_json = json.dumps(input, default=str) if input is not None else None
+        result_json = json_dumps(result) if result is not None else None
+        input_json = json_dumps(input) if input is not None else None
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO pipeline_event "
@@ -5555,9 +5556,9 @@ class BrixDB:
         """Insert or replace a cache entry."""
         now = _now_iso()
         try:
-            serialized = json.dumps(output_data)
+            serialized = json_dumps(output_data)
         except Exception:
-            serialized = str(output_data)
+            serialized = json_dumps(str(output_data))
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO brick_cache (cache_key, output_data, created_at, expires_at)
@@ -5807,7 +5808,7 @@ class BrixDB:
         The stored pin record as a dict.
         """
         now = _now_iso()
-        data_json = json.dumps(data)
+        data_json = json_dumps(data)
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO step_pin (pipeline_name, step_id, pinned_data, pinned_from_run, created_at)

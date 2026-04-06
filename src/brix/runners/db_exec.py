@@ -10,6 +10,7 @@ from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
 from brix.runners.db_query import _colon_to_pyformat, _detect_driver, _strip_sqlite_prefix
+from brix.serialization import sanitize_for_json
 
 
 def _execute_sqlite(dsn: str, query: str, params: list | tuple | dict | None) -> int:
@@ -207,7 +208,7 @@ class DbExecRunner(BaseRunner):
         self.report_progress(100.0, f"{affected_rows} rows affected")
         return {
             "success": True,
-            "data": {"affected_rows": affected_rows, "success": True},
+            "data": sanitize_for_json({"affected_rows": affected_rows, "success": True}),
             "duration": duration,
         }
 

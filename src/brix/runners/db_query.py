@@ -10,6 +10,7 @@ from typing import Any
 from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
+from brix.serialization import sanitize_for_json, sanitize_row
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ def _execute_sqlite(dsn: str, query: str, params: dict | None) -> list[dict]:
         else:
             cur.execute(query)
         rows = cur.fetchall()
-    return [dict(row) for row in rows]
+    return [sanitize_row(dict(row)) for row in rows]
 
 
 def _execute_postgresql(dsn: str, query: str, params: dict | None) -> list[dict]:
@@ -101,7 +102,7 @@ def _execute_postgresql(dsn: str, query: str, params: dict | None) -> list[dict]
             query = _colon_to_pyformat(query, params if isinstance(params, dict) else None)
             cur.execute(query, params or None)
             rows = cur.fetchall()
-        return [dict(row) for row in rows]
+        return [sanitize_row(dict(row)) for row in rows]
     finally:
         conn.close()
 
@@ -249,7 +250,7 @@ class DbQueryRunner(BaseRunner):
 
         # ---- execute SQL ---------------------------------------------
         try:
-            rows = self._run_query(driver, dsn, query, params)
+            rows = sanitize_for_json(self._run_query(driver, dsn, query, params))
         except Exception as exc:
             self.report_progress(0.0, "error: SQL execution failed")
             return {

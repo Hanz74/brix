@@ -36,6 +36,7 @@ from brix.runners.emit import EmitRunner
 from brix.progress import ProgressReporter
 from brix.mcp_pool import McpConnectionPool
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
+from brix.serialization import json_dumps, sanitize_for_json
 
 _SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
 
@@ -1668,7 +1669,7 @@ class PipelineEngine:
         try:
             snapshot = self._context_snapshot(context)
             snapshot_path = context.workdir / "context-snapshot.json"
-            snapshot_path.write_text(json.dumps(snapshot, default=str))
+            snapshot_path.write_text(json_dumps(snapshot))
         except Exception:
             pass  # Never crash the pipeline over snapshot failures
 
@@ -1684,7 +1685,7 @@ class PipelineEngine:
         breakpoint_path = context.workdir / "breakpoint.json"
         try:
             breakpoint_path.write_text(
-                json.dumps({"step_id": step_id, "paused_at": time.monotonic()})
+                json_dumps({"step_id": step_id, "paused_at": time.monotonic()})
             )
         except OSError:
             return  # Cannot write sentinel — skip breakpoint gracefully
@@ -2540,7 +2541,7 @@ def _redact_secret_values(data: Any, secret_values: set) -> Any:
     if not secret_values or data is None:
         return data
     try:
-        json_str = json.dumps(data)
+        json_str = json_dumps(sanitize_for_json(data))
         for secret in secret_values:
             if secret and secret in json_str:
                 json_str = json_str.replace(secret, "***REDACTED***")

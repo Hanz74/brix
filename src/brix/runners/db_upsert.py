@@ -8,6 +8,7 @@ from typing import Any
 from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
+from brix.serialization import sanitize_for_json
 
 
 class DbUpsertRunner(BaseRunner):
@@ -156,7 +157,7 @@ class DbUpsertRunner(BaseRunner):
             self.report_progress(100.0, "done", done=0, total=0)
             return {
                 "success": True,
-                "data": {"inserted": 0, "updated": 0, "total": 0},
+                "data": sanitize_for_json({"inserted": 0, "updated": 0, "total": 0}),
                 "duration": time.monotonic() - start,
             }
 
@@ -218,7 +219,7 @@ class DbUpsertRunner(BaseRunner):
         self.report_progress(100.0, "done", done=result["total"], total=result["total"])
         return {
             "success": True,
-            "data": result,
+            "data": sanitize_for_json(result),
             "duration": duration,
         }
 
