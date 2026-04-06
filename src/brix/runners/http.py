@@ -13,6 +13,23 @@ from brix.runners.cli import parse_timeout, get_default_timeout
 _LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel=["\']next["\']', re.IGNORECASE)
 
 
+def _coerce_bool(val: Any) -> bool:
+    """Treat common false-like strings as False; everything else is truthy."""
+    return str(val).lower() not in ("false", "0", "no", "none", "")
+
+
+def _normalize_headers(headers: Any) -> tuple[dict | None, str | None]:
+    """Validate headers input and return a plain dict or a user-facing error."""
+    if headers is None:
+        return None, None
+    if isinstance(headers, str):
+        return None, "HTTP 'headers' must be a dict, got str"
+    try:
+        return dict(headers), None
+    except (TypeError, ValueError):
+        return None, f"HTTP 'headers' must be a dict-like mapping, got {type(headers).__name__}"
+
+
 def _extract_next_link(response: httpx.Response, data: Any) -> str | None:
     """Return the next-page URL from OData or RFC 5988 Link header, or None."""
     # OData-style: @odata.nextLink in response body
@@ -72,17 +89,18 @@ class HttpRunner(BaseRunner):
             return {"success": False, "error": "HTTP step needs 'url' field", "duration": 0.0}
 
         method = getattr(step, "method", None) or step_params.get("method") or "GET"
-        headers = (
-            getattr(step, "headers", None)
-            or step_params.get("_headers")
-            or step_params.get("headers")
-        )
+        headers = getattr(step, "headers", None)
+        if headers is None:
+            headers = step_params.get("_headers")
+        if headers is None:
+            headers = step_params.get("headers")
         body = getattr(step, "body", None)
         if body is None and "body" in step_params:
             body = step_params.get("body")
-        fetch_all_pages = getattr(step, "fetch_all_pages", False)
-        if not fetch_all_pages:
-            fetch_all_pages = bool(step_params.get("fetch_all_pages", False))
+        fetch_all_pages = getattr(step, "fetch_all_pages", None)
+        if fetch_all_pages is None:
+            fetch_all_pages = step_params.get("fetch_all_pages", False)
+        fetch_all_pages = _coerce_bool(fetch_all_pages)
 
         self.report_progress(0.0, f"Requesting {method} {url}")
 
@@ -92,10 +110,12 @@ class HttpRunner(BaseRunner):
 
         # Inject X-Brix-Run-Id correlation header (T-BRIX-V7-07)
         run_id = getattr(context, "run_id", None) if context is not None else None
+        headers, headers_error = _normalize_headers(headers)
+        if headers_error:
+            return {"success": False, "error": headers_error, "duration": 0.0}
+
         if run_id:
-            if headers:
-                headers = dict(headers)
-            else:
+            if headers is None:
                 headers = {}
             headers.setdefault("X-Brix-Run-Id", run_id)
 
