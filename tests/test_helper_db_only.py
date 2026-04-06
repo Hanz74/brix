@@ -126,6 +126,32 @@ async def test_create_helper_without_input_schema_rejected(
 
 
 @pytest.mark.asyncio
+async def test_create_helper_persists_empty_script_path(
+    helper_db: BrixDB,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from brix.mcp_handlers import helpers as hh
+
+    monkeypatch.setattr("brix.helper_registry.BrixDB", lambda: helper_db)
+    monkeypatch.setattr("brix.db.BrixDB", lambda *args, **kwargs: helper_db)
+
+    result = await hh._handle_create_helper(
+        {
+            "name": "db_only_script_path",
+            "code": "print('x')\n",
+            "description": "DB-only helper should not store a fake path",
+            "input_schema": {},
+            "output_schema": {},
+        }
+    )
+
+    assert result["success"] is True
+    helper = helper_db.get_helper("db_only_script_path")
+    assert helper is not None
+    assert helper["script_path"] == ""
+
+
+@pytest.mark.asyncio
 async def test_delete_helper_removes_cache_file(
     tmp_path: Path,
     helper_db: BrixDB,

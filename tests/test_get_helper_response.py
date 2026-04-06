@@ -44,5 +44,5 @@ async def test_get_helper_response_shows_db_code_presence(
     assert helper["code_length"] == len(code)
     assert helper["code_preview"] == code[:200]
     assert helper["code_preview"].startswith("import json")
-    assert helper["legacy_script_path"] == "db://db_visible_helper"
+    assert helper["legacy_script_path"] == ""
     assert "script" not in helper

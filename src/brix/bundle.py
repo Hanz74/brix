@@ -891,7 +891,7 @@ def import_project(
                     if not dry_run:
                         db.upsert_helper(
                             name=name,
-                            script_path=f"db://{name}",
+                            script_path="",
                             description=meta.get("description", ""),
                             requirements=meta.get("requirements"),
                             input_schema=meta.get("input_schema"),

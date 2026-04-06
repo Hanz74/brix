@@ -101,7 +101,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
     content_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
     entry = registry.register(
         name=name,
-        script=f"db://{name}",
+        script="",
         description=description,
         requirements=arguments.get("requirements") or [],
         input_schema=arguments.get("input_schema"),
@@ -119,7 +119,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
             _org_db = _BrixDB()
             _org_db.upsert_helper(
                 name=name,
-                script_path=f"db://{name}",
+                script_path="",
                 description=description,
                 requirements=arguments.get("requirements") or [],
                 input_schema=arguments.get("input_schema"),
@@ -389,7 +389,7 @@ async def _handle_update_helper(arguments: dict) -> dict:
             existing_db = _org_db.get_helper(name) if existing_reg else None
             _org_db.upsert_helper(
                 name=name,
-                script_path=(existing_db.get("script_path") if existing_db else f"db://{name}") or f"db://{name}",
+                script_path=(existing_db.get("script_path") if existing_db else "") or "",
                 description=update_fields.get(
                     "description",
                     existing_db.get("description", "") if existing_db else "",
