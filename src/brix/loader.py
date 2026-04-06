@@ -1,6 +1,7 @@
 """YAML pipeline loader with Jinja2 template support."""
 
 import ast
+import base64
 import copy
 import json
 import os
@@ -34,6 +35,10 @@ class PipelineLoader:
             if isinstance(val, list)
             else val
         )
+        self.env.filters["b64encode"] = lambda s: base64.b64encode(
+            s.encode() if isinstance(s, str) else s
+        ).decode()
+        self.env.filters["b64decode"] = lambda s: base64.b64decode(s).decode()
 
     # ------------------------------------------------------------------
     # Loading

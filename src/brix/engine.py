@@ -62,6 +62,7 @@ LEGACY_ALIASES: dict[str, str] = {
     "specialist": "extract.specialist",
     "db_query": "db.query",
     "db_upsert": "db.upsert",
+    "db_exec": "db.exec",
     "llm_batch": "llm.batch",
     "markitdown": "markitdown.convert",
     "source": "source.fetch",
@@ -75,6 +76,7 @@ LEGACY_ALIASES: dict[str, str] = {
     "diff": "flow.diff",
     "respond": "action.respond",
     # File I/O bricks (T-BRIX-BRICK-02)
+    "file_read": "file.read",
     "file_read_base64": "file.read_base64",
     "file_write": "file.write",
     "file_list": "file.list",

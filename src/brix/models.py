@@ -116,7 +116,7 @@ class Step(BaseModel):
         "filter", "transform", "set", "stop", "choose", "parallel", "repeat",
         "notify", "approval", "validate", "specialist",
         # New runners registered via discover_runners()
-        "db_query", "db_upsert", "llm_batch", "markitdown", "source",
+        "db_query", "db_upsert", "db_exec", "llm_batch", "markitdown", "source",
         "switch", "merge", "error_handler", "wait", "dedup", "aggregate",
         "flatten", "diff", "respond",
         # Advanced flow runners (T-BRIX-DB-22)
@@ -132,12 +132,12 @@ class Step(BaseModel):
         "flow.wait", "flow.dedup", "flow.aggregate", "flow.flatten", "flow.diff",
         "action.notify", "action.approval", "action.respond",
         "extract.specialist",
-        "db.query", "db.upsert",
+        "db.query", "db.upsert", "db.exec",
         "llm.batch",
         "markitdown.convert",
         "source.fetch",
         # File I/O bricks (T-BRIX-BRICK-02)
-        "file.read_base64", "file.write", "file.list", "file.load_json",
+        "file.read", "file.read_base64", "file.write", "file.list", "file.load_json",
         # Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
         "keyword_filter", "extract_url", "extract_ics",
         "filter.keyword", "extract.url", "extract.ics",

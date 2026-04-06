@@ -1107,6 +1107,25 @@ SYSTEM_DB_UPSERT = BrickSchema(
     category="system",
 )
 
+SYSTEM_DB_EXEC = BrickSchema(
+    name="db.exec",
+    type="db_exec",
+    description="Execute a SQL INSERT, UPDATE, or DELETE with commit.",
+    when_to_use="Use to modify database rows when you need affected row counts and transactional commit behavior.",
+    runner="db_exec",
+    system=True,
+    namespace="db",
+    category="system",
+    config_schema={
+        "connection": BrickParam(type="string", description="Named connection or DSN", required=True),
+        "query": BrickParam(type="string", description="SQL DML statement to execute", required=True),
+        "params": BrickParam(type="array", description="Optional positional query parameters"),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"affected_rows": N, "success": true}',
+)
+
 SYSTEM_LLM_BATCH = BrickSchema(
     name="llm.batch",
     type="llm_batch",
@@ -1240,6 +1259,25 @@ SYSTEM_ACTION_RESPOND = BrickSchema(
 )
 
 # File I/O bricks (T-BRIX-BRICK-02)
+SYSTEM_FILE_READ = BrickSchema(
+    name="file.read",
+    type="file_read",
+    description="Read a text file and return its content with metadata.",
+    when_to_use="Use when you need plain-text file contents in a pipeline.",
+    runner="file_read",
+    system=True,
+    namespace="file",
+    category="system",
+    config_schema={
+        "path": BrickParam(type="string", description="Absolute path to the file to read", required=True),
+        "encoding": BrickParam(type="string", description="Text encoding", default="utf-8"),
+        "max_size": BrickParam(type="integer", description="Maximum allowed file size in bytes", default=10485760),
+    },
+    input_type="none",
+    output_type="dict",
+    output_description='{"text": "...", "size": N, "name": "filename", "encoding": "utf-8"}',
+)
+
 SYSTEM_FILE_READ_BASE64 = BrickSchema(
     name="file.read_base64",
     type="file_read_base64",
@@ -1469,6 +1507,7 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_ACTION_APPROVAL,
     SYSTEM_EXTRACT_SPECIALIST,
     SYSTEM_DB_UPSERT,
+    SYSTEM_DB_EXEC,
     SYSTEM_LLM_BATCH,
     SYSTEM_MARKITDOWN_CONVERT,
     SYSTEM_SOURCE_FETCH,
@@ -1482,6 +1521,7 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_FLOW_DIFF,
     SYSTEM_ACTION_RESPOND,
     # File I/O bricks (T-BRIX-BRICK-02)
+    SYSTEM_FILE_READ,
     SYSTEM_FILE_READ_BASE64,
     SYSTEM_FILE_WRITE,
     SYSTEM_FILE_LIST,
