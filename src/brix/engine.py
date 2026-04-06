@@ -950,7 +950,25 @@ class PipelineEngine:
 
                             with self._step_credentials_context(context, step):
                                 jinja_ctx = context.to_jinja_context()
-                                items = self.loader.resolve_foreach(step.foreach, jinja_ctx)
+                                try:
+                                    items = self.loader.resolve_foreach(step.foreach, jinja_ctx)
+                                except (ValueError, TypeError) as _foreach_resolve_err:
+                                    _fe_err_msg = (
+                                        f"foreach expression failed to resolve for step '{step.id}': "
+                                        f"{_foreach_resolve_err}"
+                                    )
+                                    logger.warning(_fe_err_msg)
+                                    step_statuses[step.id] = StepStatus(
+                                        status="error", duration=0.0, errors=1,
+                                        error_message=_fe_err_msg,
+                                    )
+                                    self.progress.step_start(step.id, step.type)
+                                    self.progress.step_error(step.id, _fe_err_msg, 0.0)
+                                    effective_on_error = step.on_error or pipeline.error_handling.on_error
+                                    if effective_on_error == "stop":
+                                        pipeline_aborted = True
+                                        break
+                                    continue
 
                                 step_start = time.monotonic()
                                 if step.batch_size > 0:

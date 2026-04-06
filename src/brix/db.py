@@ -180,6 +180,14 @@ def _json_loads(value: Any) -> Any:
 _SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
 
 
+_PIPELINE_STEP_TYPES = {"pipeline", "flow.pipeline"}
+
+# Top-level Step fields that may be stored inside config_json when the caller
+# used step.config instead of the dedicated column.  These must be promoted to
+# the correct top-level field so that runners and the engine can find them.
+_PIPELINE_TOP_LEVEL_FIELDS = ("pipeline",)
+
+
 def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     """Copy non-specialist ``config`` into ``params`` when params is empty.
 
@@ -190,6 +198,13 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     - ``config`` is a non-empty dict
     - ``params`` is empty / missing
     - the step is not a specialist step, where ``config`` is semantic input
+
+    Additionally, for ``flow.pipeline`` / ``pipeline`` steps, if ``config``
+    contains a ``pipeline`` key but the top-level ``pipeline`` field is empty,
+    the value is promoted to ``step["pipeline"]`` so that PipelineRunner can
+    find it via ``getattr(step, 'pipeline', None)``.  This fixes the silent
+    pipeline-stop bug where a step stored its sub-pipeline name in
+    ``step.config.pipeline`` instead of the dedicated ``sub_pipeline`` column.
     """
     step_type = step.get("type")
     config = step.get("config")
@@ -201,6 +216,15 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
         and not params
     ):
         step["params"] = dict(config)
+
+    # Promote top-level fields stored inside config for pipeline steps.
+    # This handles the case where a step was created with pipeline name inside
+    # config_json rather than the dedicated sub_pipeline column.
+    if step_type in _PIPELINE_STEP_TYPES and isinstance(config, dict):
+        for field in _PIPELINE_TOP_LEVEL_FIELDS:
+            if config.get(field) and not step.get(field):
+                step[field] = config[field]
+
     return step
 
 
@@ -1987,57 +2011,50 @@ class BrixDB:
                     pass
 
     def refresh_pipeline_deps(self, pipeline_name: str) -> None:
-        """Refresh pipeline_helper from step rows, with YAML fallback for legacy rows."""
+        """Refresh pipeline_helper from pipeline_step rows (DB-only, no yaml_content)."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id, yaml_content, migration_status FROM pipeline WHERE name=?",
+                "SELECT id, migration_status FROM pipeline WHERE name=?",
                 (pipeline_name,),
             ).fetchone()
             if not row:
                 return
             pipeline_id = row[0]
-            yaml_content = row[1]
-            migration_status = row[2]
+            migration_status = row[1]
 
-            if migration_status == "v71_complete":
-                helper_rows = conn.execute(
-                    """SELECT DISTINCT helper
-                       FROM pipeline_step
-                       WHERE pipeline_id=? AND helper IS NOT NULL AND helper != ''""",
-                    (pipeline_id,),
-                ).fetchall()
-                conn.execute(
-                    "DELETE FROM pipeline_helper WHERE pipeline_id=?",
-                    (pipeline_id,),
-                )
-                for helper_row in helper_rows:
-                    helper_name = _normalize_helper_ref(helper_row[0])
-                    row = conn.execute(
-                        "SELECT id FROM helper WHERE name=?",
-                        (helper_name,),
-                    ).fetchone()
-                    if row:
-                        try:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO pipeline_helper (pipeline_id, helper_id) VALUES (?,?)",
-                                (pipeline_id, row[0]),
-                            )
-                        except Exception:
-                            pass
-                return
-
-            if not yaml_content:
-                conn.execute(
-                    "DELETE FROM pipeline_helper WHERE pipeline_id=?",
-                    (pipeline_id,),
+            if migration_status != "v71_complete":
+                # Un-migrated pipeline — skip silently and leave pipeline_helper as-is
+                logger.warning(
+                    "refresh_pipeline_deps: pipeline '%s' not fully migrated (status=%s), skipping",
+                    pipeline_name,
+                    migration_status,
                 )
                 return
-            try:
-                import yaml as _yaml
-                raw = _yaml.safe_load(yaml_content) or {}
-            except Exception:
-                return
-            self._sync_pipeline_helpers(conn, pipeline_id, raw)
+
+            helper_rows = conn.execute(
+                """SELECT DISTINCT helper
+                   FROM pipeline_step
+                   WHERE pipeline_id=? AND helper IS NOT NULL AND helper != ''""",
+                (pipeline_id,),
+            ).fetchall()
+            conn.execute(
+                "DELETE FROM pipeline_helper WHERE pipeline_id=?",
+                (pipeline_id,),
+            )
+            for helper_row in helper_rows:
+                helper_name = _normalize_helper_ref(helper_row[0])
+                row = conn.execute(
+                    "SELECT id FROM helper WHERE name=?",
+                    (helper_name,),
+                ).fetchone()
+                if row:
+                    try:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO pipeline_helper (pipeline_id, helper_id) VALUES (?,?)",
+                            (pipeline_id, row[0]),
+                        )
+                    except Exception:
+                        pass
 
     def sync_all(
         self,
@@ -2359,10 +2376,12 @@ class BrixDB:
         path: str,
         requirements: Optional[list[str]] = None,
         pipeline_id: Optional[str] = None,
-        yaml_content: Optional[str] = None,
         project: Optional[str] = None,
         tags: Optional[list] = None,
         group_name: Optional[str] = None,
+        # yaml_content is intentionally removed — DB-First, no live yaml_content writes
+        # The column is retained for rollback safety but is never written from code.
+        **_ignored_kwargs: object,
     ) -> str:
         """Insert or update a pipeline index entry. Returns the pipeline id."""
         now = _now_iso()
@@ -2378,7 +2397,6 @@ class BrixDB:
                 created_at = now
 
             # Build dynamic column list based on which optional columns exist
-            has_yaml_content = self._column_exists(conn, "pipeline", "yaml_content")
             has_project = self._column_exists(conn, "pipeline", "project")
             has_tags = self._column_exists(conn, "pipeline", "tags")
             has_group = self._column_exists(conn, "pipeline", "group_name")
@@ -2390,11 +2408,6 @@ class BrixDB:
                 "updated_at=excluded.updated_at",
                 "requirements_json=excluded.requirements_json",
             ]
-
-            if has_yaml_content and yaml_content is not None:
-                cols.append("yaml_content")
-                vals.append(yaml_content)
-                updates.append("yaml_content=excluded.yaml_content")
 
             if has_project and project is not None:
                 cols.append("project")
@@ -3082,16 +3095,14 @@ class BrixDB:
         return row
 
     def get_pipeline_yaml_content(self, name: str) -> Optional[str]:
-        """Return the stored YAML content for a pipeline, or None if not stored."""
-        with self._connect() as conn:
-            if not self._column_exists(conn, "pipeline", "yaml_content"):
-                return None
-            row = conn.execute(
-                "SELECT yaml_content FROM pipeline WHERE name=?", (name,)
-            ).fetchone()
-            if row and row[0]:
-                return row[0]
-            return None
+        """DEPRECATED — always returns None (T-BRIX-DBO-18).
+
+        yaml_content is no longer written from live code paths.  The column is
+        kept in the DB schema for rollback safety but is not populated by any
+        active code path.  All callers should read pipeline data from
+        pipeline_step rows via get_steps() instead.
+        """
+        return None
 
     def get_helper_code(self, name: str) -> Optional[str]:
         """Return the stored code for a helper, or None if not stored."""
@@ -3111,14 +3122,12 @@ class BrixDB:
             return None
 
     def count_pipelines_with_content(self) -> int:
-        """Count pipelines that have yaml_content stored."""
-        with self._connect() as conn:
-            if not self._column_exists(conn, "pipeline", "yaml_content"):
-                return 0
-            row = conn.execute(
-                "SELECT COUNT(*) FROM pipeline WHERE yaml_content IS NOT NULL AND yaml_content != ''"
-            ).fetchone()
-            return row[0] if row else 0
+        """DEPRECATED — always returns 0 (T-BRIX-DBO-18).
+
+        yaml_content is no longer written from live code paths.  This method
+        is retained for interface compatibility only.
+        """
+        return 0
 
     def count_helpers_with_code(self) -> int:
         """Count helpers that have code stored."""
