@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import click
-import yaml
 
 from brix import __version__
 from brix.engine import PipelineEngine
@@ -18,6 +17,12 @@ from brix.config import config
 def main():
     """Brix — Generic process orchestrator for Claude Code."""
     pass
+
+
+def _get_server_manager():
+    from brix.server_manager import ServerManager
+
+    return ServerManager(servers_path=_get_servers_path())
 
 
 @main.command()
@@ -281,8 +286,7 @@ def _dry_run(pipeline, user_input: dict, profile: str = None):
     mcp_servers = {s.server for s in pipeline.steps if s.type == "mcp" and s.server}
     server_status: list[tuple[str, bool]] = []
     if mcp_servers:
-        servers_path = _get_servers_path()
-        registered = _load_servers_yaml(servers_path).get("servers", {})
+        registered = {entry["name"] for entry in _get_server_manager().list_all()}
         for srv in sorted(mcp_servers):
             server_status.append((srv, srv in registered))
 
@@ -501,23 +505,21 @@ def server_add(name, cmd, server_args, env_vars, tools_prefix):
         k, v = e.split("=", 1)
         env[k] = v
 
-    # Build config
-    config = {
-        "command": cmd,
-        "args": list(server_args),
-    }
-    if env:
-        config["env"] = env
-    if tools_prefix:
-        config["tools_prefix"] = tools_prefix
+    mgr = _get_server_manager()
+    existing = mgr.get(name)
+    if existing is not None:
+        click.echo(f"Error: server '{name}' already exists", err=True)
+        sys.exit(1)
 
-    # Load or create servers.yaml
-    config_path = _get_servers_path()
-    servers_data = _load_servers_yaml(config_path)
-    servers_data.setdefault("servers", {})[name] = config
-    _save_servers_yaml(config_path, servers_data)
+    entry = mgr.add(
+        name=name,
+        command=cmd,
+        args=list(server_args),
+        env=env or None,
+        tools_prefix=tools_prefix,
+    )
 
-    click.echo(f"✓ Server '{name}' saved to {config_path}", err=True)
+    click.echo(f"✓ Server '{name}' saved to {_get_servers_path().with_name('brix.db')}", err=True)
     click.echo(f"  command: {cmd} {' '.join(server_args)}", err=True)
     if env:
         click.echo(f"  env: {', '.join(env.keys())}", err=True)
@@ -526,34 +528,26 @@ def server_add(name, cmd, server_args, env_vars, tools_prefix):
 @server.command("list")
 def server_list():
     """List all registered MCP servers."""
-    config_path = _get_servers_path()
-    servers_data = _load_servers_yaml(config_path)
-    servers = servers_data.get("servers", {})
+    servers = _get_server_manager().list_all()
 
     if not servers:
         click.echo("No servers registered. Use 'brix server add' to register one.", err=True)
         return
 
-    for name, config in servers.items():
+    for config in servers:
         cmd = config.get("command", "?")
         args = " ".join(config.get("args", []))
-        click.echo(f"  {name}: {cmd} {args}", err=True)
+        click.echo(f"  {config['name']}: {cmd} {args}", err=True)
 
 
 @server.command("remove")
 @click.argument("name")
 def server_remove(name):
     """Remove a registered MCP server."""
-    config_path = _get_servers_path()
-    servers_data = _load_servers_yaml(config_path)
-    servers = servers_data.get("servers", {})
-
-    if name not in servers:
+    if not _get_server_manager().remove(name):
         click.echo(f"Error: server '{name}' not found", err=True)
         sys.exit(1)
 
-    del servers[name]
-    _save_servers_yaml(config_path, servers_data)
     click.echo(f"✓ Server '{name}' removed", err=True)
 
 
@@ -561,10 +555,9 @@ def server_remove(name):
 @click.argument("name")
 def server_test(name):
     """Test connection to a registered MCP server."""
-    config_path = _get_servers_path()
     try:
         from brix.runners.mcp import load_server_config
-        sc = load_server_config(name, config_path)
+        sc = load_server_config(name, _get_servers_path())
         click.echo(f"✓ Server '{name}' config loaded: {sc.command} {' '.join(sc.args)}", err=True)
         # Note: actual MCP connection test requires running the server
         # which is async. For now, just validate the config.
@@ -597,11 +590,10 @@ def server_refresh(name):
     """Refresh tool schema cache for a server."""
     click.echo(f"Refreshing cache for '{name}'...", err=True)
 
-    config_path = _get_servers_path()
     try:
         from brix.runners.mcp import load_server_config
-        server_config = load_server_config(name, config_path)
-    except (FileNotFoundError, KeyError) as e:
+        server_config = load_server_config(name, _get_servers_path())
+    except KeyError as e:
         click.echo(f"✗ {e}", err=True)
         sys.exit(1)
 
@@ -649,18 +641,6 @@ def _get_servers_path() -> Path:
     path = Path.home() / ".brix" / "servers.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def _load_servers_yaml(path: Path) -> dict:
-    if path.exists():
-        with open(path) as f:
-            return yaml.safe_load(f) or {}
-    return {}
-
-
-def _save_servers_yaml(path: Path, data: dict):
-    with open(path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False)
 
 
 # --- Dependency Management (T-BRIX-V4-BUG-11) ---

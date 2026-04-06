@@ -1,7 +1,6 @@
 """MCP runner — tool calls via stdio/SSE protocol."""
 import json
 import time
-import yaml
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -10,6 +9,7 @@ from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout, get_default_timeout
 from brix.models import ServerConfig
 from brix.cache import SchemaCache
+from brix.server_manager import ServerManager
 
 try:
     from mcp import ClientSession, StdioServerParameters, McpError
@@ -25,7 +25,7 @@ except ImportError:
     sse_client = None  # type: ignore[assignment]
 
 
-# Default path for servers.yaml
+# Legacy compatibility path used to infer the adjacent brix.db location.
 SERVERS_CONFIG_PATH = Path.home() / ".brix" / "servers.yaml"
 
 
@@ -58,31 +58,24 @@ _McpConnectionPool = None
 
 
 def load_server_config(server_name: str, config_path: Optional[Path] = None) -> ServerConfig:
-    """Load a server configuration from servers.yaml.
+    """Load a server configuration from the DB-backed ServerManager.
 
     Args:
         server_name: Name of the server to look up.
-        config_path: Override path for servers.yaml (default: ~/.brix/servers.yaml).
+        config_path: Legacy path used only to infer the adjacent ``brix.db``
+            location (default: ``~/.brix/servers.yaml``).
 
     Returns:
         ServerConfig for the named server.
 
     Raises:
-        FileNotFoundError: If the servers.yaml file does not exist.
-        KeyError: If the server name is not found in the file.
+        KeyError: If the server name is not found in the DB.
     """
-    path = config_path or SERVERS_CONFIG_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"No servers.yaml found at {path}")
-
-    with open(path) as f:
-        data = yaml.safe_load(f) or {}
-
-    servers = data.get("servers", {})
-    if server_name not in servers:
-        raise KeyError(f"Server '{server_name}' not found in {path}")
-
-    return ServerConfig(name=server_name, **servers[server_name])
+    mgr = ServerManager(servers_path=config_path or SERVERS_CONFIG_PATH)
+    entry = mgr.get(server_name)
+    if entry is None:
+        raise KeyError(f"Server '{server_name}' not found in DB")
+    return ServerConfig(**entry)
 
 
 class McpRunner(BaseRunner):
@@ -97,7 +90,7 @@ class McpRunner(BaseRunner):
         return {
             "type": "object",
             "properties": {
-                "server": {"type": "string", "description": "MCP server name from servers.yaml"},
+                "server": {"type": "string", "description": "MCP server name from the DB"},
                 "tool": {"type": "string", "description": "Tool name to call"},
                 "params": {"type": "object", "description": "Tool arguments"},
                 "timeout": {"type": "string", "description": "Timeout e.g. '30s'"},
@@ -198,7 +191,7 @@ class McpRunner(BaseRunner):
     async def execute(self, step: Any, context: Any) -> dict:
         """Execute an MCP tool call step.
 
-        Reads server + tool from step, loads server config from servers.yaml,
+        Reads server + tool from step, loads server config from the DB,
         launches the server via stdio, calls the tool, and returns JSON output.
 
         Returns:

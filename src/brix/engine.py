@@ -1580,7 +1580,7 @@ class PipelineEngine:
         Returns a dict with:
         - python_version: sys.version_info tuple as string
         - installed_packages: list of "name==version" strings (top-level, sorted)
-        - mcp_servers: list of server names from ~/.brix/servers.yaml
+        - mcp_servers: list of server names from brix.db
         """
         import sys as _sys
         snapshot: dict = {
@@ -1604,16 +1604,13 @@ class PipelineEngine:
         except Exception:
             snapshot["installed_packages"] = []
 
-        # MCP servers from servers.yaml
+        # MCP servers from the DB
         try:
-            import yaml as _yaml
-            from pathlib import Path as _Path
-            _servers_path = _Path.home() / ".brix" / "servers.yaml"
-            if _servers_path.exists():
-                raw = _yaml.safe_load(_servers_path.read_text()) or {}
-                snapshot["mcp_servers"] = sorted(raw.get("servers", {}).keys())
-            else:
-                snapshot["mcp_servers"] = []
+            from brix.server_manager import ServerManager
+
+            snapshot["mcp_servers"] = sorted(
+                entry["name"] for entry in ServerManager().list_all()
+            )
         except Exception:
             snapshot["mcp_servers"] = []
 

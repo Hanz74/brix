@@ -47,7 +47,7 @@ async def _handle_server_update(arguments: dict) -> dict:
     mgr = ServerManager()
     updated = mgr.update(name=name, command=command, args=args, env=env)
     if updated is None:
-        return {"success": False, "error": f"Server '{name}' not found in servers.yaml."}
+        return {"success": False, "error": f"Server '{name}' not found in DB."}
     return {"success": True, "server": updated}
 
 
@@ -61,7 +61,7 @@ async def _handle_server_remove(arguments: dict) -> dict:
     mgr = ServerManager()
     removed = mgr.remove(name)
     if not removed:
-        return {"success": False, "error": f"Server '{name}' not found in servers.yaml."}
+        return {"success": False, "error": f"Server '{name}' not found in DB."}
     return {"success": True, "removed": name}
 
 

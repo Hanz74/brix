@@ -153,17 +153,16 @@ class PipelineValidator:
                     result.add_error(f"Step '{step.id}': MCP step needs 'tool'")
                 # Check if server is registered
                 if step.server:
-                    servers_path = Path.home() / ".brix" / "servers.yaml"
-                    if servers_path.exists():
-                        import yaml
-                        data = yaml.safe_load(servers_path.read_text()) or {}
-                        if step.server not in data.get("servers", {}):
+                    try:
+                        from brix.server_manager import ServerManager
+
+                        if ServerManager().get(step.server) is None:
                             result.add_warning(
                                 f"Step '{step.id}': Server '{step.server}' not registered"
                             )
-                    else:
+                    except Exception:
                         result.add_warning(
-                            f"No servers.yaml found — cannot verify server '{step.server}'"
+                            f"Could not verify server '{step.server}' in DB"
                         )
                 # Check tool against cache
                 if step.server and step.tool:

@@ -6,11 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    import yaml  # PyYAML
-    _HAS_YAML = True
-except ImportError:
-    _HAS_YAML = False
+from brix.server_manager import ServerManager
 
 SERVERS_CONFIG = Path.home() / ".brix" / "servers.yaml"
 
@@ -26,8 +22,7 @@ class McpClient:
         if result["success"]:
             messages = result["data"]
 
-    The client reads server configuration from ``~/.brix/servers.yaml`` (same
-    file that the Brix MCP server uses) and spawns the server process directly
+    The client reads server configuration from ``brix.db`` and spawns the server process directly
     via ``subprocess``.  Each :meth:`call` is a blocking operation — suitable
     for use inside synchronous helper scripts.
     """
@@ -38,17 +33,13 @@ class McpClient:
         self._load_config()
 
     def _load_config(self) -> None:
-        """Load server configuration from YAML file."""
-        if not self._config_path.exists():
-            return
-        if not _HAS_YAML:
-            # Fallback: try json-style parsing (won't work for real YAML, but
-            # avoids a hard crash when PyYAML is not installed)
-            return
+        """Load server configuration from the DB-backed ServerManager."""
         try:
-            with open(self._config_path) as f:
-                data = yaml.safe_load(f) or {}
-            self._servers = data.get("servers", {})
+            mgr = ServerManager(servers_path=self._config_path)
+            self._servers = {
+                entry["name"]: entry
+                for entry in mgr.list_all()
+            }
         except Exception:
             self._servers = {}
 
@@ -61,14 +52,9 @@ class McpClient:
         - ``error`` (str) — error message on failure
         """
         if not self._servers:
-            if not self._config_path.exists():
-                return {
-                    "success": False,
-                    "error": f"Servers config not found: {self._config_path}",
-                }
             return {
                 "success": False,
-                "error": "No servers configured (check ~/.brix/servers.yaml)",
+                "error": "No servers configured in DB",
             }
 
         if server_name not in self._servers:
@@ -159,7 +145,7 @@ class McpClient:
 
 
 # Module-level convenience instance — works out-of-the-box when
-# ~/.brix/servers.yaml exists.
+# ``~/.brix/brix.db`` exists.
 mcp = McpClient()
 
 

@@ -1,58 +1,45 @@
-"""MCP Server Manager — CRUD for servers.yaml entries.
-
-Provides a clean API for managing MCP server configurations stored in
-``~/.brix/servers.yaml``.  Each entry describes how to launch a server
-(command, args, optional env) so the pipeline engine can connect to it.
-"""
+"""MCP Server Manager — CRUD for DB-backed server entries."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
-import yaml
-
 
 DEFAULT_SERVERS_PATH = Path.home() / ".brix" / "servers.yaml"
 
 
-def _get_servers_path() -> Path:
-    path = DEFAULT_SERVERS_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _load(path: Path) -> dict:
-    if path.exists():
-        return yaml.safe_load(path.read_text()) or {}
-    return {}
-
-
-def _save(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
-
-
 class ServerManager:
-    """Manages MCP server entries in servers.yaml.
+    """Manages MCP server entries stored in ``brix.db``.
 
-    Parameters
-    ----------
-    servers_path:
-        Path to the servers.yaml file.  Defaults to ``~/.brix/servers.yaml``.
+    ``servers_path`` is retained for backward compatibility. When provided, it
+    is used only to infer the adjacent ``brix.db`` location. No YAML fallback
+    is performed.
     """
 
     def __init__(self, servers_path: Optional[Path] = None) -> None:
-        self._path = Path(servers_path) if servers_path else DEFAULT_SERVERS_PATH
+        self._servers_path = Path(servers_path) if servers_path else DEFAULT_SERVERS_PATH
+        self._db_path = self._servers_path.with_name("brix.db")
 
-    def _load(self) -> dict:
-        return _load(self._path)
+    def _get_db(self):
+        # Lazy import avoids circular imports during startup.
+        from brix.db import BrixDB
 
-    def _save(self, data: dict) -> None:
-        _save(self._path, data)
+        return BrixDB(self._db_path)
 
-    # ------------------------------------------------------------------
-    # CRUD
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _entry_from_row(row: Optional[dict]) -> Optional[dict]:
+        if row is None:
+            return None
+        return {
+            "name": row["name"],
+            "command": row.get("command", ""),
+            "args": list(row.get("args") or []),
+            "env": dict(row.get("env") or {}),
+            "tools_prefix": row.get("tools_prefix") or None,
+            "transport": row.get("transport") or "stdio",
+            "url": row.get("url") or "",
+            "unwrap_json": bool(row.get("unwrap_json", False)),
+        }
 
     def add(
         self,
@@ -60,37 +47,42 @@ class ServerManager:
         command: str,
         args: Optional[list] = None,
         env: Optional[dict] = None,
+        *,
+        tools_prefix: Optional[str] = None,
+        transport: str = "stdio",
+        url: str = "",
+        unwrap_json: bool = False,
     ) -> dict:
-        """Add a new server entry.  Raises ValueError if name already exists."""
-        data = self._load()
-        servers = data.setdefault("servers", {})
-        if name in servers:
+        """Add a new server entry. Raises ValueError if name already exists."""
+        if self.get(name) is not None:
             raise ValueError(
                 f"Server '{name}' already exists. Use update() to modify it."
             )
-        entry: dict = {"command": command, "args": list(args or [])}
-        if env:
-            entry["env"] = dict(env)
-        servers[name] = entry
-        self._save(data)
-        return {"name": name, **entry}
+        row = self._get_db().upsert_mcp_server(
+            name=name,
+            command=command,
+            args=list(args or []),
+            env=dict(env or {}),
+            tools_prefix=tools_prefix or "",
+            transport=transport,
+            url=url,
+            unwrap_json=unwrap_json,
+        )
+        return self._entry_from_row(row) or {}
 
     def list_all(self) -> list[dict]:
         """Return all server entries as a list of dicts."""
-        data = self._load()
-        servers = data.get("servers", {})
         return [
-            {"name": name, **cfg}
-            for name, cfg in servers.items()
+            entry
+            for entry in (
+                self._entry_from_row(row) for row in self._get_db().list_mcp_servers()
+            )
+            if entry is not None
         ]
 
     def get(self, name: str) -> Optional[dict]:
         """Return a single server entry by name, or None if not found."""
-        data = self._load()
-        cfg = data.get("servers", {}).get(name)
-        if cfg is None:
-            return None
-        return {"name": name, **cfg}
+        return self._entry_from_row(self._get_db().get_mcp_server(name))
 
     def update(
         self,
@@ -98,44 +90,45 @@ class ServerManager:
         command: Optional[str] = None,
         args: Optional[list] = None,
         env: Optional[dict] = None,
+        *,
+        tools_prefix: Optional[str] = None,
+        transport: Optional[str] = None,
+        url: Optional[str] = None,
+        unwrap_json: Optional[bool] = None,
     ) -> Optional[dict]:
-        """Update an existing server entry.  Returns None if not found."""
-        data = self._load()
-        servers = data.get("servers", {})
-        if name not in servers:
+        """Update an existing server entry. Returns None if not found."""
+        existing = self.get(name)
+        if existing is None:
             return None
-        entry = servers[name]
-        if command is not None:
-            entry["command"] = command
-        if args is not None:
-            entry["args"] = list(args)
-        if env is not None:
-            entry["env"] = dict(env)
-        self._save(data)
-        return {"name": name, **entry}
+        row = self._get_db().upsert_mcp_server(
+            name=name,
+            command=command if command is not None else existing.get("command", ""),
+            args=list(args) if args is not None else list(existing.get("args") or []),
+            env=dict(env) if env is not None else dict(existing.get("env") or {}),
+            tools_prefix=tools_prefix if tools_prefix is not None else (existing.get("tools_prefix") or ""),
+            transport=transport if transport is not None else (existing.get("transport") or "stdio"),
+            url=url if url is not None else (existing.get("url") or ""),
+            unwrap_json=unwrap_json if unwrap_json is not None else bool(existing.get("unwrap_json", False)),
+        )
+        return self._entry_from_row(row)
 
     def remove(self, name: str) -> bool:
-        """Remove a server entry.  Returns True if removed, False if not found."""
-        data = self._load()
-        servers = data.get("servers", {})
-        if name not in servers:
-            return False
-        del servers[name]
-        self._save(data)
-        return True
+        """Remove a server entry. Returns True if removed, False if not found."""
+        return self._get_db().delete_mcp_server(name)
 
     def refresh(self, name: str) -> dict:
-        """Refresh (re-validate) a server config entry.
-
-        Loads the entry and returns its current state.  The actual MCP
-        connection test is async — this method only validates the config
-        is present and structurally valid, returning the stored entry.
-
-        Raises KeyError if the server is not found.
-        """
+        """Refresh (re-validate) a server config entry."""
         entry = self.get(name)
         if entry is None:
-            raise KeyError(f"Server '{name}' not found in servers.yaml")
+            raise KeyError(f"Server '{name}' not found in DB")
+
+        if entry.get("transport") == "sse":
+            if not entry.get("url"):
+                raise ValueError(
+                    f"Server '{name}' has no 'url' field. Use update() to fix it."
+                )
+            return entry
+
         if not entry.get("command"):
             raise ValueError(
                 f"Server '{name}' has no 'command' field. Use update() to fix it."

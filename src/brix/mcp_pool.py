@@ -114,8 +114,7 @@ class McpConnectionPool:
 
         Raises:
             RuntimeError: If the pool has not been entered (no group).
-            FileNotFoundError: If ``servers.yaml`` does not exist.
-            KeyError: If *server_name* is not found in ``servers.yaml``.
+            KeyError: If *server_name* is not found in the DB.
             OSError: If the server subprocess cannot be started.
         """
         if self._group is None:
@@ -322,7 +321,7 @@ class McpConnectionPool:
     async def _connect(self, server_name: str) -> object:
         """Establish a new connection to *server_name* via the SDK group.
 
-        Loads server config from ``servers.yaml``.  For stdio servers creates
+        Loads server config from the DB. For stdio servers creates
         ``StdioServerParameters``; for SSE servers creates
         ``SseServerParameters``.  Both are passed to
         ``group.connect_to_server`` which handles the transport transparently.
