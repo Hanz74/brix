@@ -71,12 +71,13 @@ class TransformRunner(BaseRunner):
         input_data = params.get('input') or params.get('_input')
         expression = params.get('expression')
 
-        if input_data is None:
-            self.report_progress(0.0, "error: missing input")
-            return {"success": False, "error": "Transform brick needs 'input'", "duration": time.monotonic() - start}
         if not expression:
             self.report_progress(0.0, "error: missing expression")
             return {"success": False, "error": "Transform brick needs 'expression'", "duration": time.monotonic() - start}
+
+        # input is optional — default to empty dict so expressions like {{ now() }} work
+        if input_data is None:
+            input_data = {}
 
         n_items = len(input_data) if isinstance(input_data, (list, dict)) else 1
         self.report_progress(0.0, f"Transforming {n_items} items")
