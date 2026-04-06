@@ -172,16 +172,17 @@ def _save_pipeline_yaml(name: str, data: dict) -> None:
     store.save(data, name)
 
 
-def _validate_pipeline_dict(data: dict) -> dict:
+def _validate_pipeline_dict(data: dict, level: str = "standard") -> dict:
     """Validate a pipeline dict using PipelineValidator. Returns validation summary."""
     try:
         pipeline = _loader.load_from_string(yaml.dump(data))
-        result = _validator.validate(pipeline)
+        result = _validator.validate(pipeline, level=level)
         return {
             "valid": result.is_valid,
             "errors": result.errors,
             "warnings": result.warnings,
             "checks": result.checks,
+            "level": level,
         }
     except Exception as exc:
         return {
@@ -189,6 +190,7 @@ def _validate_pipeline_dict(data: dict) -> dict:
             "errors": [str(exc)],
             "warnings": [],
             "checks": [],
+            "level": level,
         }
 
 

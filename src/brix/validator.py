@@ -2,12 +2,21 @@
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
+import jinja2
+from jinja2 import nodes
+from jinja2.visitor import NodeVisitor
+import jsonschema
+from jsonschema import ValidationError
 import yaml
 
 from brix.models import Pipeline
 from brix.cache import SchemaCache
+from brix.bricks.registry import BrickRegistry
+from brix.engine import LEGACY_ALIASES
+from brix.pipeline_store import PipelineStore
+from brix.connections import ConnectionManager
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +73,7 @@ class PipelineValidator:
         self.cache = cache or SchemaCache()
         # lint_rules: explicit list (for testing), otherwise load from disk + defaults
         self._lint_rules: list[dict] | None = lint_rules
+        self._runner_config_schemas: dict[str, dict] | None = None
 
     def _load_lint_rules(self) -> list[dict]:
         """Load lint rules from ~/.brix/lint_rules.yaml merged with defaults (T-BRIX-V6-16)."""
@@ -81,7 +91,15 @@ class PipelineValidator:
                 pass  # Malformed file — use defaults only
         return rules
 
-    def validate(self, pipeline: Pipeline, pipeline_dir: Path = None) -> ValidationResult:
+    def validate(
+        self,
+        pipeline: Pipeline,
+        pipeline_dir: Path = None,
+        level: str = "standard",
+    ) -> ValidationResult:
+        if level not in {"quick", "standard", "deep"}:
+            raise ValueError("level must be one of: quick, standard, deep")
+
         result = ValidationResult()
 
         # 1. Step IDs unique
@@ -215,6 +233,17 @@ class PipelineValidator:
         # 13. Pipeline Linting Rules (T-BRIX-V6-16)
         self._run_lint_rules(pipeline, result)
 
+        # 14. Preflight validation (E-BRIX-PREFLIGHT)
+        if level in {"standard", "deep"}:
+            self._check_brick_config_schema(pipeline, result)
+            self._check_jinja_ast(pipeline, result)
+            self._check_sub_pipeline_existence(pipeline, result)
+            self._check_connection_existence(pipeline, result)
+
+        # 15. Deep preflight: active connection tests
+        if level == "deep":
+            self._check_connection_health(pipeline, result)
+
         if result.is_valid:
             result.add_check("Pipeline is valid")
 
@@ -347,6 +376,316 @@ class PipelineValidator:
                 result.add_warning(
                     f"Step '{step.id}': MCP tool '{step.tool}' requires param '{req_key}' "
                     f"but it is not set in step params (T-BRIX-V4-21)"
+                )
+
+    def _get_runner_config_schema(self, runner_name: str) -> dict | None:
+        """Return config_schema() for a runner, cached lazily."""
+        if not runner_name:
+            return None
+        if self._runner_config_schemas is None:
+            self._runner_config_schemas = {}
+            try:
+                from brix.runners.base import discover_runners
+
+                for step_type, runner_cls in discover_runners().items():
+                    try:
+                        schema = runner_cls().config_schema()
+                    except Exception:
+                        continue
+                    if isinstance(schema, dict):
+                        self._runner_config_schemas[step_type] = schema
+            except Exception:
+                self._runner_config_schemas = {}
+        return self._runner_config_schemas.get(runner_name)
+
+    @staticmethod
+    def _step_to_validation_config(step: Any) -> dict[str, Any]:
+        """Build a config dict that works for top-level fields and params/config usage."""
+        raw: dict[str, Any] = {}
+        step_dict = getattr(step, "__dict__", None)
+        if isinstance(step_dict, dict):
+            raw.update(
+                {
+                    key: value
+                    for key, value in step_dict.items()
+                    if not key.startswith("_") and value is not None
+                }
+            )
+        elif hasattr(step, "model_dump"):
+            try:
+                raw.update(step.model_dump(exclude_none=True))
+            except Exception:
+                pass
+
+        for nested_key in ("config", "params"):
+            nested = raw.get(nested_key)
+            if isinstance(nested, dict):
+                for key, value in nested.items():
+                    raw.setdefault(key, value)
+        return raw
+
+    def _resolve_step_schema(self, step) -> dict | None:
+        """Resolve JSON schema for a step via BrickRegistry first, then runner schema."""
+        registry = BrickRegistry()
+        step_type = getattr(step, "type", "") or ""
+        effective_type = LEGACY_ALIASES.get(step_type, step_type)
+
+        brick = registry.get(effective_type)
+        if brick is None:
+            brick = next((b for b in registry.list_all() if b.type == effective_type), None)
+
+        if brick is not None:
+            brick_schema = brick.to_json_schema()
+            if brick_schema.get("properties") or brick_schema.get("required"):
+                return brick_schema
+            runner_name = brick.runner or ""
+            if runner_name:
+                runner_schema = self._get_runner_config_schema(runner_name)
+                if runner_schema:
+                    return runner_schema
+
+        runner_candidates = [
+            step_type,
+            effective_type,
+            effective_type.replace(".", "_"),
+        ]
+        for candidate in runner_candidates:
+            schema = self._get_runner_config_schema(candidate)
+            if schema:
+                return schema
+        return None
+
+    def _check_brick_config_schema(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Validate step config against brick or runner JSON schema."""
+        for step in pipeline.steps:
+            schema = self._resolve_step_schema(step)
+            if not schema:
+                continue
+            instance = self._step_to_validation_config(step)
+            try:
+                jsonschema.validate(instance=instance, schema=schema)
+            except ValidationError as exc:
+                result.add_warning(
+                    f"Step '{step.id}': config does not match schema: {exc.message}"
+                )
+
+    @staticmethod
+    def _collect_template_strings(value: Any, path: str = "") -> list[tuple[str, str]]:
+        """Recursively collect Jinja template strings from nested config."""
+        collected: list[tuple[str, str]] = []
+        if isinstance(value, str):
+            if any(token in value for token in ("{{", "{%", "{#")):
+                collected.append((path or "<value>", value))
+            return collected
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                next_path = f"{path}.{key}" if path else str(key)
+                collected.extend(PipelineValidator._collect_template_strings(nested, next_path))
+            return collected
+        if isinstance(value, (list, tuple)):
+            for idx, nested in enumerate(value):
+                next_path = f"{path}[{idx}]" if path else f"[{idx}]"
+                collected.extend(PipelineValidator._collect_template_strings(nested, next_path))
+        return collected
+
+    class _JinjaRootNameVisitor(NodeVisitor):
+        """Collect load-context root names while respecting local template bindings."""
+
+        def __init__(self):
+            self.names: set[str] = set()
+            self._locals_stack: list[set[str]] = [set()]
+
+        def _declare_target(self, target: nodes.Node) -> None:
+            if isinstance(target, nodes.Name):
+                self._locals_stack[-1].add(target.name)
+            elif isinstance(target, (nodes.Tuple, nodes.List)):
+                for item in target.items:
+                    self._declare_target(item)
+
+        def _is_local(self, name: str) -> bool:
+            return any(name in scope for scope in reversed(self._locals_stack))
+
+        def visit_Name(self, node: nodes.Name, *args: Any, **kwargs: Any) -> None:
+            if node.ctx == "load" and not self._is_local(node.name):
+                self.names.add(node.name)
+
+        def visit_Assign(self, node: nodes.Assign, *args: Any, **kwargs: Any) -> None:
+            self.visit(node.node, *args, **kwargs)
+            self._declare_target(node.target)
+
+        def visit_AssignBlock(self, node: nodes.AssignBlock, *args: Any, **kwargs: Any) -> None:
+            self._locals_stack.append(set())
+            self.generic_visit(node, *args, **kwargs)
+            self._locals_stack.pop()
+            self._declare_target(node.target)
+
+        def visit_For(self, node: nodes.For, *args: Any, **kwargs: Any) -> None:
+            self.visit(node.iter, *args, **kwargs)
+            if node.test is not None:
+                self.visit(node.test, *args, **kwargs)
+            self._locals_stack.append(set())
+            self._declare_target(node.target)
+            for child in node.body:
+                self.visit(child, *args, **kwargs)
+            for child in node.else_:
+                self.visit(child, *args, **kwargs)
+            self._locals_stack.pop()
+
+        def visit_Macro(self, node: nodes.Macro, *args: Any, **kwargs: Any) -> None:
+            macro_scope = {arg.name for arg in node.args}
+            self._locals_stack.append(macro_scope)
+            for child in node.body:
+                self.visit(child, *args, **kwargs)
+            self._locals_stack.pop()
+
+    def _check_jinja_ast(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Parse Jinja templates and warn on unknown root names."""
+        env = jinja2.Environment()
+        known_names = {step.id for step in pipeline.steps}
+        known_names.update(
+            {
+                "input",
+                "item",
+                "credentials",
+                "var",
+                "store",
+                "last_output",
+                "now",
+                "utcnow",
+                "uuid4",
+                "zip",
+                "env",
+                "fail",
+                "range",
+                "dict",
+                "namespace",
+                "loop",
+                "true",
+                "false",
+                "none",
+                "default",
+                "length",
+                "selectattr",
+                "list",
+                "join",
+                "int",
+                "float",
+                "string",
+                "tojson",
+                "fromjson",
+                "iif",
+                "b64encode",
+                "b64decode",
+            }
+        )
+
+        for step in pipeline.steps:
+            templates: list[tuple[str, str]] = []
+            templates.extend(self._collect_template_strings(getattr(step, "params", None), "params"))
+            templates.extend(self._collect_template_strings(getattr(step, "config", None), "config"))
+            if getattr(step, "when", None):
+                templates.extend(self._collect_template_strings(step.when, "when"))
+            if getattr(step, "foreach", None):
+                templates.extend(self._collect_template_strings(step.foreach, "foreach"))
+
+            for field_path, template in templates:
+                try:
+                    ast = env.parse(template)
+                except jinja2.TemplateSyntaxError as exc:
+                    result.add_error(
+                        f"Step '{step.id}': Jinja2 syntax error in {field_path}: {exc}"
+                    )
+                    continue
+
+                visitor = self._JinjaRootNameVisitor()
+                visitor.visit(ast)
+                unknown = sorted(name for name in visitor.names if name not in known_names)
+                for name in unknown:
+                    result.add_warning(
+                        f"Step '{step.id}': Jinja2 template in {field_path} references unknown name '{name}'"
+                    )
+
+    @staticmethod
+    def _is_dynamic_ref(value: Any) -> bool:
+        return isinstance(value, str) and any(token in value for token in ("{{", "{%", "{#"))
+
+    def _check_sub_pipeline_existence(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Ensure statically referenced sub-pipelines exist."""
+        store = PipelineStore()
+        for step in pipeline.steps:
+            if step.type not in {"pipeline", "flow.pipeline"}:
+                continue
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+            pipeline_name = (
+                getattr(step, "pipeline", None)
+                or (params.get("pipeline") if isinstance(params, dict) else None)
+                or (config.get("pipeline") if isinstance(config, dict) else None)
+            )
+            if not pipeline_name or self._is_dynamic_ref(pipeline_name):
+                continue
+            try:
+                store.load(pipeline_name)
+            except FileNotFoundError:
+                result.add_error(
+                    f"Step '{step.id}': sub-pipeline '{pipeline_name}' does not exist"
+                )
+
+    def _collect_connection_names(self, pipeline: Pipeline) -> set[str]:
+        names: set[str] = set()
+        for step in pipeline.steps:
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+            connection_name = (
+                getattr(step, "connection", None)
+                or (params.get("connection") if isinstance(params, dict) else None)
+                or (config.get("connection") if isinstance(config, dict) else None)
+            )
+            if not connection_name or self._is_dynamic_ref(connection_name):
+                continue
+            names.add(connection_name)
+        return names
+
+    def _check_connection_existence(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Ensure statically referenced named connections exist."""
+        names = self._collect_connection_names(pipeline)
+        if not names:
+            return
+
+        try:
+            from brix.db import BrixDB
+
+            manager = ConnectionManager(BrixDB())
+            known = {item.get("name") for item in manager.list()}
+        except Exception as exc:
+            result.add_warning(f"Could not verify connection existence: {exc}")
+            return
+
+        for name in sorted(names):
+            if name not in known:
+                result.add_error(f"Connection '{name}' does not exist")
+
+    def _check_connection_health(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Active connection ping for deep validation mode."""
+        names = self._collect_connection_names(pipeline)
+        if not names:
+            return
+
+        try:
+            from brix.db import BrixDB
+
+            manager = ConnectionManager(BrixDB())
+        except Exception as exc:
+            result.add_warning(f"Could not initialize connection tests: {exc}")
+            return
+
+        for name in sorted(names):
+            test_result = manager.test(name)
+            if test_result.get("success"):
+                result.add_check(f"Connection '{name}': test passed")
+            elif "not found" not in str(test_result.get("error", "")).lower():
+                result.add_warning(
+                    f"Connection '{name}': test failed: {test_result.get('error', 'unknown error')}"
                 )
 
     # ---------------------------------------------------------------------------

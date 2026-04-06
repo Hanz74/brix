@@ -306,7 +306,7 @@ async def _handle_get_pipeline(arguments: dict) -> dict:
 async def _handle_update_pipeline(arguments: dict) -> dict:
     """Update pipeline metadata without touching steps.
 
-    Supports: input_schema, version, description, requirements,
+    Supports: input_schema/input, version, description, requirements,
     credentials, error_handling, groups, output.
     """
     from brix.system_pipelines import is_system_pipeline
@@ -335,8 +335,11 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
 
     changed_fields: list[str] = []
 
-    if "input_schema" in arguments and arguments["input_schema"] is not None:
-        raw["input"] = arguments["input_schema"]
+    input_schema = arguments.get("input_schema")
+    if input_schema is None and "input" in arguments:
+        input_schema = arguments["input"]
+    if input_schema is not None:
+        raw["input"] = input_schema
         changed_fields.append("input_schema")
 
     if "version" in arguments and arguments["version"] is not None:
@@ -597,15 +600,19 @@ async def _handle_rename_pipeline(arguments: dict) -> dict:
 async def _handle_validate_pipeline(arguments: dict) -> dict:
     """Validate a pipeline without running it."""
     name = arguments.get("pipeline_id", "")
+    level = arguments.get("level", "standard")
+    if level not in {"quick", "standard", "deep"}:
+        return {"success": False, "error": "level must be one of: quick, standard, deep"}
     try:
         data = _load_pipeline_yaml(name)
     except FileNotFoundError as exc:
         return {"success": False, "error": str(exc)}
 
-    validation = _validate_pipeline_dict(data)
+    validation = _validate_pipeline_dict(data, level=level)
     return {
         "success": True,
         "pipeline_id": name,
+        "level": level,
         "valid": validation["valid"],
         "errors": validation["errors"],
         "warnings": validation["warnings"],
