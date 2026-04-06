@@ -59,7 +59,7 @@ def test_server_and_tool_in_config_are_promoted_to_top_level():
     assert result["tool"] == "fetch_pr"
 
 
-def test_existing_top_level_values_are_not_overwritten():
+def test_config_values_override_existing_top_level_values():
     step = {
         "id": "mixed_sources",
         "type": "script.python",
@@ -74,5 +74,5 @@ def test_existing_top_level_values_are_not_overwritten():
 
     result = merge_step_config_into_params(step)
 
-    assert result["helper"] == "top_level_helper"
-    assert result["script"] == "/tmp/top_level_script.py"
+    assert result["helper"] == "config_helper"
+    assert result["script"] == "/tmp/config_script.py"

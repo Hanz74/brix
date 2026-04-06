@@ -185,12 +185,62 @@ _PIPELINE_STEP_TYPES = {"pipeline", "flow.pipeline"}
 # Top-level Step fields that may be stored inside config_json when the caller
 # used step.config instead of the dedicated column. These must be promoted to
 # the correct top-level field so that runners and the engine can find them.
+#
+# Config is the source of truth for these fields. We must not let model/DDL
+# defaults like method="GET", shell=False, parallel=False, concurrency=10, or
+# batch_size=0 block explicit config values during DB readback.
 _STEP_CONFIG_TOP_LEVEL_FIELD_PROMOTIONS: dict[frozenset[str], tuple[str, ...]] = {
     frozenset(_PIPELINE_STEP_TYPES): ("pipeline",),
-    frozenset({"script.python"}): ("helper", "script"),
+    frozenset({"python", "script.python"}): ("helper", "script"),
+    frozenset({"http", "http.request"}): ("method", "url"),
     frozenset({"db.query", "db.exec", "db.upsert"}): ("connection",),
-    frozenset({"mcp.call"}): ("server", "tool"),
-    frozenset({"script.cli"}): ("command",),
+    frozenset({"mcp", "mcp.call"}): ("server", "tool"),
+    frozenset({"cli", "script.cli"}): ("command", "shell"),
+    frozenset({
+        "http", "http.request",
+        "cli", "script.cli",
+        "mcp", "mcp.call",
+        "pipeline", "flow.pipeline",
+        "pipeline_group", "flow.pipeline_group",
+        "python", "script.python",
+        "db.query", "db.exec", "db.upsert",
+        "filter", "flow.filter",
+        "transform", "flow.transform",
+        "set", "flow.set",
+        "stop",
+        "choose", "flow.choose",
+        "parallel", "flow.parallel",
+        "repeat", "flow.repeat",
+        "notify", "action.notify",
+        "approval", "action.approval",
+        "validate", "flow.validate",
+        "switch", "flow.switch",
+        "merge", "flow.merge",
+        "error_handler", "flow.error_handler",
+        "wait", "flow.wait",
+        "dedup", "flow.dedup",
+        "aggregate", "flow.aggregate",
+        "flatten", "flow.flatten",
+        "diff", "flow.diff",
+        "respond", "action.respond",
+        "queue",
+        "emit",
+        "file_read", "file.read",
+        "file_write", "file.write",
+        "file_read_base64", "file.read_base64",
+        "file_list", "file.list",
+        "file_load_json", "file.load_json",
+        "source.fetch",
+        "llm.batch",
+        "markitdown.convert",
+        "keyword_filter", "filter.keyword",
+        "extract_url", "extract.url",
+        "extract_ics", "extract.ics",
+        "convert_batch", "convert.batch",
+        "llm_batch", "llm.batch_poll",
+        "util_wait", "util.wait",
+        "util_load_dir", "util.load_dir",
+    }): ("parallel", "concurrency", "batch_size"),
 }
 
 
@@ -206,10 +256,10 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     - the step is not a specialist step, where ``config`` is semantic input
 
     Additionally, selected runner-consumed fields are promoted from
-    ``step.config`` to top-level step fields when the runner reads them from
-    ``getattr(step, "<field>", None)``. This covers cases like
-    ``config.pipeline`` for ``flow.pipeline`` steps and similar brick-schema
-    fields for ``script.python``, ``db.*``, ``mcp.call``, and ``script.cli``.
+    ``step.config`` to top-level step fields when the runner or engine reads
+    them from ``step.<field>``. For these promoted fields, ``config`` is the
+    source of truth and overrides any existing top-level value, including
+    create-time defaults from the Step model / DB schema.
     """
     step_type = step.get("type")
     config = step.get("config")
@@ -229,9 +279,8 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
             if step_type not in step_types:
                 continue
             for field in fields:
-                if config.get(field) and not step.get(field):
+                if config.get(field) is not None:
                     step[field] = config[field]
-            break
 
     return step
 

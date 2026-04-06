@@ -45,8 +45,8 @@ def test_pipeline_legacy_type_name_in_config_is_promoted():
     assert result["pipeline"] == "my-sub-pipeline"
 
 
-def test_pipeline_top_level_field_not_overwritten():
-    """If step already has a top-level pipeline field, config must NOT overwrite it."""
+def test_pipeline_config_overrides_top_level_field():
+    """Config must override top-level pipeline values for promoted fields."""
     step = {
         "id": "process_each",
         "type": "flow.pipeline",
@@ -55,8 +55,8 @@ def test_pipeline_top_level_field_not_overwritten():
         "pipeline": "correct-value",
     }
     result = merge_step_config_into_params(step)
-    assert result["pipeline"] == "correct-value", (
-        "Existing top-level pipeline field must take precedence over config value"
+    assert result["pipeline"] == "config-value", (
+        "config['pipeline'] must take precedence over top-level pipeline values"
     )
 
 
