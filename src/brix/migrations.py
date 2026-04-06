@@ -7,8 +7,10 @@ as numbered migrations instead of inline ALTER TABLE calls in _init_schema.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -136,6 +138,12 @@ MIGRATIONS: list[dict] = [
         "version": 17,
         "name": "add_group_name_to_brick_definitions",
         "up": "ALTER TABLE brick_definitions ADD COLUMN group_name TEXT DEFAULT ''",
+        "down": "",
+    },
+    {
+        "version": 18,
+        "name": "add_content_hash_to_helpers",
+        "up": "ALTER TABLE helpers ADD COLUMN content_hash TEXT DEFAULT ''",
         "down": "",
     },
     # T-BRIX-ORG-01: project/tags/group for connections
@@ -354,6 +362,13 @@ MIGRATIONS: list[dict] = [
         "name": "repair_brick_registry_gaps_and_notify_schema",
         "up": "",
         "up_fn": "_repair_brick_registry_v75",
+        "down": "",
+    },
+    {
+        "version": 76,
+        "name": "import_legacy_helper_code_from_disk",
+        "up": "",
+        "up_fn": "_import_legacy_helper_code_v76",
         "down": "",
     },
 ]
@@ -1526,6 +1541,112 @@ def _backfill_pipeline_helpers(db: "BrixDB") -> None:
             except Exception:
                 continue
             db._sync_pipeline_helpers(conn, pipeline_id, raw)
+
+
+def _import_legacy_helper_code_v76(
+    db: "BrixDB",
+    helper_dirs: tuple[Path, ...] | None = None,
+) -> None:
+    """Import legacy helper code from disk into DB-backed helper rows."""
+    from brix.db import _now_iso
+
+    helper_dirs = helper_dirs or (
+        Path("/app/helpers"),
+        Path.home() / ".brix" / "helpers",
+    )
+
+    imported = 0
+    skipped_existing = 0
+    skipped_orphans = 0
+
+    for helper_dir in helper_dirs:
+        if not helper_dir.exists():
+            continue
+
+        for helper_path in sorted(helper_dir.glob("*.py")):
+            helper_name = helper_path.stem
+            try:
+                file_content = helper_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning(
+                    "migration v76: failed reading helper file '%s': %s",
+                    helper_path,
+                    exc,
+                )
+                continue
+
+            with db._connect() as conn:
+                row = conn.execute(
+                    "SELECT COALESCE(code, '') FROM helper WHERE name=?",
+                    (helper_name,),
+                ).fetchone()
+                if row is None:
+                    skipped_orphans += 1
+                    logger.info(
+                        "migration v76: skipped orphan helper file '%s' (no DB row)",
+                        helper_path,
+                    )
+                    continue
+
+                file_hash = hashlib.sha256(file_content.encode("utf-8")).hexdigest()
+                if row[0]:
+                    db_hash = hashlib.sha256(row[0].encode("utf-8")).hexdigest()
+                    if db_hash == file_hash:
+                        skipped_existing += 1
+                        logger.info(
+                            "migration v76: skipped helper '%s' from '%s' (DB code matches disk)",
+                            helper_name,
+                            helper_path,
+                        )
+                        continue
+                    # Disk version is newer/different — overwrite DB
+                    logger.warning(
+                        "migration v76: helper '%s' DB code differs from disk — importing disk version",
+                        helper_name,
+                    )
+
+                content_hash = file_hash
+                conn.execute(
+                    """
+                    UPDATE helper
+                    SET code=?, content_hash=?, updated_at=?
+                    WHERE name=?
+                    """,
+                    (file_content, content_hash, _now_iso(), helper_name),
+                )
+                imported += 1
+                logger.info(
+                    "migration v76: imported helper '%s' from '%s'",
+                    helper_name,
+                    helper_path,
+                )
+
+    hash_updates = 0
+    with db._connect() as conn:
+        rows = conn.execute(
+            "SELECT name, code, content_hash FROM helper WHERE COALESCE(code, '') <> ''"
+        ).fetchall()
+        for helper_name, code, stored_hash in rows:
+            computed_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+            if stored_hash == computed_hash:
+                continue
+            conn.execute(
+                "UPDATE helper SET content_hash=? WHERE name=?",
+                (computed_hash, helper_name),
+            )
+            hash_updates += 1
+            logger.info(
+                "migration v76: set content_hash for helper '%s'",
+                helper_name,
+            )
+
+    logger.info(
+        "migration v76 summary: imported=%d skipped_existing=%d skipped_orphans=%d hash_updates=%d",
+        imported,
+        skipped_existing,
+        skipped_orphans,
+        hash_updates,
+    )
 
 
 # ---------------------------------------------------------------------------
