@@ -118,6 +118,7 @@ class ValidateRunner(BaseRunner):
 
             # Count items that pass the field check (truthy native value)
             passed = 0
+            first_expression_error = None
             for item in items:
                 try:
                     item_ctx = {**jinja_ctx, "item": item}
@@ -126,7 +127,9 @@ class ValidateRunner(BaseRunner):
                     # Falsy: None, False, 0, "", empty collections
                     if val:
                         passed += 1
-                except Exception:
+                except Exception as exc:
+                    if first_expression_error is None:
+                        first_expression_error = str(exc)
                     pass  # Count as failed
 
             ratio = passed / len(items)
@@ -138,6 +141,8 @@ class ValidateRunner(BaseRunner):
                     "ratio": ratio,
                     "min_ratio": min_ratio,
                 }
+                if first_expression_error is not None:
+                    entry["first_expression_error"] = first_expression_error
                 if on_fail == "stop":
                     violations.append(entry)
                     should_stop = True

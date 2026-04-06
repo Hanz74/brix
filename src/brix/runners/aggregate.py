@@ -1,11 +1,14 @@
 """Aggregate runner — groups a list by a key and applies aggregation operations."""
 import asyncio
+import logging
 import time
 from typing import Any
 
 from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
+
+logger = logging.getLogger(__name__)
 
 
 class AggregateRunner(BaseRunner):
@@ -112,7 +115,12 @@ class AggregateRunner(BaseRunner):
             try:
                 tmpl = env.from_string(group_by_expr)
                 group_key = tmpl.render(item=item)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Aggregate group_by evaluation failed for item %r: %s; falling back to __error__",
+                    item,
+                    exc,
+                )
                 group_key = "__error__"
             if group_key not in groups:
                 groups[group_key] = []

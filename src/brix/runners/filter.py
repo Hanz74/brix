@@ -98,6 +98,7 @@ class FilterRunner(BaseRunner):
 
         filtered = []
         skipped_errors = 0
+        first_expression_error = None
         for item in input_data:
             try:
                 template = env.from_string(where_expr)
@@ -105,9 +106,11 @@ class FilterRunner(BaseRunner):
                 # Evaluate truthiness: everything except explicit falsy values passes
                 if result_str.strip().lower() not in ('false', '0', '', 'none'):
                     filtered.append(item)
-            except Exception:
+            except Exception as exc:
                 # On expression error, skip item and count
                 skipped_errors += 1
+                if first_expression_error is None:
+                    first_expression_error = str(exc)
                 continue
 
         duration = time.monotonic() - start
@@ -123,4 +126,5 @@ class FilterRunner(BaseRunner):
         }
         if skipped_errors:
             result["skipped_errors"] = skipped_errors
+            result["first_expression_error"] = first_expression_error
         return result

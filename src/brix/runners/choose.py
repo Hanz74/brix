@@ -22,6 +22,7 @@ class ChooseRunner(BaseRunner):
                 "choices": {"type": "array", "description": "List of {when, steps} branches"},
                 "default_steps": {"type": "array", "description": "Steps to run if no choice matches"},
             },
+            "required": ["choices"],
         }
 
     def input_type(self) -> str:

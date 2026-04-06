@@ -1,9 +1,12 @@
 """Set runner — assigns computed values to pipeline context (T-BRIX-V4-03)."""
 import json
+import logging
 import time
 from typing import Any
 
 from brix.runners.base import BaseRunner
+
+logger = logging.getLogger(__name__)
 
 
 class SetRunner(BaseRunner):
@@ -62,7 +65,8 @@ class SetRunner(BaseRunner):
                         break
                 for key, val in values.items():
                     db.store_set(key, json.dumps(val), pipeline_name)
-            except Exception:
+            except Exception as e:
+                logger.warning("set.py persist failed: %s", e)
                 pass  # Non-fatal: persist failure should not break run
 
         duration = time.monotonic() - start

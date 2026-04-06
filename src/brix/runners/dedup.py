@@ -11,10 +11,13 @@ At least one of ``key`` or ``field`` is required.
 
 import hashlib
 import json
+import logging
 import time
 from typing import Any
 
 from brix.runners.base import BaseRunner
+
+logger = logging.getLogger(__name__)
 
 
 class DedupRunner(BaseRunner):
@@ -130,7 +133,12 @@ class DedupRunner(BaseRunner):
                 try:
                     tmpl = env.from_string(key_expr)
                     return tmpl.render(item=item)
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "Dedup key expression failed for item %r: %s; falling back to repr(item)",
+                        item,
+                        exc,
+                    )
                     return repr(item)
 
         if keep == "first":

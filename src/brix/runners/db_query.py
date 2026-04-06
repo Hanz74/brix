@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
+
+logger = logging.getLogger(__name__)
 
 
 def _detect_driver(dsn: str) -> str:
@@ -308,7 +311,12 @@ class DbQueryRunner(BaseRunner):
             manager = ConnectionManager(db)
             conn = manager.get(connection_ref)
             return conn.driver, conn.dsn
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "ConnectionManager lookup failed for %s: %s, falling back to DSN",
+                connection_ref,
+                e,
+            )
             pass  # Fall through to direct DSN
 
         # Treat connection_ref as a bare DSN

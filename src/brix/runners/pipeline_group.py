@@ -1,11 +1,14 @@
 """Pipeline-group runner — runs multiple sub-pipelines in parallel (T-BRIX-V6-17)."""
 import asyncio
+import logging
 import time
 from pathlib import Path
 from typing import Any
 
 from brix.pipeline_store import PipelineStore
 from brix.runners.base import BaseRunner
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineGroupRunner(BaseRunner):
@@ -111,7 +114,8 @@ class PipelineGroupRunner(BaseRunner):
                 if isinstance(v, str):
                     try:
                         resolved_shared[k] = jinja_env.from_string(v).render(jinja_ctx)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("pipeline_group shared_params render error: %s", e)
                         resolved_shared[k] = v
                 else:
                     resolved_shared[k] = v

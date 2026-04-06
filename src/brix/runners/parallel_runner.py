@@ -26,6 +26,7 @@ class ParallelStepRunner(BaseRunner):
                 "sub_steps": {"type": "array", "description": "Steps to run in parallel"},
                 "concurrency": {"type": "integer", "description": "Max concurrent sub-steps"},
             },
+            "required": ["sub_steps"],
         }
 
     def input_type(self) -> str:
