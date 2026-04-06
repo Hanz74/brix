@@ -9,7 +9,7 @@ from typing import Any
 from brix.config import config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
-from brix.runners.db_query import _detect_driver, _strip_sqlite_prefix
+from brix.runners.db_query import _colon_to_pyformat, _detect_driver, _strip_sqlite_prefix
 
 
 def _execute_sqlite(dsn: str, query: str, params: list | tuple | dict | None) -> int:
@@ -35,6 +35,8 @@ def _execute_postgresql(dsn: str, query: str, params: list | tuple | dict | None
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor() as cur:
+            if isinstance(params, dict):
+                query = _colon_to_pyformat(query, params)
             if params is not None:
                 cur.execute(query, params)
             else:
