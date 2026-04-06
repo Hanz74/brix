@@ -1,85 +1,40 @@
 # Brix — Aktueller Stand
 
-**Datum:** 2026-03-22
-**Version:** v3.4.0
-**Status:** v1 + v2 + v3 komplett implementiert, alle E2E validiert
+**Datum:** 2026-04-06
+**Version:** v7.86.5
+**Baseline-Tag:** v7.77.2 (pre-DB-only)
 
----
+## Abgeschlossene Epics (30.03–06.04)
+- E-BRIX-STANDARDS (6) — Timeouts, validate_config, MCP-Format, Error-Handling
+- DBQUAL (5) — Bundle export/import, Test-Isolation, pipeline_helpers
+- E-BRIX-BUGFIX (6) — Engine-Fixes, config/params, Brick-Schemas
+- E-BRIX-QUALITY (7) — CLAUDE.md, Tips-DB, Integrity-Sync, Singular Tables, Logging, Compat-Views
+- E-BRIX-BRICKS (3+4) — 13+3 neue Bricks (file.*, flow.*, extract.*, util.*, db.exec, b64encode)
+- E-BRIX-DBFIRST (4) — Seeds einmalig, builtins.py deprecated, MCP-Tools für alle Entities
+- E-BRIX-SCHEDULER (3) — schedule Trigger-Typ, schedules.yaml → DB, Doku
+- E-BRIX-TRIGFIX (3) — Boundary-Check, Timezone, last_fired_at, Crash-Recovery
+- E-BRIX-DBONLY (15 done) — Pipeline-Persistenz YAML→DB-Rows, yaml_content entfernt
 
-## Metriken
+## Laufend: E-BRIX-DBONLY (DBO-16..21)
+| Wave | Task | Was | Status |
+|------|------|-----|--------|
+| 2 | DBO-16 | Brick-Registry Lücken | Codex running |
+| 2 | DBO-17 | Sub-Pipeline Runner DB-first | pending |
+| 3 | DBO-18 | yaml_content Refs entfernen | pending |
+| 4 | DBO-19 | Help-Topics + Multi-Group Doku | pending |
+| 4 | DBO-20 | Tool-Schema Platzhalter | pending |
+| 5 | DBO-21 | Integrity-Check alle Entity-Typen | pending |
 
-- **Version:** 3.4.0
-- **Tests:** 667 (alle grün)
-- **Tasks:** 63 total (27 v1 + 18 v2 + 18 v3), 0 offen
-- **MCP Tools:** 14 + dynamische pipeline__* Tools (inkl. get_run_status, update_step)
-- **Built-in Bricks:** 10+ (inkl. filter, transform)
-- **Trigger:** 5 (MCP stdio, MCP HTTP, REST API, Webhook, Cron)
-- **Container:** 3 (brix CLI, brix-mcp, brix-api)
-- **Experten-Reviews:** 7
+## Offene Inbox
+- INBOX-429: Lessons-Learned Help-Topic
+- INBOX-432: Cookbook
+- INBOX-511: Pause/Resume
+- INBOX-544: Brix-UI Schema-Änderungen prüfen
 
----
-
-## E2E Ergebnis (gleicher Use Case, alle Methoden)
-
-| Methode | Dauer | Tool-Calls | Token (geschätzt) | PDFs |
-|---------|-------|-----------|-------------------|------|
-| Ohne Brix (Claude einzeln) | ~10 Min+ | ~164 | ~656.000 | fragil |
-| v1 CLI (brix run via Bash) | ~35s | 1 | ~5.000 | 50 |
-| v2 MCP (nativ) | 35.4s | 1 | ~3.000 | 50 |
-
-v3 Scaling: Auto-Pagination mit `fetch_all_pages` validiert gegen 33.000+ Items. Item-Level Checkpoints ermöglichen Resume ohne Re-Fetch.
-
----
-
-## Container laufen mit v3.4.0
-
-```
-brix       — CLI mode (sleep infinity, docker exec)
-brix-mcp   — MCP Server (stdio, Port 8091)
-brix-api   — REST API (Port 8090)
-```
-
----
-
-## Epics
-
-### E-BRIX-CORE (v1) — 27/27 Tasks ✅
-Fundament, Runner, Engine, MCP, CLI, Testing, E2E
-
-### E-BRIX-V2 (v2) — 18/18 Tasks ✅
-Schema, MCP Server, Pipeline Store, REST API, Triggers, Templates, Security, E2E
-
-### E-BRIX-V3 (v3) — 18/18 Tasks ✅
-Auto-Pagination, Item-Level Resume, Rate-Limit Handling, batch_size, Flat foreach Output,
-else_of Conditional Steps, Live Run Status, Heartbeat Detection, Async Dispatch, update_step MCP Tool
-
----
-
-## v3 Features (alle 18 Tasks abgeschlossen)
-
-| Feature | Status |
-|---------|--------|
-| Auto-Pagination (`fetch_all_pages`) | ✅ |
-| Item-Level Resume (foreach Checkpoints) | ✅ |
-| Rate-Limit Handling (429 + Retry-After) | ✅ |
-| `batch_size` als foreach-Primitive | ✅ |
-| Flat foreach Output (`flatten: true`) | ✅ |
-| `else_of` Conditional Steps | ✅ |
-| Live Run Status | ✅ |
-| Heartbeat Detection | ✅ |
-| Async Dispatch (`--async`, `run_id`) | ✅ |
-| `update_step` MCP Tool | ✅ |
-| `filter` Built-in Brick | ✅ |
-| `transform` Built-in Brick | ✅ |
-
----
-
-## Offene Tasks
-
-Keine. 0 offene Tasks.
-
----
-
-## Nächster Schritt
-
-HA-Pattern-Analyse läuft — Evaluation von High-Availability Patterns für Brix (Multi-Worker, Failover, Persistent Queue).
+## Architektur
+- DB-only: pipeline_step, pipeline_credential, pipeline_input
+- yaml_content tot (Spalte bleibt, Code liest/schreibt nicht mehr)
+- config→params Merge im Lade-Pfad
+- Multi-Group über tags group: Prefix
+- Schedule Trigger: Boundary-Check + Timezone + Crash-Recovery
+- Codex als Implementierungs-Agent, Opus als Orchestrator
