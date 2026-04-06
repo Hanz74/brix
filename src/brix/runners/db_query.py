@@ -57,12 +57,14 @@ def _strip_sqlite_prefix(dsn: str) -> str:
 
 def _colon_to_pyformat(query: str, params: dict[str, Any] | None) -> str:
     """Convert unquoted ``:name`` placeholders to psycopg2 ``%(name)s`` format."""
-    if not params:
-        return query
-
     parts = re.split(r"('(?:''|[^'])*')", query)
+    for idx, part in enumerate(parts):
+        parts[idx] = part.replace("%", "%%")
+    if not params:
+        return "".join(parts)
+
     for idx in range(0, len(parts), 2):
-        parts[idx] = re.sub(r":([a-zA-Z_]\w*)", r"%(\1)s", parts[idx])
+        parts[idx] = re.sub(r"(?<!:):([a-zA-Z_]\w*)", r"%(\1)s", parts[idx])
     return "".join(parts)
 
 
@@ -93,8 +95,7 @@ def _execute_postgresql(dsn: str, query: str, params: dict | None) -> list[dict]
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if isinstance(params, dict):
-                query = _colon_to_pyformat(query, params)
+            query = _colon_to_pyformat(query, params if isinstance(params, dict) else None)
             cur.execute(query, params or None)
             rows = cur.fetchall()
         return [dict(row) for row in rows]

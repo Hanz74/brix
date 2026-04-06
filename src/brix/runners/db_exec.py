@@ -35,8 +35,7 @@ def _execute_postgresql(dsn: str, query: str, params: list | tuple | dict | None
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor() as cur:
-            if isinstance(params, dict):
-                query = _colon_to_pyformat(query, params)
+            query = _colon_to_pyformat(query, params if isinstance(params, dict) else None)
             if params is not None:
                 cur.execute(query, params)
             else:

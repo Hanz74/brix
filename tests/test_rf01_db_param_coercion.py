@@ -34,6 +34,31 @@ def test_colon_to_pyformat_does_not_convert_inside_quotes():
     )
 
 
+def test_colon_to_pyformat_escapes_like_literal_percents_and_converts_param():
+    query = "SELECT * FROM docs WHERE body LIKE '%text%' AND slug = :slug"
+    params = {"slug": "intro"}
+
+    assert _colon_to_pyformat(query, params) == (
+        "SELECT * FROM docs WHERE body LIKE '%%text%%' AND slug = %(slug)s"
+    )
+
+
+def test_colon_to_pyformat_does_not_confuse_postgres_casts_with_params():
+    query = "SELECT ARRAY[]::text[] AS tags WHERE slug = :slug"
+    params = {"slug": "intro"}
+
+    assert _colon_to_pyformat(query, params) == (
+        "SELECT ARRAY[]::text[] AS tags WHERE slug = %(slug)s"
+    )
+
+
+def test_colon_to_pyformat_escapes_plain_percent_literals():
+    query = "SELECT '100%' AS label, :slug AS slug"
+    params = {"slug": "intro"}
+
+    assert _colon_to_pyformat(query, params) == "SELECT '100%%' AS label, %(slug)s AS slug"
+
+
 def test_sqlite_path_still_accepts_colon_name_params(tmp_path):
     db_path = tmp_path / "rf01.sqlite"
     conn = sqlite3.connect(db_path)
