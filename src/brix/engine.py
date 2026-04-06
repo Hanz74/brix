@@ -40,6 +40,15 @@ from brix.serialization import json_dumps, sanitize_for_json
 
 _SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
 
+# Top-level Step attributes that should be visible to runner.validate_config().
+# Derive this from the Step model so new dedicated step fields do not need a
+# second manual allowlist in the engine.
+_VALIDATE_CONFIG_TOP_LEVEL_FIELDS: tuple[str, ...] = tuple(
+    field_name
+    for field_name in Step.model_fields.keys()
+    if field_name not in {"id", "type", "config"}
+)
+
 
 def _step_config_dict(step: Any) -> dict[str, Any]:
     """Return the generic config dict a non-specialist runner should see."""
@@ -906,12 +915,7 @@ class PipelineEngine:
                         # --- validate_config (T-BRIX-STD-03) ---
                         _vc_config = _step_config_dict(step)
                         # Merge top-level step attributes that runners may read
-                        for _vc_attr in (
-                            "connector", "script", "helper", "url", "method", "server", "tool",
-                            "command", "args", "shell", "pipeline", "pipelines",
-                            "message", "field", "cases", "default",
-                            "connection", "query", "table",
-                        ):
+                        for _vc_attr in _VALIDATE_CONFIG_TOP_LEVEL_FIELDS:
                             _vc_val = getattr(step, _vc_attr, None)
                             if _vc_val is not None and _vc_attr not in _vc_config:
                                 _vc_config[_vc_attr] = _vc_val
