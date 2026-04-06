@@ -3544,7 +3544,7 @@
     },
     {
       "name": "brix__credential",
-      "description": "Credentials CRUD. action: add/get/list/update/delete/rotate/search. Params: name, type, value.",
+      "description": "Fernet-encrypted credential store with full CRUD. action: add/get/list/update/delete/rotate/search. Stores API keys, tokens, and passwords under a named key; values are never returned in plaintext after storage. Use rotate to re-encrypt an existing credential with a new value.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -3692,7 +3692,7 @@
     },
     {
       "name": "brix__delete_variable",
-      "description": "Delete a managed variable by name. Returns {deleted: bool, name}.",
+      "description": "Permanently delete a named managed variable (plain or secret) from the variable store. Returns {deleted: true, name} on success. Pipelines referencing the variable by name will fail after deletion.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -4729,7 +4729,7 @@
     },
     {
       "name": "brix__list_variables",
-      "description": "List all managed variables. Returns {variables: [...], count: int}.",
+      "description": "List all managed variables in the variable store. Secret values are shown as \"***SECRET***\". Supports optional project/tags/group filters to scope results. Returns {variables: [...], count: int} with full metadata per variable.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -5790,7 +5790,7 @@
     },
     {
       "name": "brix__state",
-      "description": "Shared-State KV. action: get/set/list/delete. Params: key, value, pipeline_name.",
+      "description": "Shared-state key-value blackboard for inter-step and inter-pipeline communication. action: get/set/list/delete. Keys are namespaced strings; values are arbitrary strings. Use set to write intermediate results, get to read them in later steps or pipelines, and list to inspect all current state entries.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -5806,7 +5806,7 @@
     },
     {
       "name": "brix__store_delete",
-      "description": "Delete a persistent store entry by key. Returns {deleted: bool, key}.",
+      "description": "Delete a single entry from the persistent store by key. The store is an unencrypted cross-run KV store (unlike managed variables). Returns {deleted: true, key} on success; {deleted: false, key} if the key was not found.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6326,7 +6326,7 @@
     },
     {
       "name": "brix__create_tip",
-      "description": "Create a new tip that will be shown in get_tips output. Tips are organized by category and priority.",
+      "description": "Create a new best-practice tip in the tip registry. Tips are surfaced by get_tips to guide pipeline authors. Requires category, title, and content; priority (1-10) and active flag control visibility.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6360,7 +6360,7 @@
     },
     {
       "name": "brix__update_tip",
-      "description": "Update an existing tip by ID. Only provided fields are changed.",
+      "description": "Update one or more fields of an existing tip entry by its numeric ID. Updatable fields: category, title, content, priority (1-10), is_active. Unspecified fields are left unchanged. Returns the updated tip record.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6396,7 +6396,7 @@
     },
     {
       "name": "brix__delete_tip",
-      "description": "Delete a tip by ID.",
+      "description": "Permanently delete a tip entry from the registry by its numeric ID. The deletion cannot be undone. Use brix__list_tips first to confirm the correct ID.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6412,7 +6412,7 @@
     },
     {
       "name": "brix__list_tips",
-      "description": "List all tips, optionally filtered by category and active status.",
+      "description": "List tips from the tip registry, optionally filtered by category and/or active status. Returns entries sorted by priority descending. Tips surface best-practice guidance for pipeline authors and are the content returned by brix__get_tips.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6569,7 +6569,7 @@
     },
     {
       "name": "brix__analyze_migration",
-      "description": "MCP tool: brix__analyze_migration",
+      "description": "Analyze helpers for migration readiness: classifies each helper as single_brick, pipeline-convertible, or not_convertible. Optionally scoped to a single helper.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6582,7 +6582,7 @@
     },
     {
       "name": "brix__backup",
-      "description": "MCP tool: brix__backup",
+      "description": "Create timestamped backup copies of brix.db and credentials.db in the specified (or default) backup directory.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6595,7 +6595,7 @@
     },
     {
       "name": "brix__backup_list",
-      "description": "MCP tool: brix__backup_list",
+      "description": "List all available backup files in the backup directory, with names, sizes, and modification timestamps.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6608,7 +6608,7 @@
     },
     {
       "name": "brix__connection_get",
-      "description": "MCP tool: brix__connection_get",
+      "description": "Get metadata for a named DB connection by name. Returns driver, description, and org fields — the DSN is never shown in plaintext.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6624,7 +6624,7 @@
     },
     {
       "name": "brix__connection_search",
-      "description": "MCP tool: brix__connection_search",
+      "description": "Search registered DB connections by name or description substring. Returns matching connection metadata (no DSN).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6640,7 +6640,7 @@
     },
     {
       "name": "brix__connection_update",
-      "description": "MCP tool: brix__connection_update",
+      "description": "Update metadata of a registered connection: driver, env_var, description, and project/tags/group org fields. DSN can only be changed by deleting and re-adding.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6683,7 +6683,7 @@
     },
     {
       "name": "brix__create_brick",
-      "description": "MCP tool: brix__create_brick",
+      "description": "Create a custom brick definition and register it in the BrickRegistry. Requires name, runner, and description. System bricks cannot be overwritten.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6751,7 +6751,7 @@
     },
     {
       "name": "brix__create_profile",
-      "description": "MCP tool: brix__create_profile",
+      "description": "Create or update a named profile (a set of config defaults applied to pipeline steps). Requires name and a config JSON object.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6791,7 +6791,7 @@
     },
     {
       "name": "brix__db_status",
-      "description": "MCP tool: brix__db_status",
+      "description": "Report the current health of the Brix database: schema version, list of applied and pending migrations, and DB file size on disk. Use to verify the DB is up-to-date before running migrations or troubleshooting.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6799,7 +6799,7 @@
     },
     {
       "name": "brix__delete_brick",
-      "description": "MCP tool: brix__delete_brick",
+      "description": "Delete a custom brick from the DB and BrickRegistry. Blocked for system bricks; shows referencing pipelines unless force=true.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6819,7 +6819,7 @@
     },
     {
       "name": "brix__delete_profile",
-      "description": "MCP tool: brix__delete_profile",
+      "description": "Permanently delete a named profile (config-defaults set) from the DB. Returns an error if the profile does not exist. Pipelines that reference the profile are not affected but will fall back to their own defaults at runtime.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6835,7 +6835,7 @@
     },
     {
       "name": "brix__discover",
-      "description": "MCP tool: brix__discover",
+      "description": "Universal discovery across all Brix registry categories (bricks, pipelines, runners, connectors, helpers, etc.). Without params returns category overview with counts; with category returns items; with query searches across all categories.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6852,7 +6852,7 @@
     },
     {
       "name": "brix__get_alert_rule",
-      "description": "MCP tool: brix__get_alert_rule",
+      "description": "Retrieve a single alert rule by name or numeric ID. Returns the full rule definition: condition expression, notification channel, cooldown config, and org fields (project, tags, group). Use brix__search_alert_rules to find rules by keyword.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6869,7 +6869,7 @@
     },
     {
       "name": "brix__get_app_log",
-      "description": "MCP tool: brix__get_app_log",
+      "description": "Query structured application event log. Supports filtering by component, level, and time range. Returns entries in reverse-chronological order.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6894,7 +6894,7 @@
     },
     {
       "name": "brix__get_profile",
-      "description": "MCP tool: brix__get_profile",
+      "description": "Retrieve a named profile (a reusable set of step config defaults) by name. Returns the config dict, description, and org fields. Profiles can be applied to pipeline steps to avoid repeating common parameter values across pipelines.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6910,7 +6910,7 @@
     },
     {
       "name": "brix__get_runner_info",
-      "description": "MCP tool: brix__get_runner_info",
+      "description": "Get full details for a single step runner by name: class, module, description, input/output types, and config_schema.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6926,7 +6926,7 @@
     },
     {
       "name": "brix__health",
-      "description": "MCP tool: brix__health",
+      "description": "Return overall health snapshot of Brix: DB size and table counts, loaded runners, brick registry status, pipeline count, deprecated step usage, trigger status, and retention policy.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6934,7 +6934,7 @@
     },
     {
       "name": "brix__list_env_config",
-      "description": "MCP tool: brix__list_env_config",
+      "description": "List all BRIX_* environment variables with their current value, default, and whether they are overridden via the environment.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6942,7 +6942,7 @@
     },
     {
       "name": "brix__list_namespaces",
-      "description": "MCP tool: brix__list_namespaces",
+      "description": "List all brick namespaces (flow, db, source, action, http, mcp, llm, extract, markitdown, script) together with the brick types they contain. Use to orient yourself before calling brix__list_bricks or brix__get_brick_schema for a specific namespace.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6950,7 +6950,7 @@
     },
     {
       "name": "brix__list_pins",
-      "description": "MCP tool: brix__list_pins",
+      "description": "List all pinned step outputs for a pipeline. Pinned steps are skipped during execution and their stored output is used instead.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -6966,7 +6966,7 @@
     },
     {
       "name": "brix__list_profiles",
-      "description": "MCP tool: brix__list_profiles",
+      "description": "List all named profiles (reusable step config defaults) stored in the DB. Returns each profile with its config dict, description, and org fields. Use before brix__get_profile to discover available profiles by name.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6974,7 +6974,7 @@
     },
     {
       "name": "brix__list_runners",
-      "description": "MCP tool: brix__list_runners",
+      "description": "List all available pipeline step runners with their name, description, input/output types, and config_schema.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6982,7 +6982,7 @@
     },
     {
       "name": "brix__list_types",
-      "description": "MCP tool: brix__list_types",
+      "description": "List all registered pipeline step I/O types with their full type-compatibility matrix and suggestions for converter bricks. Use to understand which step output types are compatible with which input types before wiring steps together or debugging type-mismatch errors.",
       "input_schema": {
         "type": "object",
         "properties": {}
@@ -6990,7 +6990,7 @@
     },
     {
       "name": "brix__pin_step_data",
-      "description": "MCP tool: brix__pin_step_data",
+      "description": "Pin a step output so the engine uses it as mock data instead of executing the step. Supply run_id to copy from run history, or data to pin inline.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7018,7 +7018,7 @@
     },
     {
       "name": "brix__restore",
-      "description": "MCP tool: brix__restore",
+      "description": "Restore brix.db or credentials.db from a backup file. Target DB is inferred from filename unless explicitly specified.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7038,7 +7038,7 @@
     },
     {
       "name": "brix__search_alert_rules",
-      "description": "MCP tool: brix__search_alert_rules",
+      "description": "Search alert rules by name or condition substring. Returns matching rules with condition, channel, and org fields.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7054,7 +7054,7 @@
     },
     {
       "name": "brix__search_profiles",
-      "description": "MCP tool: brix__search_profiles",
+      "description": "Full-text search over profile names and descriptions. Returns all profiles whose name or description contains the query substring (case-insensitive). Use before brix__get_profile when you know partial name or topic but not the exact profile name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7070,7 +7070,7 @@
     },
     {
       "name": "brix__search_trigger_groups",
-      "description": "MCP tool: brix__search_trigger_groups",
+      "description": "Search trigger groups by name or description substring. Returns matching groups with their trigger lists.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7086,7 +7086,7 @@
     },
     {
       "name": "brix__search_triggers",
-      "description": "MCP tool: brix__search_triggers",
+      "description": "Search triggers by name, associated pipeline name, or trigger type substring (case-insensitive). Returns matching trigger definitions including schedule, type, and status. Use to find the trigger ID needed for brix__trigger actions.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7102,7 +7102,7 @@
     },
     {
       "name": "brix__search_variables",
-      "description": "MCP tool: brix__search_variables",
+      "description": "Search managed variables by name or description substring. Secret values are masked as ***SECRET***.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7118,7 +7118,7 @@
     },
     {
       "name": "brix__trigger_group_get",
-      "description": "MCP tool: brix__trigger_group_get",
+      "description": "Retrieve a named trigger group by name, including its full list of member trigger definitions. Use to inspect which triggers are grouped together before calling brix__trigger_group start/stop actions.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7134,7 +7134,7 @@
     },
     {
       "name": "brix__trigger_group_update",
-      "description": "MCP tool: brix__trigger_group_update",
+      "description": "Update a trigger group: rename it, change its description, member triggers list, enabled flag, or org fields (project/tags/group).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7180,7 +7180,7 @@
     },
     {
       "name": "brix__unpin_step_data",
-      "description": "MCP tool: brix__unpin_step_data",
+      "description": "Remove a pin from a step so the engine executes it normally again instead of using stored mock data.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7201,7 +7201,7 @@
     },
     {
       "name": "brix__update_brick",
-      "description": "MCP tool: brix__update_brick",
+      "description": "Update an existing custom brick definition (description, runner, config_schema, namespace, etc.). System bricks cannot be modified.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7267,7 +7267,7 @@
     },
     {
       "name": "brix__update_profile",
-      "description": "MCP tool: brix__update_profile",
+      "description": "Update an existing profile: change its config defaults, description, or org fields (project/tags/group).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -7303,6 +7303,11 @@
           "name"
         ]
       }
+    },
+    {
+      "name": "brix__validate_step_migration",
+      "description": "Check that every pipeline in the DB has at least one pipeline_step row. Flags pipelines with missing step rows as migration issues.",
+      "input_schema": {}
     }
   ],
   "help_topics": [
