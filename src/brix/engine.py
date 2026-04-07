@@ -51,6 +51,7 @@ from brix.progress import ProgressReporter
 from brix.mcp_pool import McpConnectionPool
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.serialization import json_dumps
+from brix.engine_step import StepExecutor
 
 # ---------------------------------------------------------------------------
 # Brick-First Engine — T-BRIX-DB-05c
@@ -683,6 +684,7 @@ class PipelineEngine:
                         print(f"✗ DAG error: {dag_err}", file=sys.stderr)
                         pipeline_aborted = True
                 else:
+                    step_executor = StepExecutor(self)
                     for step in pipeline.steps:
                         # Cancel-flag check: abort pipeline cleanly if cancel was requested (T-BRIX-V6-BUG-03)
                         if self._is_run_cancelled(context):
@@ -696,172 +698,25 @@ class PipelineEngine:
                             self.progress.step_resumed(step.id)
                             continue
 
-                        # Disabled steps are unconditionally skipped (T-BRIX-V4-02)
-                        if not step.enabled:
-                            step_statuses[step.id] = StepStatus(
-                                status="skipped", duration=0.0, reason="disabled"
-                            )
-                            self.progress.step_skipped(step.id)
-                            continue
-
-                        # Selective dry-run: skip named steps without executing (T-BRIX-V4-BUG-09)
-                        if dry_run_steps and step.id in dry_run_steps:
-                            step_statuses[step.id] = StepStatus(
-                                status="dry_run", duration=0.0, reason="dry_run_steps"
-                            )
-                            # Do not set context output — downstream steps see null for this step
-                            self.progress.step_skipped(step.id)
-                            continue
-
-                        # Evaluate when condition
-                        jinja_ctx = context.to_jinja_context()
-                        if step.when:
-                            should_run = self.loader.evaluate_condition(step.when, jinja_ctx)
-                            if not should_run:
-                                step_statuses[step.id] = StepStatus(
-                                    status="skipped", duration=0.0, reason="condition not met"
-                                )
-                                self.progress.step_skipped(step.id)
-                                continue
-
-                        # Evaluate else_of: only run this step when the referenced step was skipped
-                        if step.else_of:
-                            ref_status = step_statuses.get(step.else_of)
-                            if ref_status is None or ref_status.status != "skipped":
-                                step_statuses[step.id] = StepStatus(
-                                    status="skipped",
-                                    duration=0.0,
-                                    reason=f"else_of '{step.else_of}' was not skipped",
-                                )
-                                self.progress.step_skipped(step.id)
-                                continue
-
-                        # stop step: end the pipeline immediately (T-BRIX-V4-04)
-                        # Evaluate the when condition directly so that a bool False (from YAML
-                        # `when: false` or Pydantic coercion) is handled correctly.  When the
-                        # when-block above is entered, `step.when` is a non-empty truthy string
-                        # and the condition is evaluated there.  But when `step.when` is Python
-                        # bool False, `if step.when:` is skipped entirely — so we must re-check
-                        # here to avoid firing the stop unconditionally.
-                        if step.type == "stop":
-                            _should_stop = True
-                            if step.when is not None:
-                                if isinstance(step.when, bool):
-                                    _should_stop = step.when
-                                elif isinstance(step.when, str) and step.when.strip():
-                                    _should_stop = self.loader.evaluate_condition(
-                                        step.when,
-                                        jinja_ctx if "jinja_ctx" in dir() else context.to_jinja_context(),
-                                    )
-                                else:
-                                    _should_stop = False  # empty string → don't stop
-                            if not _should_stop:
-                                step_statuses[step.id] = StepStatus(
-                                    status="skipped", duration=0.0, reason="condition not met"
-                                )
-                                self.progress.step_skipped(step.id)
-                                continue
-                            jinja_ctx = context.to_jinja_context()
-                            msg = step.message or "Pipeline stopped"
-                            rendered_msg = self.loader.render_template(msg, jinja_ctx) if "{{" in msg else msg
-                            step_statuses[step.id] = StepStatus(
-                                status="ok", duration=0.0, reason=rendered_msg
-                            )
-                            pipeline_aborted = True
-                            stop_step_success = getattr(step, "success_on_stop", True)
-                            break
-
-                        # --- Compositor-Mode guard (T-BRIX-V8-07) ---
-                        if pipeline.compositor_mode and not pipeline.allow_code:
-                            if step.type in ("python", "cli"):
-                                _cm_msg = (
-                                    f"Compositor-Mode: {step.type} steps not allowed. "
-                                    "Use built-in bricks or set allow_code: true"
-                                )
-                                step_statuses[step.id] = StepStatus(
-                                    status="error", duration=0.0, errors=1,
-                                    error_message=_cm_msg,
-                                )
-                                self.progress.step_start(step.id, step.type)
-                                self.progress.step_error(step.id, _cm_msg)
-                                effective_on_error = step.on_error or pipeline.error_handling.on_error
-                                if effective_on_error == "stop":
-                                    pipeline_aborted = True
-                                    break
-                                continue
-
-                        # --- Profile / Mixin (T-BRIX-DB-23) ---
-                        step = self._apply_profile(step)
-
-                        # --- Brick config_defaults merge (T-BRIX-IMP-02) ---
-                        step = self._apply_brick_defaults(step)
-
-                        # Build an early jinja context for dynamic dispatch type rendering
-                        _early_jinja_ctx = context.to_jinja_context() if "{{" in step.type else None
-
-                        # Get runner
-                        runner = self._resolve_runner(step.type, jinja_ctx=_early_jinja_ctx)
-                        if not runner:
-                            _no_runner_msg = f"no runner registered for type '{step.type}'"
-                            step_statuses[step.id] = StepStatus(
-                                status="error", duration=0.0, errors=1,
-                                error_message=_no_runner_msg,
-                            )
-                            self.progress.step_start(step.id, step.type)
-                            self.progress.step_error(step.id, _no_runner_msg)
-                            effective_on_error = step.on_error or pipeline.error_handling.on_error
-                            if effective_on_error == "stop":
-                                pipeline_aborted = True
-                                break
-                            continue
-
-                        # --- validate_config (T-BRIX-STD-03) ---
-                        _vc_config = _step_config_dict(step)
-                        # Merge top-level step attributes that runners may read
-                        for _vc_attr in _VALIDATE_CONFIG_TOP_LEVEL_FIELDS:
-                            _vc_val = getattr(step, _vc_attr, None)
-                            if _vc_val is not None:
-                                _vc_config[_vc_attr] = _vc_val
-                        logger.error(
-                            "validate_config input for step '%s' (%s): %r",
-                            step.id,
-                            step.type,
-                            _vc_config,
+                        pre_execute_result = step_executor.pre_execute_step(
+                            pipeline=pipeline,
+                            context=context,
+                            step=step,
+                            step_statuses=step_statuses,
+                            dry_run_steps=dry_run_steps,
                         )
-                        _vc_errors = runner.validate_config(_vc_config)
-                        if _vc_errors:
-                            _vc_msg = f"Config validation failed for step '{step.id}': {'; '.join(_vc_errors)}"
-                            logger.warning(_vc_msg)
-                            step_statuses[step.id] = StepStatus(
-                                status="error", duration=0.0, errors=1,
-                                error_message=_vc_msg,
-                            )
-                            self.progress.step_start(step.id, step.type)
-                            self.progress.step_error(step.id, _vc_msg)
-                            effective_on_error = step.on_error or pipeline.error_handling.on_error
-                            if effective_on_error == "stop":
-                                pipeline_aborted = True
+                        step = pre_execute_result.step
+                        runner = pre_execute_result.runner
+                        if pre_execute_result.action != "run":
+                            pipeline_aborted = pre_execute_result.pipeline_aborted
+                            if pre_execute_result.stop_step_success is not None:
+                                stop_step_success = pre_execute_result.stop_step_success
+                            if pre_execute_result.action == "break":
                                 break
                             continue
 
                         # --- foreach branch ---
                         if step.foreach:
-                            # Per-step dependency check for foreach steps (T-BRIX-V6-03)
-                            if step.requirements:
-                                dep_err = self._ensure_step_requirements(step)
-                                if dep_err:
-                                    step_statuses[step.id] = StepStatus(
-                                        status="error", duration=0.0, errors=1,
-                                        error_message=dep_err,
-                                    )
-                                    self.progress.step_start(step.id, step.type)
-                                    self.progress.step_error(step.id, dep_err)
-                                    effective_on_error = step.on_error or pipeline.error_handling.on_error
-                                    if effective_on_error == "stop":
-                                        pipeline_aborted = True
-                                        break
-                                    continue
-
                             with self._step_credentials_context(context, step):
                                 jinja_ctx = context.to_jinja_context()
                                 try:
@@ -983,22 +838,6 @@ class PipelineEngine:
                                     pipeline_aborted = True
                                     break
                             continue
-
-                        # --- per-step dependency check (T-BRIX-V6-03) ---
-                        if step.requirements:
-                            dep_err = self._ensure_step_requirements(step)
-                            if dep_err:
-                                step_statuses[step.id] = StepStatus(
-                                    status="error", duration=0.0, errors=1,
-                                    error_message=dep_err,
-                                )
-                                self.progress.step_start(step.id, step.type)
-                                self.progress.step_error(step.id, dep_err)
-                                effective_on_error = step.on_error or pipeline.error_handling.on_error
-                                if effective_on_error == "stop":
-                                    pipeline_aborted = True
-                                    break
-                                continue
 
                         # --- single-step branch ---
                         # Render step params with current context
