@@ -11,6 +11,7 @@ from typing import Any
 from brix.models import Pipeline, Step, StepStatus, RunResult, RetryConfig, RetryProfile
 from brix.loader import PipelineLoader
 from brix.engine_types import (
+    DagSharedState,
     _RenderedStep,
     _SPECIALIST_STEP_TYPES,
     _VALIDATE_CONFIG_TOP_LEVEL_FIELDS,
@@ -668,6 +669,8 @@ class PipelineEngine:
             pipeline_aborted = False  # set to True on early-stop so we skip post-loop work
             stop_step_success: bool | None = None  # set by 'stop' step to override all_ok
             total_cost_usd: float = 0.0  # accumulated LLM cost from step outputs (T-BRIX-V6-21)
+            last_output: Any = None
+            dag_state = DagSharedState()
 
             # --- Saga Tracker (T-BRIX-DB-21) ---
             from brix.resilience import SagaTracker as _SagaTracker
@@ -680,8 +683,9 @@ class PipelineEngine:
                 if self._detect_dag_mode(pipeline.steps):
                     try:
                         pipeline_aborted, last_output, _, stop_step_success = await self._run_dag(
-                            pipeline, context, step_statuses, dry_run_steps
+                            pipeline, context, step_statuses, dry_run_steps, dag_state
                         )
+                        total_cost_usd = dag_state.total_cost_usd
                     except ValueError as dag_err:
                         print(f"✗ DAG error: {dag_err}", file=sys.stderr)
                         pipeline_aborted = True
@@ -852,6 +856,7 @@ class PipelineEngine:
                         steps=step_statuses,
                         result=final_result,
                         duration=time.monotonic() - start_time,
+                        cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
                         deprecation_warnings=list(self._deprecation_warnings),
                     )
                     # Attach pipeline name so alerting rules can access it
@@ -871,6 +876,7 @@ class PipelineEngine:
             steps=step_statuses,
             result=final_result,
             duration=total_duration,
+            cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
             deprecation_warnings=list(self._deprecation_warnings),
         )
 
@@ -1355,6 +1361,7 @@ class PipelineEngine:
         context: "PipelineContext",
         step_statuses: dict,
         dry_run_steps: "list[str] | None",
+        dag_state: DagSharedState,
     ) -> tuple[bool, Any, bool, "bool | None"]:
         """Execute pipeline steps in DAG order.
 
@@ -1372,18 +1379,13 @@ class PipelineEngine:
         except ValueError as exc:
             raise exc  # propagate to caller's try/except
 
-        last_output: Any = None
-        pipeline_aborted = False
-        stop_step_success: "bool | None" = None
-
         # Asyncio events: set when a step is done (success *or* skip/error+continue)
         done_events: dict[str, asyncio.Event] = {s.id: asyncio.Event() for s in steps}
         # Outcome: True = "usable for downstream deps", False = "aborted"
         step_ok: dict[str, bool] = {}
+        executor = StepExecutor(self)
 
         async def run_step(step: Step) -> None:
-            nonlocal last_output, pipeline_aborted, stop_step_success
-
             # Wait for all dependencies to complete
             for dep_id in step.depends_on:
                 await done_events[dep_id].wait()
@@ -1399,386 +1401,72 @@ class PipelineEngine:
                     done_events[step.id].set()
                     return
 
+            if dag_state.pipeline_aborted:
+                step_ok[step.id] = False
+                done_events[step.id].set()
+                return
+
             # --- Resume: skip completed steps ---
             if context.is_step_completed(step.id):
                 step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
-                last_output = context.get_output(step.id)
+                dag_state.last_output = context.get_output(step.id)
                 self.progress.step_resumed(step.id)
                 step_ok[step.id] = True
                 done_events[step.id].set()
                 return
 
-            # --- Disabled steps ---
-            if not step.enabled:
-                step_statuses[step.id] = StepStatus(
-                    status="skipped", duration=0.0, reason="disabled"
-                )
-                self.progress.step_skipped(step.id)
-                step_ok[step.id] = True  # disabled is treated as "ok for downstream"
-                done_events[step.id].set()
-                return
-
-            # --- Selective dry-run ---
-            if dry_run_steps and step.id in dry_run_steps:
-                step_statuses[step.id] = StepStatus(
-                    status="dry_run", duration=0.0, reason="dry_run_steps"
-                )
-                self.progress.step_skipped(step.id)
-                step_ok[step.id] = True
-                done_events[step.id].set()
-                return
-
-            # --- Evaluate when condition ---
-            jinja_ctx = context.to_jinja_context()
-            if step.when:
-                should_run = self.loader.evaluate_condition(step.when, jinja_ctx)
-                if not should_run:
-                    step_statuses[step.id] = StepStatus(
-                        status="skipped", duration=0.0, reason="condition not met"
-                    )
-                    self.progress.step_skipped(step.id)
-                    step_ok[step.id] = True
-                    done_events[step.id].set()
-                    return
-
-            # --- else_of ---
-            if step.else_of:
-                ref_status = step_statuses.get(step.else_of)
-                if ref_status is None or ref_status.status != "skipped":
-                    step_statuses[step.id] = StepStatus(
-                        status="skipped",
-                        duration=0.0,
-                        reason=f"else_of '{step.else_of}' was not skipped",
-                    )
-                    self.progress.step_skipped(step.id)
-                    step_ok[step.id] = True
-                    done_events[step.id].set()
-                    return
-
-            # --- stop step ---
-            # Evaluate the when condition directly so that a bool False (from YAML
-            # `when: false` or Pydantic coercion) is handled correctly — same logic
-            # as the sequential path above.
-            if step.type == "stop":
-                _should_stop = True
-                if step.when is not None:
-                    if isinstance(step.when, bool):
-                        _should_stop = step.when
-                    elif isinstance(step.when, str) and step.when.strip():
-                        _should_stop = self.loader.evaluate_condition(
-                            step.when,
-                            jinja_ctx if "jinja_ctx" in dir() else context.to_jinja_context(),
-                        )
-                    else:
-                        _should_stop = False  # empty string → don't stop
-                if not _should_stop:
-                    step_statuses[step.id] = StepStatus(
-                        status="skipped", duration=0.0, reason="condition not met"
-                    )
-                    self.progress.step_skipped(step.id)
-                    step_ok[step.id] = True
-                    done_events[step.id].set()
-                    return
-                jinja_ctx = context.to_jinja_context()
-                msg = step.message or "Pipeline stopped"
-                rendered_msg = self.loader.render_template(msg, jinja_ctx) if "{{" in msg else msg
-                step_statuses[step.id] = StepStatus(
-                    status="ok", duration=0.0, reason=rendered_msg
-                )
-                self.progress.step_ok(step.id, 0.0)
-                pipeline_aborted = True
-                stop_step_success = getattr(step, "success_on_stop", True)
-                # Signal all waiting steps so they can bail
+            if self._is_run_cancelled(context):
+                dag_state.pipeline_aborted = True
                 for ev in done_events.values():
                     ev.set()
-                step_ok[step.id] = False  # prevent downstream from running
-                return
-
-            # --- Compositor-Mode guard (T-BRIX-V8-07) ---
-            if pipeline.compositor_mode and not pipeline.allow_code:
-                if step.type in ("python", "cli"):
-                    _cm_msg = (
-                        f"Compositor-Mode: {step.type} steps not allowed. "
-                        "Use built-in bricks or set allow_code: true"
-                    )
-                    step_statuses[step.id] = StepStatus(
-                        status="error", duration=0.0, errors=1,
-                        error_message=_cm_msg,
-                    )
-                    self.progress.step_start(step.id, step.type)
-                    self.progress.step_error(step.id, _cm_msg)
-                    effective_on_error = step.on_error or pipeline.error_handling.on_error
-                    if effective_on_error == "stop":
-                        pipeline_aborted = True
-                        for ev in done_events.values():
-                            ev.set()
-                    step_ok[step.id] = False
-                    done_events[step.id].set()
-                    return
-
-            # --- Profile / Mixin (T-BRIX-DB-23) ---
-            step = self._apply_profile(step)
-
-            # --- Brick config_defaults merge (T-BRIX-IMP-02) ---
-            step = self._apply_brick_defaults(step)
-
-            # Build an early jinja context for dynamic dispatch type rendering
-            _early_jinja_ctx_dag = context.to_jinja_context() if "{{" in step.type else None
-
-            # --- Get runner ---
-            runner = self._resolve_runner(step.type, jinja_ctx=_early_jinja_ctx_dag)
-            if not runner:
-                _no_runner_msg = f"no runner registered for type '{step.type}'"
-                step_statuses[step.id] = StepStatus(
-                    status="error", duration=0.0, errors=1,
-                    error_message=_no_runner_msg,
-                )
-                self.progress.step_start(step.id, step.type)
-                self.progress.step_error(step.id, _no_runner_msg)
-                effective_on_error = step.on_error or pipeline.error_handling.on_error
-                if effective_on_error == "stop":
-                    pipeline_aborted = True
-                    for ev in done_events.values():
-                        ev.set()
                 step_ok[step.id] = False
                 done_events[step.id].set()
                 return
 
-            # --- per-step dependency check ---
-            if step.requirements:
-                dep_err = self._ensure_step_requirements(step)
-                if dep_err:
-                    step_statuses[step.id] = StepStatus(
-                        status="error", duration=0.0, errors=1,
-                        error_message=dep_err,
-                    )
-                    self.progress.step_start(step.id, step.type)
-                    self.progress.step_error(step.id, dep_err)
-                    effective_on_error = step.on_error or pipeline.error_handling.on_error
-                    if effective_on_error == "stop":
-                        pipeline_aborted = True
-                        for ev in done_events.values():
-                            ev.set()
-                    step_ok[step.id] = False
-                    done_events[step.id].set()
-                    return
+            result = await executor.execute_step(
+                step=step,
+                context=context,
+                pipeline=pipeline,
+                step_statuses=step_statuses,
+                jinja_ctx=context.to_jinja_context(),
+                dry_run_steps=dry_run_steps,
+            )
 
-            # --- Single-step execution ---
-            jinja_ctx = context.to_jinja_context()
-            rendered_params = self.loader.render_step_params(step, jinja_ctx)
-            rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
+            if result.output is not None:
+                dag_state.last_output = result.output
+            dag_state.total_cost_usd += result.cost
 
-            # --- Step Pin check (T-BRIX-DB-24): use mock data if step is pinned ---
-            _pin_hit = None
-            try:
-                from brix.db import BrixDB as _PinDB
-                _pin_db = _PinDB()
-                _pin_record = _pin_db.get_pin(pipeline.name, step.id)
-                if _pin_record is not None:
-                    _pin_hit = _pin_record["pinned_data"]
-            except Exception as _pin_err:
-                logger.warning("Step pin check failed for '%s': %s", step.id, _pin_err)
-            if _pin_hit is not None:
-                logger.info("Step '%s' using pinned mock data (pipeline=%s)", step.id, pipeline.name)
-                context.set_output(step.id, _pin_hit)
-                last_output = _pin_hit
-                step_statuses[step.id] = StepStatus(
-                    status="ok",
-                    duration=0.0,
-                    reason="pin_mock",
-                )
-                self.progress.step_ok(step.id, 0.0, None)
-                step_ok[step.id] = True
-                done_events[step.id].set()
-                return
-
-            # --- Test-Mode: intercept db.upsert and action.notify (T-BRIX-DB-24) ---
-            _effective_step_type = LEGACY_ALIASES.get(step.type, step.type)
-            if pipeline.test_mode and _effective_step_type in ("db.upsert", "db_upsert"):
-                logger.info(
-                    "Test-mode: dry-running db.upsert step '%s' (pipeline=%s)",
-                    step.id, pipeline.name,
-                )
-                context.set_output(step.id, {"test_mode": True, "dry": True, "step_id": step.id})
-                last_output = {"test_mode": True, "dry": True, "step_id": step.id}
-                step_statuses[step.id] = StepStatus(
-                    status="ok",
-                    duration=0.0,
-                    reason="test_mode_dry",
-                )
-                self.progress.step_ok(step.id, 0.0, None)
-                step_ok[step.id] = True
-                done_events[step.id].set()
-                return
-            if pipeline.test_mode and _effective_step_type in ("action.notify", "notify"):
-                logger.info(
-                    "Test-mode: log-only action.notify step '%s' (pipeline=%s)",
-                    step.id, pipeline.name,
-                )
-                context.set_output(step.id, {"test_mode": True, "log_only": True, "step_id": step.id})
-                last_output = {"test_mode": True, "log_only": True, "step_id": step.id}
-                step_statuses[step.id] = StepStatus(
-                    status="ok",
-                    duration=0.0,
-                    reason="test_mode_log_only",
-                )
-                self.progress.step_ok(step.id, 0.0, None)
-                step_ok[step.id] = True
-                done_events[step.id].set()
-                return
-
-            # --- Step-Level Cache (T-BRIX-V6-24, legacy bool form) ---
-            if step.cache is True:
-                from brix.context import CacheManager
-                _cache_mgr = CacheManager()
-                _cached_output = _cache_mgr.get(step.id, rendered_params)
-                if _cached_output is not None:
-                    context.set_output(step.id, _cached_output)
-                    last_output = _cached_output
-                    step_statuses[step.id] = StepStatus(
-                        status="ok",
-                        duration=0.0,
-                        reason="cache_hit",
-                    )
-                    self.progress.step_ok(step.id, 0.0, None)
-                    step_ok[step.id] = True
-                    done_events[step.id].set()
-                    return
-
-            # --- Resilience: Brick Cache check (T-BRIX-DB-21, dict form) ---
-            _brick_cache_instance = None
-            _brick_cache_rendered_key = None
-            if isinstance(step.cache, dict):
-                try:
-                    from brix.resilience import BrickCache as _BrickCache, BrixDB as _res_BrixDB
-                    _brick_cache_instance = _BrickCache(step.cache, _res_BrixDB())
-                    _brick_cache_rendered_key = self.loader.render_template(
-                        step.cache.get("key", step.id), jinja_ctx
-                    )
-                    _bc_hit = _brick_cache_instance.get(_brick_cache_rendered_key)
-                    if _bc_hit is not None:
-                        context.set_output(step.id, _bc_hit)
-                        last_output = _bc_hit
-                        step_statuses[step.id] = StepStatus(
-                            status="ok",
-                            duration=0.0,
-                            reason="cache_hit",
-                        )
-                        self.progress.step_ok(step.id, 0.0, None)
-                        step_ok[step.id] = True
-                        done_events[step.id].set()
-                        return
-                except Exception as _bc_err:
-                    logger.warning("Brick cache check failed for '%s': %s", step.id, _bc_err)
-
-            # --- Resilience: Circuit Breaker pre-check (T-BRIX-DB-21) ---
-            _cb_instance = None
-            if step.circuit_breaker:
-                try:
-                    from brix.resilience import CircuitBreaker as _CircuitBreaker, BrixDB as _res_BrixDB
-                    _cb_instance = _CircuitBreaker(step.id, step.circuit_breaker, _res_BrixDB())
-                    _cb_pre = _cb_instance.pre_check(context)
-                    if _cb_pre is not None:
-                        if _cb_pre.get("success"):
-                            context.set_output(step.id, _cb_pre.get("data"))
-                            last_output = _cb_pre.get("data")
-                            step_statuses[step.id] = StepStatus(
-                                status="ok",
-                                duration=0.0,
-                                reason="circuit_breaker_fallback",
-                            )
-                            self.progress.step_ok(step.id, 0.0, None)
-                            step_ok[step.id] = True
-                        else:
-                            _cb_err_msg = _cb_pre.get("error", "Circuit breaker OPEN")
-                            step_statuses[step.id] = StepStatus(
-                                status="skipped",
-                                duration=0.0,
-                                reason=_cb_err_msg,
-                            )
-                            self.progress.step_skipped(step.id)
-                            step_ok[step.id] = True
-                        done_events[step.id].set()
-                        return
-                except Exception as _cb_err:
-                    logger.warning("Circuit breaker check failed for '%s': %s", step.id, _cb_err)
-
-            # --- Resilience: Rate Limiter (T-BRIX-DB-21) ---
-            _rl_instance = None
-            if step.rate_limit:
-                try:
-                    from brix.resilience import RateLimiter as _RateLimiter, BrixDB as _res_BrixDB
-                    _rl_instance = _RateLimiter(step.id, step.rate_limit, _res_BrixDB())
-                    _rl_wait = _rl_instance.wait_seconds()
-                    if _rl_wait > 0:
-                        await asyncio.sleep(_rl_wait)
-                except Exception as _rl_err:
-                    logger.warning("Rate limiter check failed for '%s': %s", step.id, _rl_err)
-
-            # --- Breakpoint (T-BRIX-V7-06) ---
-            if step.pause_before:
-                await self._wait_for_breakpoint_resume(context, step.id)
-
-            self.progress.step_start(step.id, step.type)
-            with self._step_credentials_context(context, step):
-                step_start = time.monotonic()
-                result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-                step_duration = time.monotonic() - step_start
-
-            if result.get("success"):
-                context.set_output(step.id, result.get("data"))
-                last_output = result.get("data")
-                if step.cache is True:
-                    from brix.context import CacheManager
-                    CacheManager().set(step.id, rendered_params, result.get("data"))
-                if _brick_cache_instance is not None and _brick_cache_rendered_key is not None:
-                    try:
-                        _brick_cache_instance.set(_brick_cache_rendered_key, result.get("data"))
-                    except Exception as _bc_set_err:
-                        logger.warning("Brick cache set failed for '%s': %s", step.id, _bc_set_err)
-                if _cb_instance is not None:
-                    try:
-                        _cb_instance.on_success()
-                    except Exception:
-                        pass
-                if _rl_instance is not None:
-                    try:
-                        _rl_instance.record_call()
-                    except Exception:
-                        pass
-                step_statuses[step.id] = StepStatus(
-                    status="ok",
-                    duration=step_duration,
-                    items=result.get("items_count"),
-                )
-                self.progress.step_ok(step.id, step_duration, result.get("items_count"))
-                step_ok[step.id] = True
-            else:
-                error_msg = result.get("error", "unknown error")
-                if _cb_instance is not None:
-                    try:
-                        _cb_instance.on_failure()
-                    except Exception:
-                        pass
-                step_statuses[step.id] = StepStatus(
-                    status="error", duration=step_duration, errors=1,
-                    error_message=str(error_msg) if error_msg else None,
-                )
-                self.progress.step_error(step.id, error_msg, step_duration)
-                effective_on_error = step.on_error or pipeline.error_handling.on_error
-                if effective_on_error == "stop":
-                    pipeline_aborted = True
-                    for ev in done_events.values():
-                        ev.set()
+            if result.should_abort:
+                dag_state.pipeline_aborted = True
+                if step.type == "stop":
+                    dag_state.stop_step_success = getattr(step, "success_on_stop", True)
                 step_ok[step.id] = False
+                for ev in done_events.values():
+                    ev.set()
+                done_events[step.id].set()
+                return
 
+            step_status = step_statuses.get(step.id)
+            step_ok[step.id] = bool(
+                step_status is not None
+                and step_status.status in ("ok", "skipped", "dry_run")
+            )
             done_events[step.id].set()
 
         # Dispatch all steps as concurrent tasks; each waits on its deps via events
         tasks = [asyncio.create_task(run_step(s)) for s in steps]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, BaseException):
+                logger.error("DAG task raised: %s", r, exc_info=r)
+                dag_state.pipeline_aborted = True
 
-        return pipeline_aborted, last_output, pipeline_aborted, stop_step_success
+        return (
+            dag_state.pipeline_aborted,
+            dag_state.last_output,
+            dag_state.pipeline_aborted,
+            dag_state.stop_step_success,
+        )
 
     def _build_foreach_result(
         self, results: list[tuple[Any, dict]], step: Step, pipeline: Pipeline

@@ -643,6 +643,7 @@ class RunResult(BaseModel):
     steps: dict[str, StepStatus]
     result: Any
     duration: float
+    cost_usd: Optional[float] = None
     # Deprecation warnings accumulated during the run (T-BRIX-DB-05d)
     deprecation_warnings: list[str] = Field(default_factory=list)
 

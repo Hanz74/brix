@@ -262,6 +262,14 @@ class StepResult:
     step_status: StepStatus | None = None
 
 
+@dataclass
+class DagSharedState:
+    pipeline_aborted: bool = False
+    last_output: Any = None
+    stop_step_success: bool | None = None
+    total_cost_usd: float = 0.0
+
+
 class _RenderedStep:
     """Wraps a Step with rendered Jinja2 values for the runner."""
 

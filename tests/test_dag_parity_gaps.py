@@ -1,10 +1,10 @@
-"""Xfail tests documenting DAG parity gaps slated for ENG-06."""
+"""Regression tests covering DAG parity with sequential step execution."""
 
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -12,9 +12,6 @@ from brix.db import BrixDB
 from brix.engine import PipelineEngine
 from brix.loader import PipelineLoader
 from brix.runners.base import BaseRunner, _StubRunnerMixin
-
-
-XFAIL_REASON = "DAG parity gap \u2014 will be fixed by ENG-06"
 
 
 def _load(yaml_str: str):
@@ -91,7 +88,6 @@ class _CancelWriterRunner(_StubRunnerMixin, BaseRunner):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_validate_config(_isolate_workdir):
     pipeline = _load("""
 name: dag-validate-config
@@ -101,13 +97,13 @@ steps:
     values:
       ready: true
   - id: invalid
-    type: custom
+    type: python
     params:
       required: false
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _ValidateConfigRunner())
+    engine.register_runner("python", _ValidateConfigRunner())
 
     result = await engine.run(pipeline)
 
@@ -117,7 +113,6 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_foreach(_isolate_workdir):
     pipeline = _load("""
 name: dag-foreach
@@ -127,14 +122,14 @@ steps:
     values:
       ready: true
   - id: fanout
-    type: custom
+    type: python
     foreach: "{{ [1, 2, 3] | tojson }}"
     params:
       value: "{{ item }}"
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _EchoItemRunner())
+    engine.register_runner("python", _EchoItemRunner())
 
     result = await engine.run(pipeline)
 
@@ -144,7 +139,6 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_resource_usage(_isolate_workdir):
     pipeline = _load("""
 name: dag-resource-usage
@@ -154,11 +148,11 @@ steps:
     values:
       ready: true
   - id: measured
-    type: custom
+    type: python
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _ResourceRunner())
+    engine.register_runner("python", _ResourceRunner())
 
     result = await engine.run(pipeline)
 
@@ -168,7 +162,6 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_step_records(_isolate_workdir):
     pipeline = _load("""
 name: dag-step-records
@@ -178,11 +171,11 @@ steps:
     values:
       ready: true
   - id: worker
-    type: custom
+    type: python
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _SuccessRunner())
+    engine.register_runner("python", _SuccessRunner())
 
     result = await engine.run(pipeline)
     records = BrixDB().get_step_executions(result.run_id)
@@ -192,7 +185,6 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_saga_compensation(_isolate_workdir):
     executed: list[str] = []
 
@@ -208,18 +200,18 @@ async def test_dag_saga_compensation(_isolate_workdir):
 name: dag-saga-compensation
 steps:
   - id: prep
-    type: custom
+    type: python
     compensate:
       id: undo-prep
-      type: custom
+      type: python
     on_error: stop
   - id: boom
-    type: custom
+    type: python
     depends_on: [prep]
     on_error: stop
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _TrackingRunner())
+    engine.register_runner("python", _TrackingRunner())
 
     result = await engine.run(pipeline)
 
@@ -228,7 +220,6 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_cost_accumulation(_isolate_workdir):
     pipeline = _load("""
 name: dag-cost-accumulation
@@ -238,11 +229,11 @@ steps:
     values:
       ready: true
   - id: llm_step
-    type: custom
+    type: python
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _LlmUsageRunner())
+    engine.register_runner("python", _LlmUsageRunner())
 
     result = await engine.run(pipeline)
 
@@ -251,8 +242,7 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
-async def test_dag_progress_compliance(_isolate_workdir, caplog):
+async def test_dag_progress_compliance(_isolate_workdir, monkeypatch):
     pipeline = _load("""
 name: dag-progress-compliance
 steps:
@@ -261,21 +251,25 @@ steps:
     values:
       ready: true
   - id: worker
-    type: custom
+    type: python
     depends_on: [prep]
-""")
+    """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _NoProgressRunner())
+    engine.register_runner("python", _NoProgressRunner())
+    warn_mock = Mock()
+    monkeypatch.setattr("brix.engine_step.logger.warning", warn_mock)
 
-    with caplog.at_level(logging.WARNING):
-        result = await engine.run(pipeline)
+    result = await engine.run(pipeline)
 
     assert result.success is True
-    assert any("did not call report_progress()" in record.message for record in caplog.records)
+    assert warn_mock.called
+    assert any(
+        "did not call report_progress()" in str(call.args[0])
+        for call in warn_mock.call_args_list
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_context_snapshot(_isolate_workdir):
     pipeline = _load("""
 name: dag-context-snapshot
@@ -285,11 +279,11 @@ steps:
     values:
       ready: true
   - id: worker
-    type: custom
+    type: python
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _SuccessRunner())
+    engine.register_runner("python", _SuccessRunner())
 
     result = await engine.run(pipeline, keep_workdir=True)
     snapshot_path = Path(_isolate_workdir) / "runs" / result.run_id / "context-snapshot.json"
@@ -300,7 +294,6 @@ steps:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(reason=XFAIL_REASON)
 async def test_dag_cancel_check(_isolate_workdir):
     calls: list[str] = []
 
@@ -316,13 +309,13 @@ async def test_dag_cancel_check(_isolate_workdir):
 name: dag-cancel-check
 steps:
   - id: prep
-    type: custom
+    type: python
   - id: worker
-    type: custom
+    type: python
     depends_on: [prep]
 """)
     engine = PipelineEngine()
-    engine.register_runner("custom", _TrackingRunner())
+    engine.register_runner("python", _TrackingRunner())
 
     result = await engine.run(pipeline, keep_workdir=True)
 

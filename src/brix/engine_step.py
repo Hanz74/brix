@@ -159,6 +159,41 @@ class StepExecutor:
         # --- Brick config_defaults merge (T-BRIX-IMP-02) ---
         step = self.engine._apply_brick_defaults(step)
 
+        # --- Test-Mode: intercept db.upsert and action.notify before validation ---
+        from brix.engine import LEGACY_ALIASES
+
+        effective_step_type = LEGACY_ALIASES.get(step.type, step.type)
+        if pipeline.test_mode and effective_step_type in ("db.upsert", "db_upsert"):
+            logger.info(
+                "Test-mode: dry-running db.upsert step '%s' (pipeline=%s)",
+                step.id,
+                pipeline.name,
+            )
+            output = {"test_mode": True, "dry": True, "step_id": step.id}
+            context.set_output(step.id, output)
+            step_statuses[step.id] = StepStatus(
+                status="ok",
+                duration=0.0,
+                reason="test_mode_dry",
+            )
+            self.engine.progress.step_ok(step.id, 0.0, None)
+            return PreExecuteStepResult(step=step, action="continue")
+        if pipeline.test_mode and effective_step_type in ("action.notify", "notify"):
+            logger.info(
+                "Test-mode: log-only action.notify step '%s' (pipeline=%s)",
+                step.id,
+                pipeline.name,
+            )
+            output = {"test_mode": True, "log_only": True, "step_id": step.id}
+            context.set_output(step.id, output)
+            step_statuses[step.id] = StepStatus(
+                status="ok",
+                duration=0.0,
+                reason="test_mode_log_only",
+            )
+            self.engine.progress.step_ok(step.id, 0.0, None)
+            return PreExecuteStepResult(step=step, action="continue")
+
         # Build an early jinja context for dynamic dispatch type rendering
         _early_jinja_ctx = context.to_jinja_context() if "{{" in step.type else None
 
@@ -449,39 +484,7 @@ class StepExecutor:
             self.engine.progress.step_ok(step.id, 0.0, None)
             return StepResult(status="ok", output=pin_hit)
 
-        from brix.engine import LEGACY_ALIASES, _warn_if_high_memory
-
-        effective_step_type = LEGACY_ALIASES.get(step.type, step.type)
-        if pipeline.test_mode and effective_step_type in ("db.upsert", "db_upsert"):
-            logger.info(
-                "Test-mode: dry-running db.upsert step '%s' (pipeline=%s)",
-                step.id,
-                pipeline.name,
-            )
-            output = {"test_mode": True, "dry": True, "step_id": step.id}
-            context.set_output(step.id, output)
-            step_statuses[step.id] = StepStatus(
-                status="ok",
-                duration=0.0,
-                reason="test_mode_dry",
-            )
-            self.engine.progress.step_ok(step.id, 0.0, None)
-            return StepResult(status="ok", output=output)
-        if pipeline.test_mode and effective_step_type in ("action.notify", "notify"):
-            logger.info(
-                "Test-mode: log-only action.notify step '%s' (pipeline=%s)",
-                step.id,
-                pipeline.name,
-            )
-            output = {"test_mode": True, "log_only": True, "step_id": step.id}
-            context.set_output(step.id, output)
-            step_statuses[step.id] = StepStatus(
-                status="ok",
-                duration=0.0,
-                reason="test_mode_log_only",
-            )
-            self.engine.progress.step_ok(step.id, 0.0, None)
-            return StepResult(status="ok", output=output)
+        from brix.engine import _warn_if_high_memory
 
         if step.cache is True:
             from brix.context import CacheManager

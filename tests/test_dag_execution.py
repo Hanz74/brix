@@ -18,6 +18,12 @@ def load_pipeline(yaml_str: str):
     return PipelineLoader().load_from_string(yaml_str)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_workdir(tmp_path, monkeypatch):
+    monkeypatch.setattr("brix.context.WORKDIR_BASE", tmp_path / "runs")
+    return tmp_path
+
+
 class _TrackingRunner(_StubRunnerMixin, BaseRunner):
     """Stub runner that records execution order and returns success."""
 
