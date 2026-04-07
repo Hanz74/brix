@@ -358,6 +358,7 @@ from brix.mcp_handlers.testing import (
     _handle_unpin_step_data,
     _handle_list_pins,
 )
+from brix.mcp_handlers.smoke import _handle_smoke_test
 # T-BRIX-DBF-04: DB-First CRUD for tool_schema, help_topic, keyword, type_compat
 from brix.mcp_handlers.dbfirst_crud import (
     _handle_tool_schema,
@@ -744,6 +745,7 @@ _HANDLERS = {
     "brix__pin_step_data": _handle_pin_step_data,
     "brix__unpin_step_data": _handle_unpin_step_data,
     "brix__list_pins": _handle_list_pins,
+    "brix__smoke_test": _handle_smoke_test,
     # Org Registry — project/tag/group definitions (T-BRIX-ORG-02)
     "brix__org": _handle_org,
     # Project-level bundle export/import (T-BRIX-DBQUAL-02/03)

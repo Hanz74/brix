@@ -10,6 +10,7 @@ Syncs:
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -91,15 +92,40 @@ def _sync_tool_schemas(db: "BrixDB") -> int:
     """
     from brix.mcp_server import _HANDLERS
 
+    explicit_schemas = {
+        "brix__smoke_test": {
+            "description": "Run smoke tests on project pipelines. Returns per-pipeline load, validation, helper, connection, and sub-pipeline checks.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "project": {
+                        "type": "string",
+                        "description": "Optional project slug to filter pipelines.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of pipelines to test.",
+                        "default": 5,
+                    },
+                },
+                "required": [],
+            },
+        }
+    }
+
     with db._connect() as conn:
         db_tools = {r[0] for r in conn.execute("SELECT name FROM mcp_tool_schema").fetchall()}
         synced = 0
         for name in _HANDLERS:
             if name not in db_tools:
+                spec = explicit_schemas.get(name) or {
+                    "description": f"MCP tool: {name}",
+                    "input_schema": {},
+                }
                 conn.execute(
                     "INSERT INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at) "
-                    "VALUES (?, ?, '{}', datetime('now'), datetime('now'))",
-                    (name, f"MCP tool: {name}"),
+                    "VALUES (?, ?, ?, datetime('now'), datetime('now'))",
+                    (name, spec["description"], json.dumps(spec["input_schema"])),
                 )
                 logger.info("startup_sync: registered tool schema '%s'", name)
                 synced += 1

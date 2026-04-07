@@ -78,10 +78,11 @@ from brix.mcp_server import (
     _handle_server,
     _handle_state,
     _handle_trigger_group,
+    _handle_smoke_test,
 )
 
 
-EXPECTED_HANDLER_COUNT = 101  # V8-12: consolidated 7 CRUD groups (-32 tools)
+EXPECTED_HANDLER_COUNT = 102  # Includes brix__smoke_test
 
 EXPECTED_TOOL_NAMES = {
     "brix__get_tips",
@@ -216,6 +217,7 @@ EXPECTED_TOOL_NAMES = {
     "brix__pin_step_data",
     "brix__unpin_step_data",
     "brix__list_pins",
+    "brix__smoke_test",
 }
 
 
