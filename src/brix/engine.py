@@ -52,6 +52,7 @@ from brix.progress import ProgressReporter
 from brix.mcp_pool import McpConnectionPool
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.serialization import json_dumps
+from brix.engine_dag import detect_dag_mode, run_dag, toposort_steps
 from brix.engine_step import StepExecutor
 from brix.engine_sequential import run_pipeline_sequential
 
@@ -681,10 +682,10 @@ class PipelineEngine:
             # If any step declares depends_on, switch to parallel DAG execution.
             # The outer try/finally wraps both paths for cleanup.
             try:
-                if self._detect_dag_mode(pipeline.steps):
+                if detect_dag_mode(pipeline.steps):
                     try:
-                        pipeline_aborted, last_output, _, stop_step_success = await self._run_dag(
-                            pipeline, context, step_statuses, dry_run_steps, dag_state
+                        pipeline_aborted, last_output, _, stop_step_success = await run_dag(
+                            self, pipeline, context, step_statuses, dry_run_steps, dag_state
                         )
                         total_cost_usd = dag_state.total_cost_usd
                     except ValueError as dag_err:
@@ -1280,168 +1281,13 @@ class PipelineEngine:
 
     @staticmethod
     def _detect_dag_mode(steps: list[Step]) -> bool:
-        """Return True if any step declares depends_on."""
-        return any(bool(s.depends_on) for s in steps)
+        """Compatibility wrapper for DAG mode detection."""
+        return detect_dag_mode(steps)
 
     @staticmethod
     def _toposort_steps(steps: list[Step]) -> list[Step]:
-        """Return steps in topological order (Kahn's algorithm).
-
-        Raises ``ValueError`` if a dependency references an unknown step ID or
-        if the dependency graph contains a cycle.
-        """
-        step_by_id: dict[str, Step] = {s.id: s for s in steps}
-
-        # Validate that all depends_on references are valid step IDs
-        for step in steps:
-            for dep in step.depends_on:
-                if dep not in step_by_id:
-                    raise ValueError(
-                        f"Step '{step.id}' depends_on unknown step '{dep}'"
-                    )
-
-        # Build in-degree map and adjacency list
-        in_degree: dict[str, int] = {s.id: 0 for s in steps}
-        dependents: dict[str, list[str]] = {s.id: [] for s in steps}
-        for step in steps:
-            for dep in step.depends_on:
-                in_degree[step.id] += 1
-                dependents[dep].append(step.id)
-
-        # Kahn's algorithm
-        from collections import deque
-        queue: deque[str] = deque(sid for sid, deg in in_degree.items() if deg == 0)
-        sorted_ids: list[str] = []
-
-        while queue:
-            sid = queue.popleft()
-            sorted_ids.append(sid)
-            for dependent in dependents[sid]:
-                in_degree[dependent] -= 1
-                if in_degree[dependent] == 0:
-                    queue.append(dependent)
-
-        if len(sorted_ids) != len(steps):
-            # Some steps were not reached — cycle detected
-            cycled = [sid for sid, deg in in_degree.items() if deg > 0]
-            raise ValueError(
-                f"Cycle detected in depends_on graph involving step(s): {', '.join(sorted(cycled))}"
-            )
-
-        return [step_by_id[sid] for sid in sorted_ids]
-
-    async def _run_dag(
-        self,
-        pipeline: Pipeline,
-        context: "PipelineContext",
-        step_statuses: dict,
-        dry_run_steps: "list[str] | None",
-        dag_state: DagSharedState,
-    ) -> tuple[bool, Any, bool, "bool | None"]:
-        """Execute pipeline steps in DAG order.
-
-        Steps without unsatisfied dependencies are dispatched concurrently.
-        Each step waits until all its dependencies have completed successfully.
-
-        Returns ``(pipeline_aborted, last_output, aborted_flag, stop_step_success)``.
-        """
-        steps = pipeline.steps
-        step_by_id: dict[str, Step] = {s.id: s for s in steps}
-
-        # Topological sort validates references and detects cycles
-        try:
-            _toposorted = self._toposort_steps(steps)
-        except ValueError as exc:
-            raise exc  # propagate to caller's try/except
-
-        # Asyncio events: set when a step is done (success *or* skip/error+continue)
-        done_events: dict[str, asyncio.Event] = {s.id: asyncio.Event() for s in steps}
-        # Outcome: True = "usable for downstream deps", False = "aborted"
-        step_ok: dict[str, bool] = {}
-        executor = StepExecutor(self)
-
-        async def run_step(step: Step) -> None:
-            # Wait for all dependencies to complete
-            for dep_id in step.depends_on:
-                await done_events[dep_id].wait()
-                if not step_ok.get(dep_id, False):
-                    # A dependency failed and pipeline is aborting — skip this step
-                    step_statuses[step.id] = StepStatus(
-                        status="skipped",
-                        duration=0.0,
-                        reason=f"dependency '{dep_id}' failed",
-                    )
-                    self.progress.step_skipped(step.id)
-                    step_ok[step.id] = False
-                    done_events[step.id].set()
-                    return
-
-            if dag_state.pipeline_aborted:
-                step_ok[step.id] = False
-                done_events[step.id].set()
-                return
-
-            # --- Resume: skip completed steps ---
-            if context.is_step_completed(step.id):
-                step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
-                dag_state.last_output = context.get_output(step.id)
-                self.progress.step_resumed(step.id)
-                step_ok[step.id] = True
-                done_events[step.id].set()
-                return
-
-            if self._is_run_cancelled(context):
-                dag_state.pipeline_aborted = True
-                for ev in done_events.values():
-                    ev.set()
-                step_ok[step.id] = False
-                done_events[step.id].set()
-                return
-
-            result = await executor.execute_step(
-                step=step,
-                context=context,
-                pipeline=pipeline,
-                step_statuses=step_statuses,
-                jinja_ctx=context.to_jinja_context(),
-                dry_run_steps=dry_run_steps,
-            )
-
-            if result.output is not None:
-                dag_state.last_output = result.output
-            dag_state.total_cost_usd += result.cost
-
-            if result.should_abort:
-                dag_state.pipeline_aborted = True
-                if step.type == "stop":
-                    dag_state.stop_step_success = getattr(step, "success_on_stop", True)
-                step_ok[step.id] = False
-                for ev in done_events.values():
-                    ev.set()
-                done_events[step.id].set()
-                return
-
-            step_status = step_statuses.get(step.id)
-            step_ok[step.id] = bool(
-                step_status is not None
-                and step_status.status in ("ok", "skipped", "dry_run")
-            )
-            done_events[step.id].set()
-
-        # Dispatch all steps as concurrent tasks; each waits on its deps via events
-        tasks = [asyncio.create_task(run_step(s)) for s in steps]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in results:
-            if isinstance(r, BaseException):
-                logger.error("DAG task raised: %s", r, exc_info=r)
-                dag_state.pipeline_aborted = True
-
-        return (
-            dag_state.pipeline_aborted,
-            dag_state.last_output,
-            dag_state.pipeline_aborted,
-            dag_state.stop_step_success,
-        )
+        """Compatibility wrapper for DAG topological sorting."""
+        return toposort_steps(steps)
 
     def _build_foreach_result(
         self, results: list[tuple[Any, dict]], step: Step, pipeline: Pipeline
