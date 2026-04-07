@@ -128,6 +128,154 @@ def _warn_if_high_memory(rss_mb: float, step_id: str) -> None:
         logger.warning(msg)
 
 
+async def finalize_run(
+    engine,
+    pipeline: Pipeline,
+    context: PipelineContext,
+    step_statuses: dict[str, StepStatus],
+    pipeline_aborted: bool,
+    stop_step_success: bool | None,
+    last_output: Any,
+    total_cost_usd: float,
+    start_time: float,
+    history,
+    keep_workdir: bool,
+    deprecation_warnings: list[str],
+) -> RunResult:
+    """Finalize one pipeline run and build the public RunResult."""
+    final_result = None
+    if not pipeline_aborted and pipeline.output:
+        jinja_ctx = context.to_jinja_context()
+        final_result = engine.loader.render_value(pipeline.output, jinja_ctx)
+    elif not pipeline_aborted:
+        final_result = last_output
+
+    total_duration = time.monotonic() - start_time
+    if stop_step_success is not None:
+        all_ok = stop_step_success
+    else:
+        all_ok = (not pipeline_aborted) and all(
+            s.status in ("ok", "skipped", "dry_run") for s in step_statuses.values()
+        )
+
+    was_cancelled = engine._is_run_cancelled(context)
+    if was_cancelled:
+        context.save_run_metadata(pipeline.name, "cancelled")
+    else:
+        context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
+    if all_ok and not was_cancelled:
+        context.cleanup(keep=keep_workdir)
+
+    engine.progress.pipeline_done(pipeline.name, all_ok, total_duration, len(pipeline.steps))
+
+    try:
+        steps_summary: dict[str, dict[str, Any]] = {}
+        for k, v in step_statuses.items():
+            d = v.model_dump()
+            entry: dict[str, Any] = {
+                "status": d["status"],
+                "duration": d.get("duration"),
+                "items": d.get("items"),
+                "errors": d.get("errors"),
+            }
+            if d.get("error_message") is not None:
+                entry["error_message"] = d["error_message"]
+            if d.get("resource_usage") is not None:
+                entry["resource_usage"] = d["resource_usage"]
+            steps_summary[k] = entry
+        if was_cancelled:
+            cancel_reason = ""
+            try:
+                import json as _json
+
+                sentinel_path = context.workdir / "cancel_requested.json"
+                cancel_data = _json.loads(sentinel_path.read_text())
+                cancel_reason = cancel_data.get("reason", "")
+            except Exception:
+                pass
+            history.cancel_run(
+                context.run_id,
+                reason=cancel_reason,
+                cancelled_by="user",
+            )
+            try:
+                history.record_finish(
+                    context.run_id,
+                    False,
+                    total_duration,
+                    steps_summary,
+                    final_result,
+                    cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
+                )
+            except Exception:
+                pass
+        else:
+            history.record_finish(
+                context.run_id,
+                all_ok,
+                total_duration,
+                steps_summary,
+                final_result,
+                cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
+            )
+    except Exception:
+        pass
+
+    outcome = "cancelled" if was_cancelled else ("success" if all_ok else "failure")
+    end_msg = (
+        f"Run finished: pipeline={pipeline.name} run_id={context.run_id} "
+        f"outcome={outcome} duration={total_duration:.2f}s"
+    )
+    end_level = "INFO" if all_ok or was_cancelled else "ERROR"
+    if end_level == "INFO":
+        logger.info(end_msg)
+    else:
+        logger.error(end_msg)
+    _db_log(end_level, "engine", end_msg)
+
+    try:
+        from brix.triggers.state import TriggerState
+
+        trigger_state = TriggerState()
+        trigger_state.record_pipeline_completion(
+            pipeline.name,
+            context.run_id,
+            "success" if all_ok else "failure",
+            final_result,
+            input=context.input,
+        )
+    except Exception:
+        pass
+
+    try:
+        from brix.alerting import AlertManager
+
+        run_result = RunResult(
+            success=all_ok,
+            run_id=context.run_id,
+            steps=step_statuses,
+            result=final_result,
+            duration=total_duration,
+            cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
+            deprecation_warnings=list(deprecation_warnings),
+        )
+        run_result_dict = run_result.model_dump()
+        run_result_dict["pipeline"] = pipeline.name
+        AlertManager().check_alerts(run_result_dict)
+    except Exception:
+        pass
+
+    return RunResult(
+        success=all_ok,
+        run_id=context.run_id,
+        steps=step_statuses,
+        result=final_result,
+        duration=total_duration,
+        cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
+        deprecation_warnings=list(deprecation_warnings),
+    )
+
+
 class PipelineEngine:
     """Executes pipeline steps sequentially."""
 
@@ -666,13 +814,12 @@ class PipelineEngine:
 
             self.progress.pipeline_start(pipeline.name, len(pipeline.steps))
 
-            final_result = None
-            all_ok = False
             pipeline_aborted = False  # set to True on early-stop so we skip post-loop work
             stop_step_success: bool | None = None  # set by 'stop' step to override all_ok
             total_cost_usd: float = 0.0  # accumulated LLM cost from step outputs (T-BRIX-V6-21)
             last_output: Any = None
             dag_state = DagSharedState()
+            result: RunResult | None = None
 
             # --- Saga Tracker (T-BRIX-DB-21) ---
             from brix.resilience import SagaTracker as _SagaTracker
@@ -717,144 +864,26 @@ class PipelineEngine:
                 self._mcp_pool = None
                 self._run_db = None  # Clear run-scoped DB reference (T-BRIX-DB-07)
                 self._saga_tracker = None
-
-                # Resolve output (best-effort; may be None if pipeline aborted early)
-                if not pipeline_aborted and pipeline.output:
-                    jinja_ctx = context.to_jinja_context()
-                    final_result = self.loader.render_value(pipeline.output, jinja_ctx)
-                elif not pipeline_aborted:
-                    final_result = last_output
-
-                total_duration = time.monotonic() - start_time
-                if stop_step_success is not None:
-                    # 'stop' step result overrides normal all_ok calculation
-                    all_ok = stop_step_success
-                else:
-                    all_ok = (not pipeline_aborted) and all(
-                        s.status in ("ok", "skipped", "dry_run") for s in step_statuses.values()
-                    )
-
-                # Detect cancellation: if the cancel sentinel exists treat the run as cancelled
-                _was_cancelled = self._is_run_cancelled(context)
-                if _was_cancelled:
-                    context.save_run_metadata(pipeline.name, "cancelled")
-                else:
-                    context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
-                if all_ok and not _was_cancelled:
-                    context.cleanup(keep=keep_workdir)
-
-                self.progress.pipeline_done(pipeline.name, all_ok, total_duration, len(pipeline.steps))
-
-                try:
-                    # Build a compact steps summary — never include raw items arrays.
-                    steps_summary: dict = {}
-                    for k, v in step_statuses.items():
-                        d = v.model_dump()
-                        entry: dict = {
-                            "status": d["status"],
-                            "duration": d.get("duration"),
-                            "items": d.get("items"),
-                            "errors": d.get("errors"),
-                        }
-                        # Include error_message only when present to keep records compact
-                        if d.get("error_message") is not None:
-                            entry["error_message"] = d["error_message"]
-                        # Include resource_usage when present (T-BRIX-V7-07)
-                        if d.get("resource_usage") is not None:
-                            entry["resource_usage"] = d["resource_usage"]
-                        steps_summary[k] = entry
-                    if _was_cancelled:
-                        # Read cancel reason from sentinel file for partial-results record
-                        _cancel_reason = ""
-                        try:
-                            import json as _json
-                            _sentinel_path = context.workdir / "cancel_requested.json"
-                            _cancel_data = _json.loads(_sentinel_path.read_text())
-                            _cancel_reason = _cancel_data.get("reason", "")
-                        except Exception:
-                            pass
-                        history.cancel_run(
-                            context.run_id,
-                            reason=_cancel_reason,
-                            cancelled_by="user",
-                        )
-                        # Also persist step data collected so far
-                        try:
-                            history.record_finish(
-                                context.run_id, False, total_duration,
-                                steps_summary,
-                                final_result,
-                                cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-                            )
-                        except Exception:
-                            pass
-                    else:
-                        history.record_finish(
-                            context.run_id, all_ok, total_duration,
-                            steps_summary,
-                            final_result,
-                            cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-                        )
-                except Exception:
-                    pass  # Never let history errors mask the real result
-
-                # --- Application logging: run end (T-BRIX-V7-08) ---
-                _outcome = "cancelled" if _was_cancelled else ("success" if all_ok else "failure")
-                _end_msg = (
-                    f"Run finished: pipeline={pipeline.name} run_id={context.run_id} "
-                    f"outcome={_outcome} duration={total_duration:.2f}s"
-                )
-                _end_level = "INFO" if all_ok or _was_cancelled else "ERROR"
-                if _end_level == "INFO":
-                    logger.info(_end_msg)
-                else:
-                    logger.error(_end_msg)
-                _db_log(_end_level, "engine", _end_msg)
-
-                try:
-                    from brix.triggers.state import TriggerState
-                    trigger_state = TriggerState()
-                    trigger_state.record_pipeline_completion(
-                        pipeline.name,
-                        context.run_id,
-                        "success" if all_ok else "failure",
-                        final_result,
-                        input=user_input,
-                    )
-                except Exception:
-                    pass  # Don't fail the pipeline because of trigger state
-
-                try:
-                    from brix.alerting import AlertManager
-                    _run_result = RunResult(
-                        success=all_ok,
-                        run_id=context.run_id,
-                        steps=step_statuses,
-                        result=final_result,
-                        duration=time.monotonic() - start_time,
-                        cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-                        deprecation_warnings=list(self._deprecation_warnings),
-                    )
-                    # Attach pipeline name so alerting rules can access it
-                    _run_result_dict = _run_result.model_dump()
-                    _run_result_dict["pipeline"] = pipeline.name
-                    AlertManager().check_alerts(_run_result_dict)
-                except Exception:
-                    pass  # Never let alerting errors mask the real result
+            result = await finalize_run(
+                self,
+                pipeline,
+                context,
+                step_statuses,
+                pipeline_aborted,
+                stop_step_success,
+                last_output,
+                total_cost_usd,
+                start_time,
+                history,
+                keep_workdir,
+                self._deprecation_warnings,
+            )
 
         # Expose sub-step outputs for callers that need to propagate them
         # (e.g. RepeatRunner merging sub-step outputs into the parent context).
         self._last_step_outputs = dict(context.step_outputs)
 
-        return RunResult(
-            success=all_ok,
-            run_id=context.run_id,
-            steps=step_statuses,
-            result=final_result,
-            duration=total_duration,
-            cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-            deprecation_warnings=list(self._deprecation_warnings),
-        )
+        return result
 
     # ------------------------------------------------------------------
     # Execution Data persistence (T-BRIX-V7-04)
