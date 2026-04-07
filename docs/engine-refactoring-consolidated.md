@@ -1,7 +1,7 @@
 # `src/brix/engine.py` Refactoring Analysis — Consolidated
 
 File analyzed: `src/brix/engine.py`
-Analyzed line count: `2697`
+Analyzed line count: `2704`
 Sources: Codex deep analysis + Explore-Agent structural analysis
 Consolidated: 2026-04-06
 
@@ -403,13 +403,13 @@ This document is intentionally exhaustive. It merges two independent analyses of
 - Imported by tests: `tests/test_v6_llm_cost_tracking.py`
 - Path use: sequential only
 
-### `_RenderedStep` (`2641-2697`)
+### `_RenderedStep` (`2641-2704`)
 
 - Purpose: Lightweight execution view over a `Step` with Jinja-rendered values applied. It is the object handed to runners.
 - Called by: `run`, `_run_foreach_sequential`, `_run_foreach_parallel`, `_run_dag`, `brix.resilience`, `brix.debug_tools`, tests
 - Path use: both
 
-#### `_RenderedStep.__init__` (`2644-2697`)
+#### `_RenderedStep.__init__` (`2644-2704`)
 
 - Parameters: `self`, `step: Step`, `rendered: dict`, `loader: PipelineLoader`, `jinja_ctx: dict`
 - Return type: `None`
@@ -417,6 +417,7 @@ This document is intentionally exhaustive. It merges two independent analyses of
 - Calls: `loader.render_value`, `_step_config_dict`, `rendered.get`, `getattr`
 - Called by: `run`, `_run_foreach_sequential`, `_run_foreach_parallel`, `_run_dag`, debug/resilience code
 - Path use: both
+- After all explicit assignments, a dynamic backfill loop copies every remaining Step.model_fields attribute that wasn't already set: `for field_name in Step.model_fields: if not hasattr(self, field_name): setattr(self, field_name, getattr(step, field_name, None))`. This ensures new Step fields (e.g. connection, query, table) are automatically available to runners without manual additions.
 
 ---
 
@@ -1733,6 +1734,7 @@ Implication: splitting this file is not just internal cleanup. Several underscor
 - `tests/test_brick_first_engine.py`: brick registry resolution, system brick mapping, `LEGACY_ALIASES`, and runner lookup.
 - `tests/test_dag_execution.py`: `_detect_dag_mode`, `_toposort_steps`, simple DAG scheduling, output visibility, diamond graph, cycle detection.
 - `tests/test_dag_feature_parity.py`: explicitly covers DAG parity for `pause_before`, `test_mode`, pin mocks, and cache hits.
+  - Coverage gap: test_dag_feature_parity.py covers pause_before, test_mode, pin_mock, and cache — but does NOT cover circuit_breaker and rate_limit DAG parity, even though both are implemented. These 2 features lack DAG-specific test coverage.
 - `tests/test_db_only_handlers.py`: DB-backed MCP handlers; step-level credentials injection via engine.
 - `tests/test_deprecation_enforcement.py`: deprecated alias tracking, `RunResult.deprecation_warnings`, and `strict_bricks`.
 - `tests/test_deps.py`: dependency management utilities and pipeline-level dependency install behavior.
@@ -2068,7 +2070,7 @@ This section synthesizes the Codex analysis and Explore-Agent analysis into a si
 2. The shared step-execution policy layer (render, resolve, validate, execute, persist)
 3. Two partially duplicated schedulers (sequential loop + DAG event-driven)
 
-Both analyses independently confirmed 2697 lines and the same set of public symbols.
+Both analyses independently confirmed 2704 lines and the same set of public symbols.
 
 ### The Central Technical Risk
 
