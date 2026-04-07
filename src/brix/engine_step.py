@@ -6,7 +6,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from brix.context import PipelineContext
 from brix.engine_types import (
@@ -234,6 +234,157 @@ class StepExecutor:
 
         return PreExecuteStepResult(step=step, runner=runner)
 
+    async def execute_foreach(
+        self,
+        step: Step,
+        context: PipelineContext,
+        pipeline: Pipeline,
+        step_statuses: dict[str, StepStatus],
+        jinja_ctx: dict | None,
+    ) -> StepResult:
+        """Execute a foreach step and aggregate the per-item results."""
+        if jinja_ctx is None:
+            jinja_ctx = context.to_jinja_context()
+
+        with self.engine._step_credentials_context(context, step):
+            try:
+                items = self.engine.loader.resolve_foreach(step.foreach, jinja_ctx)
+            except (ValueError, TypeError) as foreach_resolve_err:
+                foreach_err_msg = (
+                    f"foreach expression failed to resolve for step '{step.id}': "
+                    f"{foreach_resolve_err}"
+                )
+                logger.warning(foreach_err_msg)
+                step_statuses[step.id] = StepStatus(
+                    status="error",
+                    duration=0.0,
+                    errors=1,
+                    error_message=foreach_err_msg,
+                )
+                self.engine.progress.step_start(step.id, step.type)
+                self.engine.progress.step_error(step.id, foreach_err_msg, 0.0)
+                effective_on_error = step.on_error or pipeline.error_handling.on_error
+                return StepResult(
+                    status="error",
+                    output=None,
+                    should_abort=effective_on_error == "stop",
+                    should_continue=effective_on_error != "stop",
+                )
+
+            step_start = time.monotonic()
+            if step.batch_size > 0:
+                chunks = self.engine._chunk_items(items, step.batch_size)
+                batch_results: list[tuple[Any, dict]] = []
+                batch_aborted = False
+                effective_on_error = step.on_error or pipeline.error_handling.on_error
+                chunk_step = step.model_copy(update={"flat_output": False})
+                for chunk_idx, chunk in enumerate(chunks):
+                    self.engine.progress.step_start(
+                        f"{step.id}[batch {chunk_idx + 1}/{len(chunks)}]",
+                        step.type,
+                    )
+                    if step.parallel:
+                        chunk_result = await self.engine._run_foreach_parallel(
+                            chunk_step, chunk, context, pipeline
+                        )
+                    else:
+                        chunk_result = await self.engine._run_foreach_sequential(
+                            chunk_step, chunk, context, pipeline
+                        )
+
+                    for item_result in chunk_result.get("items", []):
+                        if item_result.get("success"):
+                            batch_results.append(
+                                (None, {"success": True, "data": item_result.get("data")})
+                            )
+                        else:
+                            batch_results.append(
+                                (
+                                    item_result.get("input"),
+                                    {
+                                        "success": False,
+                                        "error": item_result.get("error", "unknown"),
+                                        "duration": 0.0,
+                                    },
+                                )
+                            )
+
+                    if not chunk_result.get("success") and effective_on_error == "stop":
+                        batch_aborted = True
+                        break
+
+                foreach_result = self.engine._build_foreach_result(
+                    batch_results,
+                    step,
+                    pipeline,
+                )
+                if batch_aborted:
+                    foreach_result["success"] = False
+            elif step.parallel:
+                foreach_result = await self.engine._run_foreach_parallel(
+                    step, items, context, pipeline
+                )
+            else:
+                foreach_result = await self.engine._run_foreach_sequential(
+                    step, items, context, pipeline
+                )
+
+        step_duration = time.monotonic() - step_start
+
+        perf_hints: list[str] = []
+        num_items = len(items)
+        if not step.parallel and not step.batch_size and num_items > 100:
+            perf_hints.append(
+                "Sequential foreach over 100+ items. Add parallel: true with concurrency: N."
+            )
+        if step.batch_size > 0 and not step.parallel:
+            perf_hints.append(
+                "batch_size set but parallel: false — batches run sequentially."
+            )
+        if step.parallel and num_items > 50 and step.concurrency == 10:
+            perf_hints.append(
+                "Large parallel foreach with default concurrency=10. For API steps consider concurrency: 3-5."
+            )
+        if perf_hints:
+            foreach_result["hints"] = perf_hints
+
+        summary = foreach_result.get("summary", {})
+        if foreach_result.get("success"):
+            context.set_output(step.id, foreach_result)
+            step_statuses[step.id] = StepStatus(
+                status="ok",
+                duration=step_duration,
+                items=summary.get("total"),
+                errors=summary.get("failed") or None,
+            )
+            self.engine.progress.foreach_done(
+                step.id,
+                summary.get("total", 0),
+                summary.get("succeeded", 0),
+                summary.get("failed", 0),
+                step_duration,
+            )
+            return StepResult(status="ok", output=foreach_result)
+
+        foreach_err_msg = (
+            f"foreach failed ({summary.get('failed', '?')} of {summary.get('total', '?')} items failed)"
+        )
+        step_statuses[step.id] = StepStatus(
+            status="error",
+            duration=step_duration,
+            errors=summary.get("failed", 1),
+            error_message=foreach_err_msg,
+        )
+        self.engine.progress.step_start(step.id, step.type)
+        self.engine.progress.step_error(step.id, foreach_err_msg, step_duration)
+        effective_on_error = step.on_error or pipeline.error_handling.on_error
+        return StepResult(
+            status="error",
+            output=None,
+            should_abort=effective_on_error == "stop",
+            should_continue=effective_on_error != "stop",
+        )
+
     async def execute_step(
         self,
         step: Step,
@@ -268,6 +419,15 @@ class StepExecutor:
 
         if jinja_ctx is None:
             jinja_ctx = context.to_jinja_context()
+
+        if step.foreach:
+            return await self.execute_foreach(
+                step=step,
+                context=context,
+                pipeline=pipeline,
+                step_statuses=step_statuses,
+                jinja_ctx=jinja_ctx,
+            )
 
         rendered_params = self.engine.loader.render_step_params(step, jinja_ctx)
         rendered_step = _RenderedStep(step, rendered_params, self.engine.loader, jinja_ctx)
