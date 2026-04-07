@@ -296,7 +296,7 @@ async def _handle_add_step(arguments: dict) -> dict:
         if key not in _ENVELOPE_KEYS and key not in step:
             step[key] = value
 
-    # Normalize: map 'config' → 'params' for non-specialist steps (T-BRIX-BUG-11)
+    # Preserve explicit step ``config`` so it persists to ``config_json``.
     _normalize_step_config(step)
 
     # Insert at position or append

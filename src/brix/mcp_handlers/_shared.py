@@ -194,30 +194,15 @@ def _validate_pipeline_dict(data: dict, level: str = "standard") -> dict:
         }
 
 
-# Step types where 'config' is a legitimate field (specialist runner config)
-_SPECIALIST_TYPES = {"specialist", "extract.specialist"}
-
-
 def _normalize_step_config(step: dict) -> dict:
-    """Normalize step dict: map 'config' to 'params' for non-specialist steps.
+    """Normalize a step dict without rewriting persisted config placement.
 
-    MCP callers sometimes pass 'config' when they mean 'params'. The Engine
-    reads step.params, so we remap here to ensure the YAML stores 'params'.
-
-    - If the step already has 'params', 'config' is left untouched (it may be
-      legitimate specialist config).
-    - If the step has 'config' but no 'params', AND the step type is not a
-      specialist type, 'config' is moved to 'params'.
-    - Specialist steps ('specialist', 'extract.specialist') keep 'config' as-is
-      because it holds ExtractionRules, not generic params.
+    MCP callers may provide both runtime ``params`` and brick ``config``.
+    Those must remain distinct so DB-backed steps persist runtime params in
+    ``params_json`` and brick configuration in ``config_json``.
 
     Mutates and returns the same dict for convenience.
     """
-    if not isinstance(step, dict):
-        return step
-    step_type = step.get("type", "")
-    if "config" in step and "params" not in step and step_type not in _SPECIALIST_TYPES:
-        step["params"] = step.pop("config")
     return step
 
 

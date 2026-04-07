@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from brix.db import BrixDB
@@ -135,6 +137,42 @@ async def test_update_step_updates_db_row(tmp_path, monkeypatch, db, handlers):
     assert step is not None
     assert step["url"] == "https://new.example.com"
     assert step["timeout"] == "30s"
+
+
+@pytest.mark.asyncio
+async def test_update_step_writes_config_to_config_json(tmp_path, monkeypatch, db, handlers):
+    _patch_pipeline_dir(monkeypatch, tmp_path)
+
+    await handlers["create_pipeline"](
+        {
+            "name": "db-only-update-config",
+            "steps": [{"id": "fetch", "type": "db.query", "params": {"limit": 5}}],
+        }
+    )
+
+    result = await handlers["update_step"](
+        {
+            "pipeline_name": "db-only-update-config",
+            "step_id": "fetch",
+            "updates": {"config": {"connection": "db", "query": "SELECT 1"}},
+        }
+    )
+
+    row = _pipeline_row(db, "db-only-update-config")
+    with db._connect() as conn:
+        step_row = conn.execute(
+            """
+            SELECT config_json, params_json
+            FROM pipeline_step
+            WHERE pipeline_id=? AND step_key=?
+            """,
+            (row["id"], "fetch"),
+        ).fetchone()
+
+    assert result["success"] is True
+    assert step_row is not None
+    assert json.loads(step_row[0]) == {"connection": "db", "query": "SELECT 1"}
+    assert json.loads(step_row[1]) == {"limit": 5}
 
 
 def test_pipeline_credential_table_populated(store, db):
@@ -305,11 +343,23 @@ async def test_config_mapping_in_step_row(tmp_path, monkeypatch, db, handlers):
 
     row = _pipeline_row(db, "db-only-config-map")
     step = db.get_step_by_id(row["id"], "fetch")
+    with db._connect() as conn:
+        stored = conn.execute(
+            """
+            SELECT config_json, params_json
+            FROM pipeline_step
+            WHERE pipeline_id=? AND step_key=?
+            """,
+            (row["id"], "fetch"),
+        ).fetchone()
 
     assert result["success"] is True
     assert step is not None
+    assert stored is not None
     assert step["params"] == {"url": "https://example.com", "method": "GET"}
-    assert step["config"] is None
+    assert step["config"] == {"url": "https://example.com", "method": "GET"}
+    assert json.loads(stored[0]) == {"url": "https://example.com", "method": "GET"}
+    assert stored[1] in (None, "", "{}")
 
 
 @pytest.mark.asyncio

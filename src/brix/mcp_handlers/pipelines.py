@@ -108,8 +108,8 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
 
-    # Normalize step dicts: map 'config' → 'params' for non-specialist steps
-    # (T-BRIX-BUG-11)
+    # Preserve any explicit step ``config`` so DB-backed persistence stores it
+    # in ``config_json`` instead of incorrectly folding it into runtime params.
     if steps_raw:
         _normalize_steps(steps_raw)
 

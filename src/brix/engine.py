@@ -64,6 +64,33 @@ def _step_config_dict(step: Any) -> dict[str, Any]:
         return dict(config_dict)
     return {}
 
+
+def _extract_brick_default_values(raw_schema: Any) -> dict[str, Any]:
+    """Return runtime default values from a brick ``config_schema`` payload.
+
+    Supported shapes:
+    - Legacy/custom flat defaults: ``{"server": "cody", "tool": "x"}``
+    - BrickParam/JSON-schema-like dicts: ``{"timeout": {"type": "string", "default": "60s"}}``
+
+    Keys without an explicit ``default`` are ignored for schema-shaped entries so
+    metadata like ``{"type": "string"}`` is never mistaken for a live param value.
+    """
+    if not isinstance(raw_schema, dict) or not raw_schema:
+        return {}
+
+    defaults: dict[str, Any] = {}
+    for key, value in raw_schema.items():
+        if isinstance(value, dict):
+            if "default" in value:
+                defaults[key] = value.get("default")
+            continue
+        default_attr = getattr(value, "default", None)
+        if default_attr is not None:
+            defaults[key] = default_attr
+            continue
+        defaults[key] = value
+    return defaults
+
 # ---------------------------------------------------------------------------
 # Brick-First Engine — T-BRIX-DB-05c
 # ---------------------------------------------------------------------------
@@ -373,6 +400,7 @@ class PipelineEngine:
                 brick_defaults = raw_schema
             else:
                 return step
+            brick_defaults = _extract_brick_default_values(brick_defaults)
             if not brick_defaults:
                 return step
             # Merge: brick defaults as base, step.params override
@@ -917,8 +945,14 @@ class PipelineEngine:
                         # Merge top-level step attributes that runners may read
                         for _vc_attr in _VALIDATE_CONFIG_TOP_LEVEL_FIELDS:
                             _vc_val = getattr(step, _vc_attr, None)
-                            if _vc_val is not None and _vc_attr not in _vc_config:
+                            if _vc_val is not None:
                                 _vc_config[_vc_attr] = _vc_val
+                        logger.error(
+                            "validate_config input for step '%s' (%s): %r",
+                            step.id,
+                            step.type,
+                            _vc_config,
+                        )
                         _vc_errors = runner.validate_config(_vc_config)
                         if _vc_errors:
                             _vc_msg = f"Config validation failed for step '{step.id}': {'; '.join(_vc_errors)}"

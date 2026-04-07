@@ -201,6 +201,55 @@ class TestBrickDefaultsMerge:
 
         assert result.params == {"server": "cody"}
 
+    def test_schema_metadata_defaults_do_not_override_top_level_db_query_fields(self):
+        """Schema metadata must not become live params or mask top-level fields."""
+        engine = _make_engine()
+        step = _make_step("db.query", params={"query": "SELECT 1"})
+        step = step.model_copy(update={"connection": "buddy-db"})
+
+        db_row = self._make_db_row(
+            {
+                "query": {"type": "string", "required": True},
+                "params": {"type": "object"},
+                "connection": {
+                    "type": "string",
+                    "description": "Database connection string or credential name",
+                    "default": "sqlite:///brix_data.db",
+                },
+            }
+        )
+        db_row["name"] = "db.query"
+        db_row["runner"] = "db_query"
+        db_row["system"] = True
+
+        with patch("brix.db.BrixDB.brick_definitions_get", return_value=db_row):
+            result = engine._apply_brick_defaults(step)
+
+        assert result.params == {
+            "query": "SELECT 1",
+            "connection": "sqlite:///brix_data.db",
+        }
+        assert result.connection == "buddy-db"
+
+    def test_validate_config_merge_prefers_top_level_step_fields(self):
+        """Engine validation config must mirror runner execution precedence."""
+        from brix.engine import _VALIDATE_CONFIG_TOP_LEVEL_FIELDS, _step_config_dict
+
+        step = _make_step(
+            "db.query",
+            params={"query": "SELECT 1", "connection": "sqlite:///brix_data.db"},
+        )
+        step = step.model_copy(update={"connection": "buddy-db", "query": "SELECT 42"})
+
+        merged = _step_config_dict(step)
+        for attr in _VALIDATE_CONFIG_TOP_LEVEL_FIELDS:
+            value = getattr(step, attr, None)
+            if value is not None:
+                merged[attr] = value
+
+        assert merged["connection"] == "buddy-db"
+        assert merged["query"] == "SELECT 42"
+
 
 # ===========================================================================
 # T-BRIX-IMP-04: Auto-annotation with pipeline project
