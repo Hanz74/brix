@@ -53,6 +53,7 @@ from brix.mcp_pool import McpConnectionPool
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.serialization import json_dumps
 from brix.engine_step import StepExecutor
+from brix.engine_sequential import run_pipeline_sequential
 
 # ---------------------------------------------------------------------------
 # Brick-First Engine — T-BRIX-DB-05c
@@ -690,41 +691,15 @@ class PipelineEngine:
                         print(f"✗ DAG error: {dag_err}", file=sys.stderr)
                         pipeline_aborted = True
                 else:
-                    step_executor = StepExecutor(self)
-                    for step in pipeline.steps:
-                        # Cancel-flag check: abort pipeline cleanly if cancel was requested (T-BRIX-V6-BUG-03)
-                        if self._is_run_cancelled(context):
-                            pipeline_aborted = True
-                            break
-
-                        # Resume: skip completed steps
-                        if context.is_step_completed(step.id):
-                            step_statuses[step.id] = StepStatus(status="ok", duration=0.0)
-                            last_output = context.get_output(step.id)
-                            self.progress.step_resumed(step.id)
-                            continue
-
-                        jinja_ctx = context.to_jinja_context()
-
-                        step_result = await step_executor.execute_step(
-                            step=step,
-                            context=context,
-                            pipeline=pipeline,
-                            step_statuses=step_statuses,
-                            jinja_ctx=jinja_ctx,
-                            dry_run_steps=dry_run_steps,
+                    pipeline_aborted, last_output, total_cost_usd, stop_step_success = await (
+                        run_pipeline_sequential(
+                            self,
+                            pipeline,
+                            context,
+                            step_statuses,
+                            dry_run_steps,
                         )
-                        if step_result.output is not None:
-                            last_output = step_result.output
-                        total_cost_usd += step_result.cost
-                        if step_result.should_abort:
-                            pipeline_aborted = True
-                            if step_statuses.get(step.id, None) and step.type == "stop":
-                                stop_step_success = getattr(step, "success_on_stop", True)
-                            break
-                        if not step_result.should_continue:
-                            break
-                        continue
+                    )
 
             except Exception as e:
                 # Unexpected exception (e.g. schema validation error, MCP crash) —
