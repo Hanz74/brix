@@ -15,6 +15,16 @@ from brix.serialization import sanitize_for_json, sanitize_row
 logger = logging.getLogger(__name__)
 
 
+def _step_model_field_names() -> set[str]:
+    """Return Step model field names for filtering promoted engine keys."""
+    try:
+        from brix.models import Step
+
+        return set(getattr(Step, "model_fields", {}).keys()) - {"id", "type"}
+    except Exception:
+        return set()
+
+
 def _detect_driver(dsn: str) -> str:
     """Infer driver from a bare DSN string (no named connection).
 
@@ -197,18 +207,19 @@ class DbQueryRunner(BaseRunner):
         step_config = getattr(step, "config", None)
         config_params = step_config if isinstance(step_config, dict) else {}
         step_params = getattr(step, "params", None)
+        config_params_dict = config_params.get("params") if isinstance(config_params.get("params"), dict) else None
         params: dict | None = None
-
-        if step_params is None:
-            params = config_params.get("params")
+        if config_params_dict:
+            params = config_params_dict
         elif isinstance(step_params, dict):
-            if "connection" in step_params or "query" in step_params or "params" in step_params:
-                merged_config = dict(config_params)
-                merged_config.update(step_params)
-                config_params = merged_config
-                params = config_params.get("params")
-            else:
-                params = step_params
+            step_field_names = _step_model_field_names()
+            params = {
+                key: value
+                for key, value in step_params.items()
+                if not key.startswith("_")
+                and key not in {"connection", "query", "table"}
+                and key not in step_field_names
+            } or None
 
         connection_ref: str = (
             getattr(step, "connection", None)

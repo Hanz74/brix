@@ -173,7 +173,7 @@ async def test_db_query_runner_reads_connection_and_query_from_params_config_mer
     result = await runner.execute(step, _DummyContext())
 
     assert result["success"] is True
-    assert result["data"]["row_count"] == 1
+    assert result["metadata"]["row_count"] == 1
     assert captured == {
         "connection": "analytics",
         "driver": "sqlite",
