@@ -194,22 +194,32 @@ class DbQueryRunner(BaseRunner):
         self.report_progress(0, "starting db_query")
 
         # ---- extract config from step --------------------------------
+        step_config = getattr(step, "config", None)
+        config_params = step_config if isinstance(step_config, dict) else {}
         step_params = getattr(step, "params", None)
-        if not isinstance(step_params, dict) or not step_params:
-            config_params = getattr(step, "config", None)
-            step_params = config_params if isinstance(config_params, dict) else {}
+        params: dict | None = None
+
+        if step_params is None:
+            params = config_params.get("params")
+        elif isinstance(step_params, dict):
+            if "connection" in step_params or "query" in step_params or "params" in step_params:
+                merged_config = dict(config_params)
+                merged_config.update(step_params)
+                config_params = merged_config
+                params = config_params.get("params")
+            else:
+                params = step_params
 
         connection_ref: str = (
             getattr(step, "connection", None)
-            or step_params.get("connection")
+            or config_params.get("connection")
             or ""
         )
         query_template: str = (
             getattr(step, "query", None)
-            or step_params.get("query")
+            or config_params.get("query")
             or ""
         )
-        params: dict | None = step_params.get("params")
 
         if not connection_ref:
             self.report_progress(0.0, "error: missing connection")
