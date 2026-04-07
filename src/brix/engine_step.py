@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,8 +21,9 @@ from brix.engine_types import (
     _step_config_dict,
     StepResult,
 )
-from brix.models import Pipeline, Step, StepStatus
+from brix.models import Pipeline, RetryConfig, RetryProfile, Step, StepStatus
 from brix.runners.base import BaseRunner
+from brix.serialization import json_dumps
 
 if TYPE_CHECKING:
     from brix.engine import PipelineEngine
@@ -44,6 +47,382 @@ class StepExecutor:
 
     def __init__(self, engine: PipelineEngine):
         self.engine = engine
+
+    @staticmethod
+    def _should_persist(step: Step) -> bool:
+        """Return True when step output should be persisted to step_outputs table."""
+        return step.persist_output or bool(os.environ.get("BRIX_DEBUG"))
+
+    def _persist_step_output(
+        self,
+        run_id: str,
+        step: Step,
+        result: dict,
+        rendered_params: dict,
+        context: Any,
+        db: Any = None,
+    ) -> None:
+        """Write step execution data to the step_outputs table (best-effort)."""
+        try:
+            if db is None:
+                from brix.db import BrixDB
+
+                db = BrixDB()
+            stored_params = rendered_params
+            mcp_trace = result.get("mcp_trace")
+            if mcp_trace is not None:
+                stored_params = dict(rendered_params) if rendered_params else {}
+                stored_params["_mcp_trace"] = mcp_trace
+            db.save_step_output(
+                run_id=run_id,
+                step_id=step.id,
+                output=result.get("data"),
+                rendered_params=stored_params,
+                stderr_text=result.get("stderr"),
+                context_snapshot=self.engine._context_snapshot(context),
+            )
+        except Exception:
+            pass
+
+    def _write_context_snapshot(self, context: Any) -> None:
+        """Write the current Jinja2 context snapshot to workdir/context-snapshot.json."""
+        try:
+            snapshot = self.engine._context_snapshot(context)
+            snapshot_path = context.workdir / "context-snapshot.json"
+            snapshot_path.write_text(json_dumps(snapshot))
+        except Exception:
+            pass
+
+    async def _wait_for_breakpoint_resume(self, context: Any, step_id: str) -> None:
+        """Write breakpoint.json and poll until it is deleted (resume signal)."""
+        breakpoint_path = context.workdir / "breakpoint.json"
+        try:
+            breakpoint_path.write_text(
+                json_dumps({"step_id": step_id, "paused_at": time.monotonic()})
+            )
+        except OSError:
+            return
+
+        try:
+            context.save_run_metadata("(paused)", "paused")
+        except Exception:
+            pass
+
+        while breakpoint_path.exists():
+            if self.engine._is_run_cancelled(context):
+                break
+            await asyncio.sleep(2.0)
+
+    def _ensure_step_requirements(self, step: Step) -> str | None:
+        """Check and auto-install per-step requirements."""
+        if not step.requirements:
+            return None
+
+        from brix.deps import check_requirements, install_requirements
+
+        missing = check_requirements(step.requirements)
+        if not missing:
+            return None
+
+        print(
+            f"Step '{step.id}': installing {len(missing)} package(s): {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        ok = install_requirements(missing)
+        if not ok:
+            return f"Failed to install step packages for '{step.id}': {', '.join(missing)}"
+        return None
+
+    async def _execute_with_retry(
+        self,
+        runner: BaseRunner,
+        rendered_step: Any,
+        context: Any,
+        step: Step,
+        pipeline: Pipeline,
+    ) -> dict:
+        """Execute a step with retry logic if on_error=retry, otherwise single execution."""
+        effective_on_error = step.on_error or pipeline.error_handling.on_error
+
+        if effective_on_error != "retry":
+            try:
+                return await runner.execute(rendered_step, context)
+            except Exception as exc:
+                return {"success": False, "error": str(exc), "duration": 0.0}
+
+        profile: RetryProfile | None = None
+        profile_name = getattr(step, "retry_profile", None)
+        if profile_name:
+            profile = pipeline.retry_profiles.get(profile_name)
+            if profile is None:
+                return {
+                    "success": False,
+                    "error": f"retry_profile '{profile_name}' not found in pipeline.retry_profiles",
+                    "duration": 0.0,
+                }
+
+        if profile is not None:
+            max_attempts = profile.max
+            backoff = profile.backoff
+            retriable_codes: list[int] = profile.retriable_status_codes
+        else:
+            retry_config = pipeline.error_handling.retry or RetryConfig()
+            max_attempts = retry_config.max
+            backoff = retry_config.backoff
+            retriable_codes = []
+
+        last_result: dict = {"success": False, "error": "no attempts made", "duration": 0.0}
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result = await runner.execute(rendered_step, context)
+                if result.get("success"):
+                    return result
+                last_result = result
+
+                if retriable_codes:
+                    status_code = result.get("status_code")
+                    if status_code is not None and status_code not in retriable_codes:
+                        last_result["retry_count"] = attempt
+                        return last_result
+
+                if result.get("rate_limited") and result.get("retry_after"):
+                    await asyncio.sleep(result["retry_after"])
+                    continue
+            except Exception as exc:
+                last_result = {"success": False, "error": str(exc), "duration": 0.0}
+
+            if attempt < max_attempts:
+                delay = float(2 ** (attempt - 1)) if backoff == "exponential" else float(attempt)
+                await asyncio.sleep(delay)
+
+        last_result["retry_count"] = max_attempts
+        return last_result
+
+    def _chunk_items(self, items: list, batch_size: int) -> list[list]:
+        """Split items into chunks of batch_size. Returns [items] if batch_size <= 0."""
+        if batch_size <= 0:
+            return [items]
+        return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
+
+    async def _run_foreach_sequential(
+        self,
+        step: Step,
+        items: list,
+        context: PipelineContext,
+        pipeline: Pipeline,
+    ) -> dict:
+        """Run foreach items one by one in order."""
+        foreach_jinja = context.to_jinja_context() if "{{" in step.type else None
+        runner = self.engine._resolve_runner(step.type, jinja_ctx=foreach_jinja)
+        results: list[tuple[Any, dict]] = []
+        foreach_start = time.monotonic()
+        completed = context.load_foreach_checkpoint(step.id) if context._resume_from else {}
+
+        for i, item in enumerate(items):
+            if self.engine._is_run_cancelled(context):
+                break
+
+            if i in completed:
+                results.append((item, completed[i]))
+                self.engine.progress.step_resumed(f"{step.id}[{i}]")
+                continue
+
+            jinja_ctx = context.to_jinja_context(item=item)
+            rendered_params = self.engine.loader.render_step_params(step, jinja_ctx)
+            rendered_step = _RenderedStep(step, rendered_params, self.engine.loader, jinja_ctx)
+            item_start = time.monotonic()
+            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
+            item_duration_ms = int((time.monotonic() - item_start) * 1000)
+            results.append((item, result))
+
+            context.write_foreach_checkpoint(step.id, i, item, result)
+
+            if self.engine._run_db is not None:
+                try:
+                    self.engine._run_db.record_foreach_item(
+                        run_id=context.run_id,
+                        step_id=step.id,
+                        item_index=i,
+                        item_input=item,
+                        item_output=result.get("data"),
+                        status="success" if result.get("success") else "error",
+                        error_detail={"error": result.get("error")} if result.get("error") else None,
+                        duration_ms=item_duration_ms,
+                    )
+                except Exception:
+                    pass
+
+            failed_count = sum(1 for _, item_result in results if not item_result.get("success"))
+            current_count = len(results)
+            total_items = len(items)
+            self.engine.progress.foreach_progress(step.id, current_count, total_items, failed_count)
+            pct = round(current_count / total_items * 100, 1) if total_items > 0 else 0.0
+            eta: float | None = None
+            if current_count > 0 and total_items > current_count:
+                elapsed = time.monotonic() - foreach_start
+                avg_per_item = elapsed / current_count
+                eta = round(avg_per_item * (total_items - current_count), 1)
+            context.update_step_progress(
+                step.id,
+                {
+                    "processed": current_count,
+                    "total": total_items,
+                    "percent": pct,
+                    "eta_seconds": eta,
+                    "message": f"foreach {current_count}/{total_items} ({failed_count} failed)",
+                },
+            )
+            context.save_run_metadata(
+                pipeline.name,
+                "running",
+                progress={
+                    "step": step.id,
+                    "current": current_count,
+                    "total": total_items,
+                    "failed": failed_count,
+                },
+            )
+
+        return self._build_foreach_result(results, step, pipeline)
+
+    async def _run_foreach_parallel(
+        self,
+        step: Step,
+        items: list,
+        context: PipelineContext,
+        pipeline: Pipeline,
+    ) -> dict:
+        """Run foreach items concurrently, respecting the concurrency limit."""
+        foreach_jinja = context.to_jinja_context() if "{{" in step.type else None
+        runner = self.engine._resolve_runner(step.type, jinja_ctx=foreach_jinja)
+        semaphore = asyncio.Semaphore(step.concurrency)
+        foreach_start = time.monotonic()
+        completed = context.load_foreach_checkpoint(step.id) if context._resume_from else {}
+        checkpoint_lock = asyncio.Lock()
+        completed_count = 0
+        failed_count = 0
+        total_items = len(items)
+
+        async def run_item(idx: int, item: Any) -> tuple[Any, dict]:
+            nonlocal completed_count, failed_count
+            if idx in completed:
+                self.engine.progress.step_resumed(f"{step.id}[{idx}]")
+                return item, completed[idx]
+
+            async with semaphore:
+                jinja_ctx = context.to_jinja_context(item=item)
+                rendered_params = self.engine.loader.render_step_params(step, jinja_ctx)
+                rendered_step = _RenderedStep(step, rendered_params, self.engine.loader, jinja_ctx)
+                item_start = time.monotonic()
+                result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
+                item_duration_ms = int((time.monotonic() - item_start) * 1000)
+
+                if self.engine._run_db is not None:
+                    try:
+                        self.engine._run_db.record_foreach_item(
+                            run_id=context.run_id,
+                            step_id=step.id,
+                            item_index=idx,
+                            item_input=item,
+                            item_output=result.get("data"),
+                            status="success" if result.get("success") else "error",
+                            error_detail={"error": result.get("error")} if result.get("error") else None,
+                            duration_ms=item_duration_ms,
+                        )
+                    except Exception:
+                        pass
+
+                async with checkpoint_lock:
+                    context.write_foreach_checkpoint(step.id, idx, item, result)
+                    completed_count += 1
+                    if not result.get("success"):
+                        failed_count += 1
+                    self.engine.progress.foreach_progress(step.id, completed_count, total_items, failed_count)
+                    pct = round(completed_count / total_items * 100, 1) if total_items > 0 else 0.0
+                    eta: float | None = None
+                    if completed_count > 0 and total_items > completed_count:
+                        elapsed = time.monotonic() - foreach_start
+                        avg_per_item = elapsed / completed_count
+                        eta = round(avg_per_item * (total_items - completed_count), 1)
+                    context.update_step_progress(
+                        step.id,
+                        {
+                            "processed": completed_count,
+                            "total": total_items,
+                            "percent": pct,
+                            "eta_seconds": eta,
+                            "message": f"foreach {completed_count}/{total_items} ({failed_count} failed)",
+                        },
+                    )
+                    context.save_run_metadata(
+                        pipeline.name,
+                        "running",
+                        progress={
+                            "step": step.id,
+                            "current": completed_count,
+                            "total": total_items,
+                            "failed": failed_count,
+                        },
+                    )
+
+                return item, result
+
+        tasks = [run_item(i, item) for i, item in enumerate(items)]
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        processed: list[tuple[Any, dict]] = []
+        for idx, result in enumerate(raw_results):
+            if isinstance(result, Exception):
+                processed.append((items[idx], {"success": False, "error": str(result), "duration": 0.0}))
+            else:
+                processed.append(result)
+
+        return self._build_foreach_result(processed, step, pipeline)
+
+    def _build_foreach_result(
+        self,
+        results: list[tuple[Any, dict]],
+        step: Step,
+        pipeline: Pipeline,
+    ) -> dict:
+        """Aggregate per-item results into a ForeachResult-compatible dict (D-15)."""
+        effective_on_error = step.on_error or pipeline.error_handling.on_error
+        items: list[dict] = []
+        succeeded = 0
+        failed = 0
+        total_duration = 0.0
+
+        for input_item, result in results:
+            total_duration += result.get("duration", 0.0)
+            if result.get("success"):
+                items.append({"success": True, "data": result.get("data")})
+                succeeded += 1
+            else:
+                items.append(
+                    {
+                        "success": False,
+                        "error": result.get("error", "unknown"),
+                        "input": input_item,
+                    }
+                )
+                failed += 1
+                if effective_on_error == "stop":
+                    break
+
+        total = succeeded + failed
+        foreach_result = {
+            "items": items,
+            "summary": {"total": total, "succeeded": succeeded, "failed": failed},
+            "success": failed == 0 or effective_on_error == "continue",
+            "duration": total_duration,
+        }
+
+        if getattr(step, "flat_output", False):
+            foreach_result["items"] = [
+                item["data"] for item in foreach_result["items"] if item.get("success")
+            ]
+
+        return foreach_result
 
     def pre_execute_step(
         self,
@@ -250,7 +629,7 @@ class StepExecutor:
 
         # --- per-step dependency check (T-BRIX-V6-03) ---
         if step.requirements:
-            dep_err = self.engine._ensure_step_requirements(step)
+            dep_err = self._ensure_step_requirements(step)
             if dep_err:
                 step_statuses[step.id] = StepStatus(
                     status="error", duration=0.0, errors=1,
@@ -308,7 +687,7 @@ class StepExecutor:
 
             step_start = time.monotonic()
             if step.batch_size > 0:
-                chunks = self.engine._chunk_items(items, step.batch_size)
+                chunks = self._chunk_items(items, step.batch_size)
                 batch_results: list[tuple[Any, dict]] = []
                 batch_aborted = False
                 effective_on_error = step.on_error or pipeline.error_handling.on_error
@@ -319,11 +698,11 @@ class StepExecutor:
                         step.type,
                     )
                     if step.parallel:
-                        chunk_result = await self.engine._run_foreach_parallel(
+                        chunk_result = await self._run_foreach_parallel(
                             chunk_step, chunk, context, pipeline
                         )
                     else:
-                        chunk_result = await self.engine._run_foreach_sequential(
+                        chunk_result = await self._run_foreach_sequential(
                             chunk_step, chunk, context, pipeline
                         )
 
@@ -348,7 +727,7 @@ class StepExecutor:
                         batch_aborted = True
                         break
 
-                foreach_result = self.engine._build_foreach_result(
+                foreach_result = self._build_foreach_result(
                     batch_results,
                     step,
                     pipeline,
@@ -356,11 +735,11 @@ class StepExecutor:
                 if batch_aborted:
                     foreach_result["success"] = False
             elif step.parallel:
-                foreach_result = await self.engine._run_foreach_parallel(
+                foreach_result = await self._run_foreach_parallel(
                     step, items, context, pipeline
                 )
             else:
-                foreach_result = await self.engine._run_foreach_sequential(
+                foreach_result = await self._run_foreach_sequential(
                     step, items, context, pipeline
                 )
 
@@ -575,15 +954,15 @@ class StepExecutor:
                 logger.warning("Rate limiter check failed for '%s': %s", step.id, rl_err)
 
         if step.pause_before:
-            await self.engine._wait_for_breakpoint_resume(context, step.id)
+            await self._wait_for_breakpoint_resume(context, step.id)
 
-        self.engine._write_context_snapshot(context)
+        self._write_context_snapshot(context)
 
         self.engine.progress.step_start(step.id, step.type)
         with self.engine._step_credentials_context(context, step):
             step_start = time.monotonic()
             step_started_at = datetime.now(timezone.utc).isoformat()
-            result = await self.engine._execute_with_retry(
+            result = await self._execute_with_retry(
                 runner,
                 rendered_step,
                 context,
@@ -655,8 +1034,8 @@ class StepExecutor:
                 resource_usage=resource_usage,
             )
             self.engine.progress.step_ok(step.id, step_duration, result.get("items_count"))
-            if self.engine._should_persist(step):
-                self.engine._persist_step_output(
+            if self._should_persist(step):
+                self._persist_step_output(
                     context.run_id,
                     step,
                     result,
@@ -696,8 +1075,8 @@ class StepExecutor:
             resource_usage=resource_usage,
         )
         self.engine.progress.step_error(step.id, error_msg, step_duration)
-        if self.engine._should_persist(step):
-            self.engine._persist_step_output(
+        if self._should_persist(step):
+            self._persist_step_output(
                 context.run_id,
                 step,
                 result,

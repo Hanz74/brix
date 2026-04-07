@@ -891,8 +891,8 @@ class PipelineEngine:
 
     @staticmethod
     def _should_persist(step: Step) -> bool:
-        """Return True when step output should be persisted to step_outputs table."""
-        return step.persist_output or bool(os.environ.get("BRIX_DEBUG"))
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return StepExecutor._should_persist(step)
 
     @staticmethod
     def _context_snapshot(context: Any) -> dict:
@@ -928,111 +928,28 @@ class PipelineEngine:
         context: Any,
         db: Any = None,
     ) -> None:
-        """Write step execution data to the step_outputs table (best-effort).
-
-        Parameters
-        ----------
-        db:
-            Optional BrixDB instance. When provided it is reused directly
-            (avoids opening a second connection to a different DB path in
-            tests). When omitted a fresh default BrixDB() is created.
-        """
-        try:
-            if db is None:
-                from brix.db import BrixDB
-                db = BrixDB()
-            # Merge mcp_trace into rendered_params when present (T-BRIX-V7-05)
-            stored_params = rendered_params
-            mcp_trace = result.get("mcp_trace")
-            if mcp_trace is not None:
-                stored_params = dict(rendered_params) if rendered_params else {}
-                stored_params["_mcp_trace"] = mcp_trace
-            db.save_step_output(
-                run_id=run_id,
-                step_id=step.id,
-                output=result.get("data"),
-                rendered_params=stored_params,
-                stderr_text=result.get("stderr"),
-                context_snapshot=self._context_snapshot(context),
-            )
-        except Exception:
-            pass  # Never crash the pipeline over persistence failures
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        StepExecutor(self)._persist_step_output(run_id, step, result, rendered_params, context, db=db)
 
     # ------------------------------------------------------------------
     # Breakpoint helpers (T-BRIX-V7-06)
     # ------------------------------------------------------------------
 
     def _write_context_snapshot(self, context: Any) -> None:
-        """Write the current Jinja2 context snapshot to workdir/context-snapshot.json.
-
-        Written before each step so that brix__inspect_context can read it
-        even while the run is paused at a breakpoint.  Non-fatal.
-        """
-        try:
-            snapshot = self._context_snapshot(context)
-            snapshot_path = context.workdir / "context-snapshot.json"
-            snapshot_path.write_text(json_dumps(snapshot))
-        except Exception:
-            pass  # Never crash the pipeline over snapshot failures
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        StepExecutor(self)._write_context_snapshot(context)
 
     async def _wait_for_breakpoint_resume(self, context: Any, step_id: str) -> None:
-        """Write breakpoint.json and poll until it is deleted (resume signal).
-
-        The engine pauses by writing ``workdir/breakpoint.json`` and then
-        polls every 2 seconds until the file no longer exists.  The
-        ``brix__resume_run`` MCP tool deletes the sentinel to resume.
-
-        The breakpoint is automatically cleared if the run is cancelled.
-        """
-        breakpoint_path = context.workdir / "breakpoint.json"
-        try:
-            breakpoint_path.write_text(
-                json_dumps({"step_id": step_id, "paused_at": time.monotonic()})
-            )
-        except OSError:
-            return  # Cannot write sentinel — skip breakpoint gracefully
-
-        # Update run metadata so polling tools can see the paused state
-        try:
-            context.save_run_metadata("(paused)", "paused")
-        except Exception:
-            pass
-
-        while breakpoint_path.exists():
-            # Check for cancellation so a breakpoint never blocks a cancel
-            if self._is_run_cancelled(context):
-                break
-            await asyncio.sleep(2.0)
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        await StepExecutor(self)._wait_for_breakpoint_resume(context, step_id)
 
     # ------------------------------------------------------------------
     # per-step dependency helper (T-BRIX-V6-03)
     # ------------------------------------------------------------------
 
     def _ensure_step_requirements(self, step: Step) -> "str | None":
-        """Check and auto-install per-step requirements.
-
-        Returns an error message string if installation fails, or ``None``
-        if all requirements are satisfied (or successfully installed).
-        """
-        if not step.requirements:
-            return None
-
-        from brix.deps import check_requirements, install_requirements
-
-        missing = check_requirements(step.requirements)
-        if not missing:
-            return None
-
-        print(
-            f"⚙ Step '{step.id}': installing {len(missing)} package(s): {', '.join(missing)}",
-            file=sys.stderr,
-        )
-        ok = install_requirements(missing)
-        if not ok:
-            return (
-                f"Failed to install step packages for '{step.id}': {', '.join(missing)}"
-            )
-        return None
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return StepExecutor(self)._ensure_step_requirements(step)
 
     # ------------------------------------------------------------------
     # retry helper
@@ -1041,87 +958,18 @@ class PipelineEngine:
     async def _execute_with_retry(
         self, runner: BaseRunner, rendered_step: Any, context: Any, step: Step, pipeline: Pipeline
     ) -> dict:
-        """Execute a step with retry logic if on_error=retry, otherwise single execution."""
-        effective_on_error = step.on_error or pipeline.error_handling.on_error
-
-        if effective_on_error != "retry":
-            # No retry — single execution
-            try:
-                return await runner.execute(rendered_step, context)
-            except Exception as e:
-                return {"success": False, "error": str(e), "duration": 0.0}
-
-        # Resolve retry profile: step-level profile name takes precedence over
-        # pipeline-level error_handling.retry config.
-        profile: RetryProfile | None = None
-        profile_name = getattr(step, "retry_profile", None)
-        if profile_name:
-            profile = pipeline.retry_profiles.get(profile_name)
-            # Unknown profile name — surface as error so misconfigs are visible
-            if profile is None:
-                return {
-                    "success": False,
-                    "error": f"retry_profile '{profile_name}' not found in pipeline.retry_profiles",
-                    "duration": 0.0,
-                }
-
-        # Determine max_attempts and backoff from profile (if resolved) or
-        # pipeline-level retry config, falling back to RetryConfig defaults.
-        if profile is not None:
-            max_attempts = profile.max
-            backoff = profile.backoff
-            retriable_codes: list[int] = profile.retriable_status_codes
-        else:
-            retry_config = pipeline.error_handling.retry or RetryConfig()
-            max_attempts = retry_config.max
-            backoff = retry_config.backoff
-            retriable_codes = []
-
-        last_result: dict = {"success": False, "error": "no attempts made", "duration": 0.0}
-        for attempt in range(1, max_attempts + 1):
-            try:
-                result = await runner.execute(rendered_step, context)
-                if result.get("success"):
-                    return result
-                last_result = result
-
-                # Check retriable_status_codes: if the profile defines a non-empty
-                # list, only retry when the HTTP status code is in that list.
-                if retriable_codes:
-                    status_code = result.get("status_code")
-                    if status_code is not None and status_code not in retriable_codes:
-                        # Non-retriable status code — stop immediately
-                        last_result["retry_count"] = attempt
-                        return last_result
-
-                # Rate-limited: honour Retry-After header before next attempt
-                if result.get("rate_limited") and result.get("retry_after"):
-                    await asyncio.sleep(result["retry_after"])
-                    continue
-            except Exception as e:
-                last_result = {"success": False, "error": str(e), "duration": 0.0}
-
-            if attempt < max_attempts:
-                # Calculate backoff delay
-                if backoff == "exponential":
-                    delay = float(2 ** (attempt - 1))  # 1, 2, 4, 8...
-                else:  # linear
-                    delay = float(attempt)  # 1, 2, 3, 4...
-                await asyncio.sleep(delay)
-
-        # All attempts failed
-        last_result["retry_count"] = max_attempts
-        return last_result
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return await StepExecutor(self)._execute_with_retry(
+            runner, rendered_step, context, step, pipeline
+        )
 
     # ------------------------------------------------------------------
     # batch_size helper
     # ------------------------------------------------------------------
 
     def _chunk_items(self, items: list, batch_size: int) -> list[list]:
-        """Split items into chunks of batch_size. Returns [items] if batch_size <= 0."""
-        if batch_size <= 0:
-            return [items]
-        return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return StepExecutor(self)._chunk_items(items, batch_size)
 
     # ------------------------------------------------------------------
     # foreach helpers
@@ -1138,171 +986,14 @@ class PipelineEngine:
     async def _run_foreach_sequential(
         self, step: Step, items: list, context: PipelineContext, pipeline: Pipeline
     ) -> dict:
-        """Run foreach items one by one in order."""
-        _fe_jinja = context.to_jinja_context() if "{{" in step.type else None
-        runner = self._resolve_runner(step.type, jinja_ctx=_fe_jinja)
-        results: list[tuple[Any, dict]] = []
-        foreach_start = time.monotonic()
-
-        # Load checkpoint for resume — skip already-completed items
-        completed = context.load_foreach_checkpoint(step.id) if context._resume_from else {}
-
-        for i, item in enumerate(items):
-            # Cancel-flag check: abort foreach cleanly if cancel was requested (T-BRIX-V6-BUG-03)
-            if self._is_run_cancelled(context):
-                break
-
-            if i in completed:
-                # Already completed in a previous run — restore and skip
-                results.append((item, completed[i]))
-                self.progress.step_resumed(f"{step.id}[{i}]")
-                continue
-
-            jinja_ctx = context.to_jinja_context(item=item)
-            rendered_params = self.loader.render_step_params(step, jinja_ctx)
-            rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
-            _item_start = time.monotonic()
-            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-            _item_duration_ms = int((time.monotonic() - _item_start) * 1000)
-            results.append((item, result))
-
-            # Persist checkpoint so a crash can resume from here
-            context.write_foreach_checkpoint(step.id, i, item, result)
-
-            # Record foreach item execution (T-BRIX-DB-07)
-            if self._run_db is not None:
-                try:
-                    self._run_db.record_foreach_item(
-                        run_id=context.run_id,
-                        step_id=step.id,
-                        item_index=i,
-                        item_input=item,
-                        item_output=result.get("data"),
-                        status="success" if result.get("success") else "error",
-                        error_detail={"error": result.get("error")} if result.get("error") else None,
-                        duration_ms=_item_duration_ms,
-                    )
-                except Exception:
-                    pass  # Never crash pipeline over persistence
-
-            # Report progress after each item
-            failed_count = sum(1 for _, r in results if not r.get("success"))
-            current_count = len(results)
-            total_items = len(items)
-            self.progress.foreach_progress(step.id, current_count, total_items, failed_count)
-            # Auto-progress: store foreach progress in context so get_run_status can report it
-            _pct = round(current_count / total_items * 100, 1) if total_items > 0 else 0.0
-            _eta: float | None = None
-            if current_count > 0 and total_items > current_count:
-                _elapsed = time.monotonic() - foreach_start
-                _avg_per_item = _elapsed / current_count
-                _eta = round(_avg_per_item * (total_items - current_count), 1)
-            context.update_step_progress(step.id, {
-                "processed": current_count,
-                "total": total_items,
-                "percent": _pct,
-                "eta_seconds": _eta,
-                "message": f"foreach {current_count}/{total_items} ({failed_count} failed)",
-            })
-            context.save_run_metadata(pipeline.name, "running", progress={
-                "step": step.id,
-                "current": current_count,
-                "total": total_items,
-                "failed": failed_count,
-            })
-
-        return self._build_foreach_result(results, step, pipeline)
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return await StepExecutor(self)._run_foreach_sequential(step, items, context, pipeline)
 
     async def _run_foreach_parallel(
         self, step: Step, items: list, context: PipelineContext, pipeline: Pipeline
     ) -> dict:
-        """Run foreach items concurrently, respecting the concurrency limit."""
-        _fp_jinja = context.to_jinja_context() if "{{" in step.type else None
-        runner = self._resolve_runner(step.type, jinja_ctx=_fp_jinja)
-        semaphore = asyncio.Semaphore(step.concurrency)
-        foreach_start = time.monotonic()
-
-        # Load checkpoint for resume — skip already-completed items
-        completed = context.load_foreach_checkpoint(step.id) if context._resume_from else {}
-        # Lock to ensure thread-safe JSONL appends and progress updates from concurrent coroutines
-        checkpoint_lock = asyncio.Lock()
-        completed_count = 0
-        failed_count = 0
-        total_items = len(items)
-
-        async def run_item(idx: int, item: Any) -> tuple[Any, dict]:
-            nonlocal completed_count, failed_count
-            if idx in completed:
-                # Already completed in a previous run — restore without executing
-                self.progress.step_resumed(f"{step.id}[{idx}]")
-                return item, completed[idx]
-
-            async with semaphore:
-                jinja_ctx = context.to_jinja_context(item=item)
-                rendered_params = self.loader.render_step_params(step, jinja_ctx)
-                rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
-                _item_start_p = time.monotonic()
-                result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-                _item_duration_ms_p = int((time.monotonic() - _item_start_p) * 1000)
-
-                # Record foreach item execution (T-BRIX-DB-07)
-                if self._run_db is not None:
-                    try:
-                        self._run_db.record_foreach_item(
-                            run_id=context.run_id,
-                            step_id=step.id,
-                            item_index=idx,
-                            item_input=item,
-                            item_output=result.get("data"),
-                            status="success" if result.get("success") else "error",
-                            error_detail={"error": result.get("error")} if result.get("error") else None,
-                            duration_ms=_item_duration_ms_p,
-                        )
-                    except Exception:
-                        pass  # Never crash pipeline over persistence
-
-                # Persist checkpoint and report progress (serialised via lock)
-                async with checkpoint_lock:
-                    context.write_foreach_checkpoint(step.id, idx, item, result)
-                    completed_count += 1
-                    if not result.get("success"):
-                        failed_count += 1
-                    self.progress.foreach_progress(step.id, completed_count, total_items, failed_count)
-                    # Auto-progress: store in context for get_run_status
-                    _pct = round(completed_count / total_items * 100, 1) if total_items > 0 else 0.0
-                    _eta: float | None = None
-                    if completed_count > 0 and total_items > completed_count:
-                        _elapsed = time.monotonic() - foreach_start
-                        _avg_per_item = _elapsed / completed_count
-                        _eta = round(_avg_per_item * (total_items - completed_count), 1)
-                    context.update_step_progress(step.id, {
-                        "processed": completed_count,
-                        "total": total_items,
-                        "percent": _pct,
-                        "eta_seconds": _eta,
-                        "message": f"foreach {completed_count}/{total_items} ({failed_count} failed)",
-                    })
-                    context.save_run_metadata(pipeline.name, "running", progress={
-                        "step": step.id,
-                        "current": completed_count,
-                        "total": total_items,
-                        "failed": failed_count,
-                    })
-
-                return item, result
-
-        tasks = [run_item(i, item) for i, item in enumerate(items)]
-        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Normalise: exceptions from gather itself become failure entries
-        processed: list[tuple[Any, dict]] = []
-        for idx, r in enumerate(raw_results):
-            if isinstance(r, Exception):
-                processed.append((items[idx], {"success": False, "error": str(r), "duration": 0.0}))
-            else:
-                processed.append(r)  # type: ignore[arg-type]
-
-        return self._build_foreach_result(processed, step, pipeline)
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return await StepExecutor(self)._run_foreach_parallel(step, items, context, pipeline)
 
     # ------------------------------------------------------------------
     # DAG execution helper (T-BRIX-V6-19)
@@ -1321,40 +1012,5 @@ class PipelineEngine:
     def _build_foreach_result(
         self, results: list[tuple[Any, dict]], step: Step, pipeline: Pipeline
     ) -> dict:
-        """Aggregate per-item results into a ForeachResult-compatible dict (D-15)."""
-        effective_on_error = step.on_error or pipeline.error_handling.on_error
-        items: list[dict] = []
-        succeeded = 0
-        failed = 0
-        total_duration = 0.0
-
-        for input_item, result in results:
-            total_duration += result.get("duration", 0.0)
-            if result.get("success"):
-                items.append({"success": True, "data": result.get("data")})
-                succeeded += 1
-            else:
-                items.append({
-                    "success": False,
-                    "error": result.get("error", "unknown"),
-                    "input": input_item,
-                })
-                failed += 1
-                if effective_on_error == "stop":
-                    # Fill remaining items as not-run so callers see the full picture
-                    break
-
-        total = succeeded + failed
-        foreach_result = {
-            "items": items,
-            "summary": {"total": total, "succeeded": succeeded, "failed": failed},
-            "success": failed == 0 or effective_on_error == "continue",
-            "duration": total_duration,
-        }
-
-        if getattr(step, "flat_output", False):
-            # Flat mode: replace items with a plain list of data values (successes only)
-            flat = [item["data"] for item in foreach_result["items"] if item.get("success")]
-            foreach_result["items"] = flat
-
-        return foreach_result
+        """Compatibility wrapper delegated to ``StepExecutor``."""
+        return StepExecutor(self)._build_foreach_result(results, step, pipeline)
