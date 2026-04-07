@@ -1,7 +1,8 @@
 import ast
 from pathlib import Path
 
-from brix.engine import _VALIDATE_CONFIG_TOP_LEVEL_FIELDS
+from brix.engine import _RenderedStep, _VALIDATE_CONFIG_TOP_LEVEL_FIELDS
+from brix.loader import PipelineLoader
 from brix.models import Step
 
 
@@ -95,3 +96,22 @@ def test_validate_config_allowlist_includes_known_regression_fields():
         "sub_steps",
         "try_step",
     } <= allowlist
+
+
+def test_rendered_step_dynamically_copies_step_model_fields():
+    step = Step(
+        id="db-step",
+        type="db_query",
+        connection="analytics",
+        query="select 1",
+    )
+
+    rendered_step = _RenderedStep(
+        step=step,
+        rendered={},
+        loader=PipelineLoader(),
+        jinja_ctx={},
+    )
+
+    assert rendered_step.connection == "analytics"
+    assert rendered_step.query == "select 1"

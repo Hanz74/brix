@@ -2695,3 +2695,10 @@ class _RenderedStep:
         self.shared_params = getattr(step, "shared_params", {}) or {}
         # concurrency is already set on Step; expose it here for pipeline_group runner
         self.concurrency = getattr(step, "concurrency", 3)
+
+        # Backfill any Step model fields added after this wrapper was introduced.
+        # Explicit assignments above win over the dynamic copy.
+        for field_name in Step.model_fields:
+            if field_name not in ("id", "type", "params", "config"):
+                if not hasattr(self, field_name):
+                    setattr(self, field_name, getattr(step, field_name, None))
