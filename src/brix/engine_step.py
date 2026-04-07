@@ -6,15 +6,18 @@ import asyncio
 import os
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from brix.context import PipelineContext
+from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.engine_types import (
     _RenderedStep,
     _VALIDATE_CONFIG_TOP_LEVEL_FIELDS,
     _build_logger,
+    _extract_brick_default_values,
     _extract_step_cost,
     _measure_rss_mb,
     _redact_secret_values,
@@ -53,6 +56,253 @@ class StepExecutor:
         """Return True when step output should be persisted to step_outputs table."""
         return step.persist_output or bool(os.environ.get("BRIX_DEBUG"))
 
+    # ------------------------------------------------------------------
+    # Methods moved from PipelineEngine (profile / brick / runner / creds)
+    # ------------------------------------------------------------------
+
+    def _apply_profile(self, step: Step) -> Step:
+        """Apply a named profile's config to a step (T-BRIX-DB-23).
+
+        If ``step.profile`` is set, load the profile from DB and merge its
+        config fields into the step.  Step-level fields always take precedence
+        over profile defaults (i.e. profile acts as fallback).
+
+        Returns a new Step instance with merged fields, or the original step
+        if no profile is set or the profile cannot be loaded.
+        """
+        if not step.profile:
+            return step
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _db = _BrixDB()
+            profile_data = _db.profile_get(step.profile)
+            if not profile_data:
+                logger.warning("Profile '%s' not found in DB — skipping merge", step.profile)
+                return step
+            profile_config: dict = profile_data.get("config", {})
+            if not profile_config:
+                return step
+            # Build merged field dict: profile values as defaults, step values override
+            step_dict = step.model_dump()
+            merged = {}
+            # Profile-applicable fields: resilience + runtime config
+            _profile_fields = {
+                "cache", "circuit_breaker", "rate_limit", "retry_profile",
+                "timeout", "on_error",
+            }
+            for field_name in _profile_fields:
+                if field_name in profile_config:
+                    model_default = Step.model_fields[field_name].default if field_name in Step.model_fields else None
+                    current_val = step_dict.get(field_name)
+                    if current_val == model_default or current_val is None:
+                        merged[field_name] = profile_config[field_name]
+            if not merged:
+                return step
+            new_dict = {**step_dict, **merged}
+            return Step.model_validate(new_dict)
+        except Exception as _profile_err:
+            logger.warning("Profile merge failed for step '%s': %s", step.id, _profile_err)
+            return step
+
+    def _apply_brick_defaults(self, step: Step) -> Step:
+        """Merge config_defaults from a custom brick into step.params (T-BRIX-IMP-02).
+
+        When a step type is a custom brick registered in the DB, the brick may
+        declare ``config_defaults`` (stored as ``config_schema`` in the DB row as
+        a flat key->value JSON object).  These defaults act as a baseline for
+        ``step.params``: the step's own params always win, but any key present in
+        the brick's defaults that is absent from step.params is filled in.
+
+        Returns a new Step instance with the merged params, or the original step
+        if the brick has no defaults or cannot be loaded.
+        """
+        # Only relevant for dot-notation custom brick types
+        if "." not in step.type:
+            return step
+        try:
+            from brix.db import BrixDB as _BrixDB
+            _db = _BrixDB()
+            row = _db.brick_definitions_get(step.type)
+            if not row:
+                return step
+            raw_schema = row.get("config_schema", "{}")
+            if isinstance(raw_schema, str):
+                import json as _json
+                try:
+                    brick_defaults: dict = _json.loads(raw_schema)
+                except Exception:
+                    return step
+            elif isinstance(raw_schema, dict):
+                brick_defaults = raw_schema
+            else:
+                return step
+            brick_defaults = _extract_brick_default_values(brick_defaults)
+            if not brick_defaults:
+                return step
+            # Merge: brick defaults as base, step.params override
+            merged_params = {**brick_defaults, **(step.params or {})}
+            if merged_params == (step.params or {}):
+                return step  # Nothing new to add
+            return step.model_copy(update={"params": merged_params})
+        except Exception as _brick_err:
+            logger.warning("Brick defaults merge failed for step '%s': %s", step.id, _brick_err)
+            return step
+
+    def _resolve_runner(self, step_type: str, jinja_ctx: dict | None = None) -> BaseRunner | None:
+        """Resolve a runner for a given step type using the Brick-First lookup chain.
+
+        Resolution order (T-BRIX-DB-05c / T-BRIX-DB-23):
+        0. Dynamic Dispatch: if step_type contains Jinja2 template syntax
+           (``{{ ... }}``), render it using *jinja_ctx* first.
+        1. Legacy-Alias lookup: if step_type is an old flat name mapped in
+           LEGACY_ALIASES, emit a deprecation warning and use the new brick name.
+        2. Brick-Registry lookup: dot-notation brick name -> runner.
+        3. Direct lookup in engine._runners.
+
+        Returns None if no runner can be resolved.
+        """
+        from brix.engine import LEGACY_ALIASES
+
+        engine = self.engine
+        # 0. Dynamic Dispatch (T-BRIX-DB-23): render Jinja2 step type
+        if "{{" in step_type and jinja_ctx is not None:
+            try:
+                rendered_type = engine.loader.render_template(step_type, jinja_ctx).strip()
+            except Exception as _dyn_err:
+                logger.warning("Dynamic dispatch: failed to render step type '%s': %s", step_type, _dyn_err)
+                return None
+            # Security: rendered type MUST exist in registry or direct runner map
+            if rendered_type not in engine._runners and engine._brick_registry.get(rendered_type) is None:
+                logger.warning(
+                    "Dynamic dispatch: rendered type '%s' is not a registered brick or runner",
+                    rendered_type,
+                )
+                return None
+            step_type = rendered_type
+        # 1. Legacy-Alias layer — old flat name -> new brick name -> runner (with warning)
+        new_name = LEGACY_ALIASES.get(step_type)
+        if new_name:
+            # strict_bricks=True: block old types with an error (T-BRIX-DB-05d)
+            if engine._strict_bricks:
+                raise ValueError(
+                    f"Step type '{step_type}' is a legacy alias (strict_bricks=True). "
+                    f"Use '{new_name}' instead."
+                )
+            import warnings as _warnings
+            _warnings.warn(
+                f"Step type '{step_type}' is deprecated. Use '{new_name}' instead.",
+                DeprecationWarning,
+                stacklevel=4,
+            )
+            # Track deprecated usage in DB (T-BRIX-DB-05d)
+            try:
+                if engine._deprecation_db is None:
+                    from brix.db import BrixDB as _BrixDB
+                    engine._deprecation_db = _BrixDB()
+                engine._deprecation_db.record_deprecated_usage(
+                    pipeline_name=engine._current_pipeline_name or "unknown",
+                    step_id=step_type,  # step_id not available here; use type as fallback
+                    old_type=step_type,
+                    new_type=new_name,
+                )
+            except Exception:
+                pass  # Never crash the engine over tracking
+            # Accumulate deprecation warning for run result
+            warn_msg = f"Step type '{step_type}' is deprecated. Use '{new_name}' instead."
+            if warn_msg not in engine._deprecation_warnings:
+                engine._deprecation_warnings.append(warn_msg)
+            brick = engine._brick_registry.get(new_name)
+            if brick and brick.runner:
+                runner = engine._runners.get(brick.runner)
+                if runner is not None:
+                    return runner
+
+        # 2. Brick-Registry lookup (new dot-notation names like "db.query")
+        brick = engine._brick_registry.get(step_type)
+        if brick and brick.runner:
+            runner = engine._runners.get(brick.runner)
+            if runner is not None:
+                return runner
+
+        # 3. Direct runner lookup (fast path for flat names not in LEGACY_ALIASES)
+        runner = engine._runners.get(step_type)
+        if runner is not None:
+            return runner
+
+        return None
+
+    def _resolve_step_credentials(self, step: Any) -> dict[str, Any]:
+        """Resolve per-step credentials using the same rules as PipelineContext."""
+        step_credentials = getattr(step, "credentials", None) or {}
+        resolved: dict[str, Any] = {}
+        for key, cred in step_credentials.items():
+            if isinstance(cred, str):
+                cred = {"env": cred}
+            if not isinstance(cred, dict):
+                continue
+            env_ref = cred.get("env", "")
+            if is_credential_uuid(env_ref):
+                try:
+                    value = CredentialStore().resolve(env_ref)
+                except CredentialNotFoundError:
+                    import warnings
+
+                    warnings.warn(
+                        f"Credential UUID '{env_ref}' not found in store for key '{key}'. "
+                        "Using empty string.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    value = ""
+            else:
+                value = os.environ.get(env_ref, "")
+            if cred.get("refresh") is not None:
+                value = PipelineContext._refresh_credential(cred, value)
+            resolved[key] = value
+        return resolved
+
+    @contextmanager
+    def _step_credentials_context(self, context: PipelineContext, step: Any):
+        """Overlay step credentials for a single step execution."""
+        step_credentials = self._resolve_step_credentials(step)
+        if not step_credentials:
+            yield
+            return
+
+        original_credentials = dict(context.credentials)
+        context.credentials = {**original_credentials, **step_credentials}
+        context._jinja_cache = None
+        try:
+            yield
+        finally:
+            context.credentials = original_credentials
+            context._jinja_cache = None
+
+    @staticmethod
+    def _context_snapshot(context: Any) -> dict:
+        """Build a lightweight context snapshot: {key: type_name} for each key.
+
+        Avoids serialising potentially large data values while still giving
+        useful debugging information about what was available in the context.
+        """
+        try:
+            jinja_ctx = context.to_jinja_context()
+        except Exception:
+            return {}
+
+        def _type_name(v: Any) -> str:
+            if isinstance(v, dict):
+                return f"dict({len(v)} keys)"
+            if isinstance(v, list):
+                return f"list({len(v)} items)"
+            return type(v).__name__
+
+        return {k: _type_name(v) for k, v in jinja_ctx.items()}
+
+    # ------------------------------------------------------------------
+    # End of moved methods
+    # ------------------------------------------------------------------
+
     def _persist_step_output(
         self,
         run_id: str,
@@ -79,7 +329,7 @@ class StepExecutor:
                 output=result.get("data"),
                 rendered_params=stored_params,
                 stderr_text=result.get("stderr"),
-                context_snapshot=self.engine._context_snapshot(context),
+                context_snapshot=self._context_snapshot(context),
             )
         except Exception:
             pass
@@ -87,7 +337,7 @@ class StepExecutor:
     def _write_context_snapshot(self, context: Any) -> None:
         """Write the current Jinja2 context snapshot to workdir/context-snapshot.json."""
         try:
-            snapshot = self.engine._context_snapshot(context)
+            snapshot = self._context_snapshot(context)
             snapshot_path = context.workdir / "context-snapshot.json"
             snapshot_path.write_text(json_dumps(snapshot))
         except Exception:
@@ -213,7 +463,7 @@ class StepExecutor:
     ) -> dict:
         """Run foreach items one by one in order."""
         foreach_jinja = context.to_jinja_context() if "{{" in step.type else None
-        runner = self.engine._resolve_runner(step.type, jinja_ctx=foreach_jinja)
+        runner = self._resolve_runner(step.type, jinja_ctx=foreach_jinja)
         results: list[tuple[Any, dict]] = []
         foreach_start = time.monotonic()
         completed = context.load_foreach_checkpoint(step.id) if context._resume_from else {}
@@ -294,7 +544,7 @@ class StepExecutor:
     ) -> dict:
         """Run foreach items concurrently, respecting the concurrency limit."""
         foreach_jinja = context.to_jinja_context() if "{{" in step.type else None
-        runner = self.engine._resolve_runner(step.type, jinja_ctx=foreach_jinja)
+        runner = self._resolve_runner(step.type, jinja_ctx=foreach_jinja)
         semaphore = asyncio.Semaphore(step.concurrency)
         foreach_start = time.monotonic()
         completed = context.load_foreach_checkpoint(step.id) if context._resume_from else {}
@@ -533,10 +783,10 @@ class StepExecutor:
                 return PreExecuteStepResult(step=step, action="continue")
 
         # --- Profile / Mixin (T-BRIX-DB-23) ---
-        step = self.engine._apply_profile(step)
+        step = self._apply_profile(step)
 
         # --- Brick config_defaults merge (T-BRIX-IMP-02) ---
-        step = self.engine._apply_brick_defaults(step)
+        step = self._apply_brick_defaults(step)
 
         # --- Test-Mode: intercept db.upsert and action.notify before validation ---
         from brix.engine import LEGACY_ALIASES
@@ -577,7 +827,7 @@ class StepExecutor:
         _early_jinja_ctx = context.to_jinja_context() if "{{" in step.type else None
 
         # Get runner
-        runner = self.engine._resolve_runner(step.type, jinja_ctx=_early_jinja_ctx)
+        runner = self._resolve_runner(step.type, jinja_ctx=_early_jinja_ctx)
         if not runner:
             _no_runner_msg = f"no runner registered for type '{step.type}'"
             step_statuses[step.id] = StepStatus(
@@ -660,7 +910,7 @@ class StepExecutor:
         if jinja_ctx is None:
             jinja_ctx = context.to_jinja_context()
 
-        with self.engine._step_credentials_context(context, step):
+        with self._step_credentials_context(context, step):
             try:
                 items = self.engine.loader.resolve_foreach(step.foreach, jinja_ctx)
             except (ValueError, TypeError) as foreach_resolve_err:
@@ -959,7 +1209,7 @@ class StepExecutor:
         self._write_context_snapshot(context)
 
         self.engine.progress.step_start(step.id, step.type)
-        with self.engine._step_credentials_context(context, step):
+        with self._step_credentials_context(context, step):
             step_start = time.monotonic()
             step_started_at = datetime.now(timezone.utc).isoformat()
             result = await self._execute_with_retry(

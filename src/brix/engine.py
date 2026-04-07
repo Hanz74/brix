@@ -18,7 +18,7 @@ from brix.engine_types import (
     _build_logger,
     _capture_environment as _capture_environment_impl,
     _db_log,
-    _extract_brick_default_values,
+    _extract_brick_default_values,  # re-exported for backward compat
     _extract_step_cost,
     _JsonFormatter,
     _measure_rss_mb,
@@ -50,11 +50,10 @@ from brix.runners.queue import QueueRunner
 from brix.runners.emit import EmitRunner
 from brix.progress import ProgressReporter
 from brix.mcp_pool import McpConnectionPool
-from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.serialization import json_dumps
 from brix.engine_dag import detect_dag_mode, run_dag, toposort_steps
 from brix.engine_step import StepExecutor
-from brix.engine_sequential import run_pipeline_sequential
+from brix.engine_sequential import finalize_run, run_pipeline_sequential
 
 # ---------------------------------------------------------------------------
 # Brick-First Engine — T-BRIX-DB-05c
@@ -126,154 +125,6 @@ def _warn_if_high_memory(rss_mb: float, step_id: str) -> None:
         )
         print(msg, file=sys.stderr)
         logger.warning(msg)
-
-
-async def finalize_run(
-    engine,
-    pipeline: Pipeline,
-    context: PipelineContext,
-    step_statuses: dict[str, StepStatus],
-    pipeline_aborted: bool,
-    stop_step_success: bool | None,
-    last_output: Any,
-    total_cost_usd: float,
-    start_time: float,
-    history,
-    keep_workdir: bool,
-    deprecation_warnings: list[str],
-) -> RunResult:
-    """Finalize one pipeline run and build the public RunResult."""
-    final_result = None
-    if not pipeline_aborted and pipeline.output:
-        jinja_ctx = context.to_jinja_context()
-        final_result = engine.loader.render_value(pipeline.output, jinja_ctx)
-    elif not pipeline_aborted:
-        final_result = last_output
-
-    total_duration = time.monotonic() - start_time
-    if stop_step_success is not None:
-        all_ok = stop_step_success
-    else:
-        all_ok = (not pipeline_aborted) and all(
-            s.status in ("ok", "skipped", "dry_run") for s in step_statuses.values()
-        )
-
-    was_cancelled = engine._is_run_cancelled(context)
-    if was_cancelled:
-        context.save_run_metadata(pipeline.name, "cancelled")
-    else:
-        context.save_run_metadata(pipeline.name, "completed" if all_ok else "failed")
-    if all_ok and not was_cancelled:
-        context.cleanup(keep=keep_workdir)
-
-    engine.progress.pipeline_done(pipeline.name, all_ok, total_duration, len(pipeline.steps))
-
-    try:
-        steps_summary: dict[str, dict[str, Any]] = {}
-        for k, v in step_statuses.items():
-            d = v.model_dump()
-            entry: dict[str, Any] = {
-                "status": d["status"],
-                "duration": d.get("duration"),
-                "items": d.get("items"),
-                "errors": d.get("errors"),
-            }
-            if d.get("error_message") is not None:
-                entry["error_message"] = d["error_message"]
-            if d.get("resource_usage") is not None:
-                entry["resource_usage"] = d["resource_usage"]
-            steps_summary[k] = entry
-        if was_cancelled:
-            cancel_reason = ""
-            try:
-                import json as _json
-
-                sentinel_path = context.workdir / "cancel_requested.json"
-                cancel_data = _json.loads(sentinel_path.read_text())
-                cancel_reason = cancel_data.get("reason", "")
-            except Exception:
-                pass
-            history.cancel_run(
-                context.run_id,
-                reason=cancel_reason,
-                cancelled_by="user",
-            )
-            try:
-                history.record_finish(
-                    context.run_id,
-                    False,
-                    total_duration,
-                    steps_summary,
-                    final_result,
-                    cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-                )
-            except Exception:
-                pass
-        else:
-            history.record_finish(
-                context.run_id,
-                all_ok,
-                total_duration,
-                steps_summary,
-                final_result,
-                cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-            )
-    except Exception:
-        pass
-
-    outcome = "cancelled" if was_cancelled else ("success" if all_ok else "failure")
-    end_msg = (
-        f"Run finished: pipeline={pipeline.name} run_id={context.run_id} "
-        f"outcome={outcome} duration={total_duration:.2f}s"
-    )
-    end_level = "INFO" if all_ok or was_cancelled else "ERROR"
-    if end_level == "INFO":
-        logger.info(end_msg)
-    else:
-        logger.error(end_msg)
-    _db_log(end_level, "engine", end_msg)
-
-    try:
-        from brix.triggers.state import TriggerState
-
-        trigger_state = TriggerState()
-        trigger_state.record_pipeline_completion(
-            pipeline.name,
-            context.run_id,
-            "success" if all_ok else "failure",
-            final_result,
-            input=context.input,
-        )
-    except Exception:
-        pass
-
-    try:
-        from brix.alerting import AlertManager
-
-        run_result = RunResult(
-            success=all_ok,
-            run_id=context.run_id,
-            steps=step_statuses,
-            result=final_result,
-            duration=total_duration,
-            cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-            deprecation_warnings=list(deprecation_warnings),
-        )
-        run_result_dict = run_result.model_dump()
-        run_result_dict["pipeline"] = pipeline.name
-        AlertManager().check_alerts(run_result_dict)
-    except Exception:
-        pass
-
-    return RunResult(
-        success=all_ok,
-        run_id=context.run_id,
-        steps=step_statuses,
-        result=final_result,
-        duration=total_duration,
-        cost_usd=total_cost_usd if total_cost_usd > 0.0 else None,
-        deprecation_warnings=list(deprecation_warnings),
-    )
 
 
 class PipelineEngine:
@@ -351,233 +202,26 @@ class PipelineEngine:
         self._runners[step_type] = runner
 
     def _apply_profile(self, step: "Step") -> "Step":
-        """Apply a named profile's config to a step (T-BRIX-DB-23).
-
-        If ``step.profile`` is set, load the profile from DB and merge its
-        config fields into the step.  Step-level fields always take precedence
-        over profile defaults (i.e. profile acts as fallback).
-
-        Returns a new Step instance with merged fields, or the original step
-        if no profile is set or the profile cannot be loaded.
-        """
-        if not step.profile:
-            return step
-        try:
-            from brix.db import BrixDB as _BrixDB
-            _db = _BrixDB()
-            profile_data = _db.profile_get(step.profile)
-            if not profile_data:
-                logger.warning("Profile '%s' not found in DB — skipping merge", step.profile)
-                return step
-            profile_config: dict = profile_data.get("config", {})
-            if not profile_config:
-                return step
-            # Build merged field dict: profile values as defaults, step values override
-            step_dict = step.model_dump()
-            merged = {}
-            # Profile-applicable fields: resilience + runtime config
-            _profile_fields = {
-                "cache", "circuit_breaker", "rate_limit", "retry_profile",
-                "timeout", "on_error",
-            }
-            for field_name in _profile_fields:
-                if field_name in profile_config:
-                    # Only apply profile value when step has NOT explicitly set this field
-                    # (i.e. step field still holds its model default)
-                    # Use Step.model_fields (class attribute) to avoid Pydantic V2.11 warning
-                    model_default = Step.model_fields[field_name].default if field_name in Step.model_fields else None
-                    current_val = step_dict.get(field_name)
-                    if current_val == model_default or current_val is None:
-                        merged[field_name] = profile_config[field_name]
-            if not merged:
-                return step
-            new_dict = {**step_dict, **merged}
-            return Step.model_validate(new_dict)
-        except Exception as _profile_err:
-            logger.warning("Profile merge failed for step '%s': %s", step.id, _profile_err)
-            return step
+        """Compatibility shim — delegates to ``StepExecutor._apply_profile``."""
+        return StepExecutor(self)._apply_profile(step)
 
     def _apply_brick_defaults(self, step: "Step") -> "Step":
-        """Merge config_defaults from a custom brick into step.params (T-BRIX-IMP-02).
-
-        When a step type is a custom brick registered in the DB, the brick may
-        declare ``config_defaults`` (stored as ``config_schema`` in the DB row as
-        a flat key→value JSON object).  These defaults act as a baseline for
-        ``step.params``: the step's own params always win, but any key present in
-        the brick's defaults that is absent from step.params is filled in.
-
-        Returns a new Step instance with the merged params, or the original step
-        if the brick has no defaults or cannot be loaded.
-        """
-        # Only relevant for dot-notation custom brick types
-        if "." not in step.type:
-            return step
-        try:
-            from brix.db import BrixDB as _BrixDB
-            _db = _BrixDB()
-            row = _db.brick_definitions_get(step.type)
-            if not row:
-                return step
-            raw_schema = row.get("config_schema", "{}")
-            if isinstance(raw_schema, str):
-                import json as _json
-                try:
-                    brick_defaults: dict = _json.loads(raw_schema)
-                except Exception:
-                    return step
-            elif isinstance(raw_schema, dict):
-                brick_defaults = raw_schema
-            else:
-                return step
-            brick_defaults = _extract_brick_default_values(brick_defaults)
-            if not brick_defaults:
-                return step
-            # Merge: brick defaults as base, step.params override
-            merged_params = {**brick_defaults, **(step.params or {})}
-            if merged_params == (step.params or {}):
-                return step  # Nothing new to add
-            # Use model_construct to bypass Literal validation so custom brick
-            # types (e.g. "cody.call") that are not in the Literal enum work.
-            step_dict = step.__dict__.copy()
-            step_dict["params"] = merged_params
-            return step.model_copy(update={"params": merged_params})
-        except Exception as _brick_err:
-            logger.warning("Brick defaults merge failed for step '%s': %s", step.id, _brick_err)
-            return step
+        """Compatibility shim — delegates to ``StepExecutor._apply_brick_defaults``."""
+        return StepExecutor(self)._apply_brick_defaults(step)
 
     def _resolve_runner(self, step_type: str, jinja_ctx: "dict | None" = None) -> "BaseRunner | None":
-        """Resolve a runner for a given step type using the Brick-First lookup chain.
-
-        Resolution order (T-BRIX-DB-05c / T-BRIX-DB-23):
-        0. Dynamic Dispatch: if step_type contains Jinja2 template syntax
-           (``{{ ... }}``), render it using *jinja_ctx* first, then continue
-           the normal resolution chain.  The rendered type MUST exist in the
-           brick registry or runner map — unknown rendered types return None.
-        1. Legacy-Alias lookup: if step_type is an old flat name that is mapped
-           in LEGACY_ALIASES, emit a deprecation warning and use the new brick
-           name for resolution.  This takes priority over the direct runner lookup
-           so that deprecated names always produce a DeprecationWarning.
-        2. Brick-Registry lookup: if step_type is a dot-notation brick name
-           (e.g. "db.query"), look it up in the BrickRegistry, then resolve the
-           runner via the brick's ``runner`` field.
-        3. Direct lookup in self._runners (fast path for newly-added flat runner
-           names that are not yet in LEGACY_ALIASES).
-
-        Returns None if no runner can be resolved.
-        """
-        # 0. Dynamic Dispatch (T-BRIX-DB-23): render Jinja2 step type
-        if "{{" in step_type and jinja_ctx is not None:
-            try:
-                rendered_type = self.loader.render_template(step_type, jinja_ctx).strip()
-            except Exception as _dyn_err:
-                logger.warning("Dynamic dispatch: failed to render step type '%s': %s", step_type, _dyn_err)
-                return None
-            # Security: rendered type MUST exist in registry or direct runner map
-            if rendered_type not in self._runners and self._brick_registry.get(rendered_type) is None:
-                logger.warning(
-                    "Dynamic dispatch: rendered type '%s' is not a registered brick or runner",
-                    rendered_type,
-                )
-                return None
-            step_type = rendered_type
-        # 1. Legacy-Alias layer — old flat name → new brick name → runner (with warning)
-        new_name = LEGACY_ALIASES.get(step_type)
-        if new_name:
-            # strict_bricks=True: block old types with an error (T-BRIX-DB-05d)
-            if self._strict_bricks:
-                raise ValueError(
-                    f"Step type '{step_type}' is a legacy alias (strict_bricks=True). "
-                    f"Use '{new_name}' instead."
-                )
-            import warnings as _warnings
-            _warnings.warn(
-                f"Step type '{step_type}' is deprecated. Use '{new_name}' instead.",
-                DeprecationWarning,
-                stacklevel=4,
-            )
-            # Track deprecated usage in DB (T-BRIX-DB-05d)
-            try:
-                if self._deprecation_db is None:
-                    from brix.db import BrixDB as _BrixDB
-                    self._deprecation_db = _BrixDB()
-                self._deprecation_db.record_deprecated_usage(
-                    pipeline_name=self._current_pipeline_name or "unknown",
-                    step_id=step_type,  # step_id not available here; use type as fallback
-                    old_type=step_type,
-                    new_type=new_name,
-                )
-            except Exception:
-                pass  # Never crash the engine over tracking
-            # Accumulate deprecation warning for run result
-            warn_msg = f"Step type '{step_type}' is deprecated. Use '{new_name}' instead."
-            if warn_msg not in self._deprecation_warnings:
-                self._deprecation_warnings.append(warn_msg)
-            brick = self._brick_registry.get(new_name)
-            if brick and brick.runner:
-                runner = self._runners.get(brick.runner)
-                if runner is not None:
-                    return runner
-
-        # 2. Brick-Registry lookup (new dot-notation names like "db.query")
-        brick = self._brick_registry.get(step_type)
-        if brick and brick.runner:
-            runner = self._runners.get(brick.runner)
-            if runner is not None:
-                return runner
-
-        # 3. Direct runner lookup (fast path for flat names not in LEGACY_ALIASES)
-        runner = self._runners.get(step_type)
-        if runner is not None:
-            return runner
-
-        return None
+        """Compatibility shim — delegates to ``StepExecutor._resolve_runner``."""
+        return StepExecutor(self)._resolve_runner(step_type, jinja_ctx=jinja_ctx)
 
     def _resolve_step_credentials(self, step: Any) -> dict[str, Any]:
-        """Resolve per-step credentials using the same rules as PipelineContext."""
-        step_credentials = getattr(step, "credentials", None) or {}
-        resolved: dict[str, Any] = {}
-        for key, cred in step_credentials.items():
-            if isinstance(cred, str):
-                cred = {"env": cred}
-            if not isinstance(cred, dict):
-                continue
-            env_ref = cred.get("env", "")
-            if is_credential_uuid(env_ref):
-                try:
-                    value = CredentialStore().resolve(env_ref)
-                except CredentialNotFoundError:
-                    import warnings
-
-                    warnings.warn(
-                        f"Credential UUID '{env_ref}' not found in store for key '{key}'. "
-                        "Using empty string.",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-                    value = ""
-            else:
-                value = os.environ.get(env_ref, "")
-            if cred.get("refresh") is not None:
-                value = PipelineContext._refresh_credential(cred, value)
-            resolved[key] = value
-        return resolved
+        """Compatibility shim — delegates to ``StepExecutor._resolve_step_credentials``."""
+        return StepExecutor(self)._resolve_step_credentials(step)
 
     @contextmanager
     def _step_credentials_context(self, context: "PipelineContext", step: Any):
-        """Overlay step credentials for a single step execution."""
-        step_credentials = self._resolve_step_credentials(step)
-        if not step_credentials:
+        """Compatibility shim — delegates to ``StepExecutor._step_credentials_context``."""
+        with StepExecutor(self)._step_credentials_context(context, step):
             yield
-            return
-
-        original_credentials = dict(context.credentials)
-        context.credentials = {**original_credentials, **step_credentials}
-        context._jinja_cache = None
-        try:
-            yield
-        finally:
-            context.credentials = original_credentials
-            context._jinja_cache = None
 
     async def run(self, pipeline: Pipeline, user_input: dict = None, keep_workdir: bool = False, run_id: str = None, profile: str = None, mcp_pool: "McpConnectionPool | None" = None, dry_run_steps: "list[str] | None" = None, _inherit_input: dict = None) -> RunResult:
         """Execute a pipeline and return results.
@@ -896,24 +540,8 @@ class PipelineEngine:
 
     @staticmethod
     def _context_snapshot(context: Any) -> dict:
-        """Build a lightweight context snapshot: {key: type_name} for each key.
-
-        Avoids serialising potentially large data values while still giving
-        useful debugging information about what was available in the context.
-        """
-        try:
-            jinja_ctx = context.to_jinja_context()
-        except Exception:
-            return {}
-
-        def _type_name(v: Any) -> str:
-            if isinstance(v, dict):
-                return f"dict({len(v)} keys)"
-            if isinstance(v, list):
-                return f"list({len(v)} items)"
-            return type(v).__name__
-
-        return {k: _type_name(v) for k, v in jinja_ctx.items()}
+        """Compatibility shim — delegates to ``StepExecutor._context_snapshot``."""
+        return StepExecutor._context_snapshot(context)
 
     @staticmethod
     def _capture_environment() -> dict:
