@@ -1,12 +1,24 @@
-"""Step pre-execution helpers for the pipeline engine."""
+"""Step execution helpers for the pipeline engine."""
 
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal
 
 from brix.context import PipelineContext
-from brix.engine_types import _VALIDATE_CONFIG_TOP_LEVEL_FIELDS, _build_logger, _step_config_dict
+from brix.engine_types import (
+    _RenderedStep,
+    _VALIDATE_CONFIG_TOP_LEVEL_FIELDS,
+    _build_logger,
+    _extract_step_cost,
+    _measure_rss_mb,
+    _redact_secret_values,
+    _step_config_dict,
+    StepResult,
+)
 from brix.models import Pipeline, Step, StepStatus
 from brix.runners.base import BaseRunner
 
@@ -28,7 +40,7 @@ class PreExecuteStepResult:
 
 
 class StepExecutor:
-    """Runs pre-execution logic for sequential step execution."""
+    """Runs step execution logic for sequential step execution."""
 
     def __init__(self, engine: PipelineEngine):
         self.engine = engine
@@ -221,3 +233,343 @@ class StepExecutor:
                 return PreExecuteStepResult(step=step, action="continue")
 
         return PreExecuteStepResult(step=step, runner=runner)
+
+    async def execute_step(
+        self,
+        step: Step,
+        context: PipelineContext,
+        pipeline: Pipeline,
+        step_statuses: dict[str, StepStatus],
+        jinja_ctx: dict | None,
+        dry_run_steps: list[str] | None = None,
+    ) -> StepResult:
+        """Run the full single-step execution lifecycle for sequential execution."""
+        pre_execute_result = self.pre_execute_step(
+            pipeline=pipeline,
+            context=context,
+            step=step,
+            step_statuses=step_statuses,
+            dry_run_steps=dry_run_steps,
+        )
+        step = pre_execute_result.step
+        runner = pre_execute_result.runner
+
+        if pre_execute_result.action != "run":
+            return StepResult(
+                status=(
+                    step_statuses.get(step.id).status
+                    if step_statuses.get(step.id) is not None
+                    else ("ok" if pre_execute_result.action == "break" else "skipped")
+                ),
+                output=context.get_output(step.id),
+                should_abort=pre_execute_result.pipeline_aborted,
+                should_continue=pre_execute_result.action != "break",
+            )
+
+        if jinja_ctx is None:
+            jinja_ctx = context.to_jinja_context()
+
+        rendered_params = self.engine.loader.render_step_params(step, jinja_ctx)
+        rendered_step = _RenderedStep(step, rendered_params, self.engine.loader, jinja_ctx)
+
+        pin_hit = None
+        try:
+            from brix.db import BrixDB as _PinDB
+
+            pin_db = _PinDB()
+            pin_record = pin_db.get_pin(pipeline.name, step.id)
+            if pin_record is not None:
+                pin_hit = pin_record["pinned_data"]
+        except Exception as pin_err:
+            logger.warning("Step pin check failed for '%s': %s", step.id, pin_err)
+        if pin_hit is not None:
+            logger.info("Step '%s' using pinned mock data (pipeline=%s)", step.id, pipeline.name)
+            context.set_output(step.id, pin_hit)
+            step_statuses[step.id] = StepStatus(status="ok", duration=0.0, reason="pin_mock")
+            self.engine.progress.step_ok(step.id, 0.0, None)
+            return StepResult(status="ok", output=pin_hit)
+
+        from brix.engine import LEGACY_ALIASES, _warn_if_high_memory
+
+        effective_step_type = LEGACY_ALIASES.get(step.type, step.type)
+        if pipeline.test_mode and effective_step_type in ("db.upsert", "db_upsert"):
+            logger.info(
+                "Test-mode: dry-running db.upsert step '%s' (pipeline=%s)",
+                step.id,
+                pipeline.name,
+            )
+            output = {"test_mode": True, "dry": True, "step_id": step.id}
+            context.set_output(step.id, output)
+            step_statuses[step.id] = StepStatus(
+                status="ok",
+                duration=0.0,
+                reason="test_mode_dry",
+            )
+            self.engine.progress.step_ok(step.id, 0.0, None)
+            return StepResult(status="ok", output=output)
+        if pipeline.test_mode and effective_step_type in ("action.notify", "notify"):
+            logger.info(
+                "Test-mode: log-only action.notify step '%s' (pipeline=%s)",
+                step.id,
+                pipeline.name,
+            )
+            output = {"test_mode": True, "log_only": True, "step_id": step.id}
+            context.set_output(step.id, output)
+            step_statuses[step.id] = StepStatus(
+                status="ok",
+                duration=0.0,
+                reason="test_mode_log_only",
+            )
+            self.engine.progress.step_ok(step.id, 0.0, None)
+            return StepResult(status="ok", output=output)
+
+        if step.cache is True:
+            from brix.context import CacheManager
+
+            cache_mgr = CacheManager()
+            cached_output = cache_mgr.get(step.id, rendered_params)
+            if cached_output is not None:
+                context.set_output(step.id, cached_output)
+                step_statuses[step.id] = StepStatus(
+                    status="ok",
+                    duration=0.0,
+                    reason="cache_hit",
+                )
+                self.engine.progress.step_ok(step.id, 0.0, None)
+                return StepResult(
+                    status="ok",
+                    output=cached_output,
+                    cost=_extract_step_cost(cached_output),
+                )
+
+        brick_cache_instance = None
+        brick_cache_rendered_key = None
+        if isinstance(step.cache, dict):
+            try:
+                from brix.resilience import BrickCache as _BrickCache, BrixDB as _ResBrixDB
+
+                brick_cache_instance = _BrickCache(step.cache, _ResBrixDB())
+                brick_cache_rendered_key = self.engine.loader.render_template(
+                    step.cache.get("key", step.id),
+                    jinja_ctx,
+                )
+                bc_hit = brick_cache_instance.get(brick_cache_rendered_key)
+                if bc_hit is not None:
+                    context.set_output(step.id, bc_hit)
+                    step_statuses[step.id] = StepStatus(
+                        status="ok",
+                        duration=0.0,
+                        reason="cache_hit",
+                    )
+                    self.engine.progress.step_ok(step.id, 0.0, None)
+                    return StepResult(
+                        status="ok",
+                        output=bc_hit,
+                        cost=_extract_step_cost(bc_hit),
+                    )
+            except Exception as bc_err:
+                logger.warning("Brick cache check failed for '%s': %s", step.id, bc_err)
+
+        cb_instance = None
+        if step.circuit_breaker:
+            try:
+                from brix.resilience import CircuitBreaker as _CircuitBreaker, BrixDB as _ResBrixDB
+
+                cb_instance = _CircuitBreaker(step.id, step.circuit_breaker, _ResBrixDB())
+                cb_pre = cb_instance.pre_check(context)
+                if cb_pre is not None:
+                    if cb_pre.get("success"):
+                        output = cb_pre.get("data")
+                        context.set_output(step.id, output)
+                        step_statuses[step.id] = StepStatus(
+                            status="ok",
+                            duration=0.0,
+                            reason="circuit_breaker_fallback",
+                        )
+                        self.engine.progress.step_ok(step.id, 0.0, None)
+                        return StepResult(status="ok", output=output)
+                    cb_err_msg = cb_pre.get("error", "Circuit breaker OPEN")
+                    step_statuses[step.id] = StepStatus(
+                        status="skipped",
+                        duration=0.0,
+                        reason=cb_err_msg,
+                    )
+                    self.engine.progress.step_skipped(step.id)
+                    return StepResult(status="skipped", should_continue=True)
+            except Exception as cb_err:
+                logger.warning("Circuit breaker check failed for '%s': %s", step.id, cb_err)
+
+        rl_instance = None
+        if step.rate_limit:
+            try:
+                from brix.resilience import RateLimiter as _RateLimiter, BrixDB as _ResBrixDB
+
+                rl_instance = _RateLimiter(step.id, step.rate_limit, _ResBrixDB())
+                rl_wait = rl_instance.wait_seconds()
+                if rl_wait > 0:
+                    await asyncio.sleep(rl_wait)
+            except Exception as rl_err:
+                logger.warning("Rate limiter check failed for '%s': %s", step.id, rl_err)
+
+        if step.pause_before:
+            await self.engine._wait_for_breakpoint_resume(context, step.id)
+
+        self.engine._write_context_snapshot(context)
+
+        self.engine.progress.step_start(step.id, step.type)
+        with self.engine._step_credentials_context(context, step):
+            step_start = time.monotonic()
+            step_started_at = datetime.now(timezone.utc).isoformat()
+            result = await self.engine._execute_with_retry(
+                runner,
+                rendered_step,
+                context,
+                step,
+                pipeline,
+            )
+            step_duration = time.monotonic() - step_start
+            step_ended_at = datetime.now(timezone.utc).isoformat()
+
+        if getattr(runner, "_progress", None) is None:
+            logger.warning(
+                "Runner '%s' (step '%s') did not call report_progress() — "
+                "consider adding self.report_progress(100.0) at the end of execute()",
+                step.type,
+                step.id,
+            )
+
+        runner_progress = getattr(runner, "_progress", None)
+        if runner_progress is not None and self.engine._run_db is not None:
+            try:
+                self.engine._run_db.update_step_progress(
+                    run_id=context.run_id,
+                    step_id=step.id,
+                    pct=runner_progress.get("pct", 100.0),
+                    msg=runner_progress.get("msg", ""),
+                    done=runner_progress.get("done", 0),
+                    total=runner_progress.get("total", 0),
+                )
+            except Exception:
+                pass
+
+        rss_mb = _measure_rss_mb()
+        resource_usage = {"rss_mb": rss_mb, "duration": step_duration}
+        result["resource_usage"] = resource_usage
+        _warn_if_high_memory(rss_mb, step.id)
+
+        persist_data_flag = getattr(step, "persist_data", True)
+        secret_vals = getattr(context, "_secret_values", set())
+
+        if result.get("success"):
+            output = result.get("data")
+            context.set_output(step.id, output)
+            if step.cache is True:
+                from brix.context import CacheManager
+
+                CacheManager().set(step.id, rendered_params, output)
+            if brick_cache_instance is not None and brick_cache_rendered_key is not None:
+                try:
+                    brick_cache_instance.set(brick_cache_rendered_key, output)
+                except Exception as bc_set_err:
+                    logger.warning("Brick cache set failed for '%s': %s", step.id, bc_set_err)
+            if cb_instance is not None:
+                try:
+                    cb_instance.on_success()
+                except Exception:
+                    pass
+            if rl_instance is not None:
+                try:
+                    rl_instance.record_call()
+                except Exception:
+                    pass
+            if step.compensate and getattr(self.engine, "_saga_tracker", None) is not None:
+                self.engine._saga_tracker.record(step.id, step.compensate)
+            cost = _extract_step_cost(output)
+            step_statuses[step.id] = StepStatus(
+                status="ok",
+                duration=step_duration,
+                items=result.get("items_count"),
+                resource_usage=resource_usage,
+            )
+            self.engine.progress.step_ok(step.id, step_duration, result.get("items_count"))
+            if self.engine._should_persist(step):
+                self.engine._persist_step_output(
+                    context.run_id,
+                    step,
+                    result,
+                    rendered_params,
+                    context,
+                    db=self.engine._run_db,
+                )
+            try:
+                self.engine._run_db.record_step_execution(
+                    run_id=context.run_id,
+                    step_id=step.id,
+                    step_type=step.type,
+                    status="success",
+                    input_data=_redact_secret_values(rendered_params, secret_vals) if persist_data_flag else None,
+                    output_data=_redact_secret_values(output, secret_vals) if persist_data_flag else None,
+                    data_source="",
+                    started_at=step_started_at,
+                    ended_at=step_ended_at,
+                    duration_ms=int(step_duration * 1000),
+                    persist_data=persist_data_flag,
+                )
+            except Exception:
+                pass
+            return StepResult(status="ok", output=output, cost=cost)
+
+        error_msg = result.get("error", "unknown error")
+        if cb_instance is not None:
+            try:
+                cb_instance.on_failure()
+            except Exception:
+                pass
+        step_statuses[step.id] = StepStatus(
+            status="error",
+            duration=step_duration,
+            errors=1,
+            error_message=str(error_msg) if error_msg else None,
+            resource_usage=resource_usage,
+        )
+        self.engine.progress.step_error(step.id, error_msg, step_duration)
+        if self.engine._should_persist(step):
+            self.engine._persist_step_output(
+                context.run_id,
+                step,
+                result,
+                rendered_params,
+                context,
+                db=self.engine._run_db,
+            )
+        try:
+            self.engine._run_db.record_step_execution(
+                run_id=context.run_id,
+                step_id=step.id,
+                step_type=step.type,
+                status="error",
+                input_data=_redact_secret_values(rendered_params, secret_vals) if persist_data_flag else None,
+                output_data=None,
+                error_detail={"error": str(error_msg)} if error_msg else None,
+                data_source="",
+                started_at=step_started_at,
+                ended_at=step_ended_at,
+                duration_ms=int(step_duration * 1000),
+                persist_data=persist_data_flag,
+            )
+        except Exception:
+            pass
+
+        effective_on_error = step.on_error or pipeline.error_handling.on_error
+        should_abort = effective_on_error == "stop"
+        if should_abort and getattr(self.engine, "_saga_tracker", None) is not None:
+            try:
+                await self.engine._saga_tracker.run_compensations(context, self.engine, pipeline)
+            except Exception:
+                pass
+        return StepResult(
+            status="error",
+            output=None,
+            should_abort=should_abort,
+            should_continue=not should_abort,
+        )

@@ -192,6 +192,8 @@ class PipelineEngine:
         self._last_step_outputs: dict[str, Any] = {}
         # BrixDB reference for current run — set at start of run(), cleared after (T-BRIX-DB-07)
         self._run_db: "Any | None" = None
+        # Saga tracker for current sequential run — set during run(), cleared after.
+        self._saga_tracker: "Any | None" = None
 
     def register_runner(self, step_type: str, runner: BaseRunner) -> None:
         """Register a runner for a step type."""
@@ -669,7 +671,7 @@ class PipelineEngine:
 
             # --- Saga Tracker (T-BRIX-DB-21) ---
             from brix.resilience import SagaTracker as _SagaTracker
-            _saga_tracker = _SagaTracker()
+            self._saga_tracker = _SagaTracker()
 
             # --- DAG mode (T-BRIX-V6-19) ---
             # If any step declares depends_on, switch to parallel DAG execution.
@@ -698,22 +700,7 @@ class PipelineEngine:
                             self.progress.step_resumed(step.id)
                             continue
 
-                        pre_execute_result = step_executor.pre_execute_step(
-                            pipeline=pipeline,
-                            context=context,
-                            step=step,
-                            step_statuses=step_statuses,
-                            dry_run_steps=dry_run_steps,
-                        )
-                        step = pre_execute_result.step
-                        runner = pre_execute_result.runner
-                        if pre_execute_result.action != "run":
-                            pipeline_aborted = pre_execute_result.pipeline_aborted
-                            if pre_execute_result.stop_step_success is not None:
-                                stop_step_success = pre_execute_result.stop_step_success
-                            if pre_execute_result.action == "break":
-                                break
-                            continue
+                        jinja_ctx = context.to_jinja_context()
 
                         # --- foreach branch ---
                         if step.foreach:
@@ -839,311 +826,25 @@ class PipelineEngine:
                                     break
                             continue
 
-                        # --- single-step branch ---
-                        # Render step params with current context
-                        jinja_ctx = context.to_jinja_context()
-                        rendered_params = self.loader.render_step_params(step, jinja_ctx)
-
-                        # Create a rendered step-like object for the runner
-                        rendered_step = _RenderedStep(step, rendered_params, self.loader, jinja_ctx)
-
-                        # --- Step Pin check (T-BRIX-DB-24): use mock data if step is pinned ---
-                        _pin_hit = None
-                        try:
-                            from brix.db import BrixDB as _PinDB
-                            _pin_db = _PinDB()
-                            _pin_record = _pin_db.get_pin(pipeline.name, step.id)
-                            if _pin_record is not None:
-                                _pin_hit = _pin_record["pinned_data"]
-                        except Exception as _pin_err:
-                            logger.warning("Step pin check failed for '%s': %s", step.id, _pin_err)
-                        if _pin_hit is not None:
-                            logger.info("Step '%s' using pinned mock data (pipeline=%s)", step.id, pipeline.name)
-                            context.set_output(step.id, _pin_hit)
-                            last_output = _pin_hit
-                            step_statuses[step.id] = StepStatus(
-                                status="ok",
-                                duration=0.0,
-                                reason="pin_mock",
-                            )
-                            self.progress.step_ok(step.id, 0.0, None)
-                            continue
-
-                        # --- Test-Mode: intercept db.upsert and action.notify (T-BRIX-DB-24) ---
-                        _effective_step_type = LEGACY_ALIASES.get(step.type, step.type)
-                        if pipeline.test_mode and _effective_step_type in ("db.upsert", "db_upsert"):
-                            logger.info(
-                                "Test-mode: dry-running db.upsert step '%s' (pipeline=%s)",
-                                step.id, pipeline.name,
-                            )
-                            context.set_output(step.id, {"test_mode": True, "dry": True, "step_id": step.id})
-                            last_output = {"test_mode": True, "dry": True, "step_id": step.id}
-                            step_statuses[step.id] = StepStatus(
-                                status="ok",
-                                duration=0.0,
-                                reason="test_mode_dry",
-                            )
-                            self.progress.step_ok(step.id, 0.0, None)
-                            continue
-                        if pipeline.test_mode and _effective_step_type in ("action.notify", "notify"):
-                            logger.info(
-                                "Test-mode: log-only action.notify step '%s' (pipeline=%s)",
-                                step.id, pipeline.name,
-                            )
-                            context.set_output(step.id, {"test_mode": True, "log_only": True, "step_id": step.id})
-                            last_output = {"test_mode": True, "log_only": True, "step_id": step.id}
-                            step_statuses[step.id] = StepStatus(
-                                status="ok",
-                                duration=0.0,
-                                reason="test_mode_log_only",
-                            )
-                            self.progress.step_ok(step.id, 0.0, None)
-                            continue
-
-                        # --- Step-Level Cache (T-BRIX-V6-24, legacy bool form) ---
-                        if step.cache is True:
-                            from brix.context import CacheManager
-                            _cache_mgr = CacheManager()
-                            _cached_output = _cache_mgr.get(step.id, rendered_params)
-                            if _cached_output is not None:
-                                context.set_output(step.id, _cached_output)
-                                last_output = _cached_output
-                                total_cost_usd += _extract_step_cost(_cached_output)
-                                step_statuses[step.id] = StepStatus(
-                                    status="ok",
-                                    duration=0.0,
-                                    reason="cache_hit",
-                                )
-                                self.progress.step_ok(step.id, 0.0, None)
-                                continue
-
-                        # --- Resilience: Brick Cache check (T-BRIX-DB-21, dict form) ---
-                        _brick_cache_instance = None
-                        _brick_cache_rendered_key = None
-                        if isinstance(step.cache, dict):
-                            try:
-                                from brix.resilience import BrickCache as _BrickCache, BrixDB as _res_BrixDB
-                                _brick_cache_instance = _BrickCache(step.cache, _res_BrixDB())
-                                _brick_cache_rendered_key = self.loader.render_template(
-                                    step.cache.get("key", step.id), jinja_ctx
-                                )
-                                _bc_hit = _brick_cache_instance.get(_brick_cache_rendered_key)
-                                if _bc_hit is not None:
-                                    context.set_output(step.id, _bc_hit)
-                                    last_output = _bc_hit
-                                    total_cost_usd += _extract_step_cost(_bc_hit)
-                                    step_statuses[step.id] = StepStatus(
-                                        status="ok",
-                                        duration=0.0,
-                                        reason="cache_hit",
-                                    )
-                                    self.progress.step_ok(step.id, 0.0, None)
-                                    continue
-                            except Exception as _bc_err:
-                                logger.warning("Brick cache check failed for '%s': %s", step.id, _bc_err)
-
-                        # --- Resilience: Circuit Breaker pre-check (T-BRIX-DB-21) ---
-                        _cb_instance = None
-                        if step.circuit_breaker:
-                            try:
-                                from brix.resilience import CircuitBreaker as _CircuitBreaker, BrixDB as _res_BrixDB
-                                _cb_instance = _CircuitBreaker(step.id, step.circuit_breaker, _res_BrixDB())
-                                _cb_pre = _cb_instance.pre_check(context)
-                                if _cb_pre is not None:
-                                    # Circuit is open — skip or fallback
-                                    if _cb_pre.get("success"):
-                                        context.set_output(step.id, _cb_pre.get("data"))
-                                        last_output = _cb_pre.get("data")
-                                        step_statuses[step.id] = StepStatus(
-                                            status="ok",
-                                            duration=0.0,
-                                            reason="circuit_breaker_fallback",
-                                        )
-                                        self.progress.step_ok(step.id, 0.0, None)
-                                    else:
-                                        _cb_err_msg = _cb_pre.get("error", "Circuit breaker OPEN")
-                                        step_statuses[step.id] = StepStatus(
-                                            status="skipped",
-                                            duration=0.0,
-                                            reason=_cb_err_msg,
-                                        )
-                                        self.progress.step_skipped(step.id)
-                                    continue
-                            except Exception as _cb_err:
-                                logger.warning("Circuit breaker check failed for '%s': %s", step.id, _cb_err)
-
-                        # --- Resilience: Rate Limiter (T-BRIX-DB-21) ---
-                        _rl_instance = None
-                        if step.rate_limit:
-                            try:
-                                from brix.resilience import RateLimiter as _RateLimiter, BrixDB as _res_BrixDB
-                                _rl_instance = _RateLimiter(step.id, step.rate_limit, _res_BrixDB())
-                                _rl_wait = _rl_instance.wait_seconds()
-                                if _rl_wait > 0:
-                                    await asyncio.sleep(_rl_wait)
-                            except Exception as _rl_err:
-                                logger.warning("Rate limiter check failed for '%s': %s", step.id, _rl_err)
-
-                        # --- Breakpoint (T-BRIX-V7-06) ---
-                        if step.pause_before:
-                            await self._wait_for_breakpoint_resume(context, step.id)
-
-                        # --- Context Snapshot to workdir (T-BRIX-V7-06) ---
-                        # Written for every step so brix__inspect_context can
-                        # read the current Jinja2 context of a running run.
-                        self._write_context_snapshot(context)
-
-                        self.progress.step_start(step.id, step.type)
-                        with self._step_credentials_context(context, step):
-                            step_start = time.monotonic()
-                            _step_started_at = datetime.now(timezone.utc).isoformat()
-                            result = await self._execute_with_retry(runner, rendered_step, context, step, pipeline)
-                            step_duration = time.monotonic() - step_start
-                            _step_ended_at = datetime.now(timezone.utc).isoformat()
-
-                        # --- report_progress compliance check (T-BRIX-DB-15) ---
-                        # Warn if the runner did not call report_progress() at all.
-                        if getattr(runner, "_progress", None) is None:
-                            logger.warning(
-                                "Runner '%s' (step '%s') did not call report_progress() — "
-                                "consider adding self.report_progress(100.0) at the end of execute()",
-                                step.type, step.id,
-                            )
-
-                        # --- Persist runner progress to DB (T-BRIX-DB-14) ---
-                        _runner_progress = getattr(runner, "_progress", None)
-                        if _runner_progress is not None and self._run_db is not None:
-                            try:
-                                self._run_db.update_step_progress(
-                                    run_id=context.run_id,
-                                    step_id=step.id,
-                                    pct=_runner_progress.get("pct", 100.0),
-                                    msg=_runner_progress.get("msg", ""),
-                                    done=_runner_progress.get("done", 0),
-                                    total=_runner_progress.get("total", 0),
-                                )
-                            except Exception:
-                                pass  # Never crash pipeline over progress persistence
-
-                        # --- Resource usage measurement (T-BRIX-V7-07) ---
-                        _rss_mb = _measure_rss_mb()
-                        _resource_usage = {"rss_mb": _rss_mb, "duration": step_duration}
-                        result["resource_usage"] = _resource_usage
-                        _warn_if_high_memory(_rss_mb, step.id)
-
-                        if result.get("success"):
-                            context.set_output(step.id, result.get("data"))
-                            last_output = result.get("data")
-                            # --- Step-Level Cache: persist on success (T-BRIX-V6-24, legacy bool) ---
-                            if step.cache is True:
-                                from brix.context import CacheManager
-                                CacheManager().set(step.id, rendered_params, result.get("data"))
-                            # --- Resilience: Brick Cache persist on success (T-BRIX-DB-21) ---
-                            if _brick_cache_instance is not None and _brick_cache_rendered_key is not None:
-                                try:
-                                    _brick_cache_instance.set(_brick_cache_rendered_key, result.get("data"))
-                                except Exception as _bc_set_err:
-                                    logger.warning("Brick cache set failed for '%s': %s", step.id, _bc_set_err)
-                            # --- Resilience: Circuit Breaker reset on success (T-BRIX-DB-21) ---
-                            if _cb_instance is not None:
-                                try:
-                                    _cb_instance.on_success()
-                                except Exception:
-                                    pass
-                            # --- Resilience: Rate Limiter record on success (T-BRIX-DB-21) ---
-                            if _rl_instance is not None:
-                                try:
-                                    _rl_instance.record_call()
-                                except Exception:
-                                    pass
-                            # --- Saga: record compensatable step (T-BRIX-DB-21) ---
-                            if step.compensate:
-                                _saga_tracker.record(step.id, step.compensate)
-                            # --- LLM cost extraction (T-BRIX-V6-21) ---
-                            total_cost_usd += _extract_step_cost(result.get("data"))
-                            step_statuses[step.id] = StepStatus(
-                                status="ok",
-                                duration=step_duration,
-                                items=result.get("items_count"),
-                                resource_usage=_resource_usage,
-                            )
-                            self.progress.step_ok(step.id, step_duration, result.get("items_count"))
-                            # --- Execution Data persistence (T-BRIX-V7-04) ---
-                            if self._should_persist(step):
-                                self._persist_step_output(
-                                    context.run_id, step, result, rendered_params, context,
-                                    db=history._db,
-                                )
-                            # --- Step Execution Record (T-BRIX-DB-07) ---
-                            _persist_data_flag = getattr(step, "persist_data", True)
-                            _secret_vals = getattr(context, "_secret_values", set())
-                            try:
-                                history._db.record_step_execution(
-                                    run_id=context.run_id,
-                                    step_id=step.id,
-                                    step_type=step.type,
-                                    status="success",
-                                    input_data=_redact_secret_values(rendered_params, _secret_vals) if _persist_data_flag else None,
-                                    output_data=_redact_secret_values(result.get("data"), _secret_vals) if _persist_data_flag else None,
-                                    data_source="",
-                                    started_at=_step_started_at,
-                                    ended_at=_step_ended_at,
-                                    duration_ms=int(step_duration * 1000),
-                                    persist_data=_persist_data_flag,
-                                )
-                            except Exception:
-                                pass  # Never crash pipeline over persistence
-                        else:
-                            error_msg = result.get("error", "unknown error")
-                            # --- Resilience: Circuit Breaker on failure (T-BRIX-DB-21) ---
-                            if _cb_instance is not None:
-                                try:
-                                    _cb_instance.on_failure()
-                                except Exception:
-                                    pass
-                            step_statuses[step.id] = StepStatus(
-                                status="error", duration=step_duration, errors=1,
-                                error_message=str(error_msg) if error_msg else None,
-                                resource_usage=_resource_usage,
-                            )
-                            self.progress.step_error(step.id, error_msg, step_duration)
-                            # --- Execution Data persistence on error (T-BRIX-V7-04) ---
-                            if self._should_persist(step):
-                                self._persist_step_output(
-                                    context.run_id, step, result, rendered_params, context,
-                                    db=history._db,
-                                )
-                            # --- Step Execution Record on error (T-BRIX-DB-07) ---
-                            _persist_data_flag = getattr(step, "persist_data", True)
-                            _secret_vals = getattr(context, "_secret_values", set())
-                            try:
-                                history._db.record_step_execution(
-                                    run_id=context.run_id,
-                                    step_id=step.id,
-                                    step_type=step.type,
-                                    status="error",
-                                    input_data=_redact_secret_values(rendered_params, _secret_vals) if _persist_data_flag else None,
-                                    output_data=None,
-                                    error_detail={"error": str(error_msg)} if error_msg else None,
-                                    data_source="",
-                                    started_at=_step_started_at,
-                                    ended_at=_step_ended_at,
-                                    duration_ms=int(step_duration * 1000),
-                                    persist_data=_persist_data_flag,
-                                )
-                            except Exception:
-                                pass  # Never crash pipeline over persistence
-
-                            effective_on_error = step.on_error or pipeline.error_handling.on_error
-                            if effective_on_error == "stop":
-                                # --- Saga: run compensations on pipeline abort (T-BRIX-DB-21) ---
-                                try:
-                                    await _saga_tracker.run_compensations(context, self, pipeline)
-                                except Exception:
-                                    pass
-                                pipeline_aborted = True
-                                break
-                            # continue: log error and move on
+                        step_result = await step_executor.execute_step(
+                            step=step,
+                            context=context,
+                            pipeline=pipeline,
+                            step_statuses=step_statuses,
+                            jinja_ctx=jinja_ctx,
+                            dry_run_steps=dry_run_steps,
+                        )
+                        if step_result.output is not None:
+                            last_output = step_result.output
+                        total_cost_usd += step_result.cost
+                        if step_result.should_abort:
+                            pipeline_aborted = True
+                            if step_statuses.get(step.id, None) and step.type == "stop":
+                                stop_step_success = getattr(step, "success_on_stop", True)
+                            break
+                        if not step_result.should_continue:
+                            break
+                        continue
 
             except Exception as e:
                 # Unexpected exception (e.g. schema validation error, MCP crash) —
@@ -1159,6 +860,7 @@ class PipelineEngine:
                     mcp_runner.pool = None
                 self._mcp_pool = None
                 self._run_db = None  # Clear run-scoped DB reference (T-BRIX-DB-07)
+                self._saga_tracker = None
 
                 # Resolve output (best-effort; may be None if pipeline aborted early)
                 if not pipeline_aborted and pipeline.output:
