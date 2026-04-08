@@ -75,6 +75,7 @@ class ValidationResult:
     def __init__(self):
         self.errors: list[str] = []
         self.warnings: list[str] = []
+        self.infos: list[str] = []  # info-level hints (non-actionable)
         self.checks: list[str] = []  # successful checks
 
     @property
@@ -83,6 +84,9 @@ class ValidationResult:
 
     def add_check(self, msg: str):
         self.checks.append(msg)
+
+    def add_info(self, msg: str, hint: str | None = None, schema_ref: str | None = None):
+        self.infos.append(self._format_finding(msg, hint=hint, schema_ref=schema_ref))
 
     @staticmethod
     def _format_finding(msg: str, hint: str | None = None, schema_ref: str | None = None) -> str:
@@ -276,6 +280,19 @@ class PipelineValidator:
         # 15. Deep preflight: active connection tests
         if level == "deep":
             self._check_connection_health(pipeline, result)
+
+        # 16–25. Extended validation checks (T-BRIX-VAL-01 through T-BRIX-VAL-10)
+        if level in {"standard", "deep"}:
+            self._check_missing_output_in_refs(pipeline, result)       # VAL-01
+            self._check_tojson_on_string(pipeline, result)             # VAL-02
+            self._check_helper_without_code(pipeline, result)          # VAL-03
+            self._check_unused_steps(pipeline, result)                 # VAL-04
+            self._check_sub_pipeline_output_mismatch(pipeline, result) # VAL-05
+            self._check_foreach_on_non_list(pipeline, result)          # VAL-06
+            self._check_db_query_dml(pipeline, result)                 # VAL-07
+            self._check_duplicate_ids_across_sub_pipelines(pipeline, result)  # VAL-08
+            self._check_large_helper_without_schema(pipeline, result)  # VAL-09
+            self._check_cross_helper_imports(pipeline, result)         # VAL-10
 
         if result.is_valid:
             result.add_check("Pipeline is valid")
@@ -1039,3 +1056,382 @@ class PipelineValidator:
             return float(timeout_str)
         except ValueError:
             return None
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-01: Missing .output in step references
+    # ---------------------------------------------------------------------------
+
+    def _check_missing_output_in_refs(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when {{ step_id.field }} is used but .output is missing."""
+        step_ids = {s.id for s in pipeline.steps}
+        # Built-in root names that are NOT step IDs — skip these
+        _BUILTINS = {"input", "item", "credentials", "var", "store", "env", "loop"}
+
+        for step in pipeline.steps:
+            templates = self._collect_template_strings(getattr(step, "params", None), "params")
+            templates.extend(self._collect_template_strings(getattr(step, "config", None), "config"))
+            if getattr(step, "when", None):
+                templates.extend(self._collect_template_strings(step.when, "when"))
+            if getattr(step, "foreach", None):
+                templates.extend(self._collect_template_strings(step.foreach, "foreach"))
+
+            for field_path, tmpl in templates:
+                # Find patterns like {{ some_step.field }} where some_step is a known step
+                # but the access does NOT go through .output
+                for match in re.finditer(r'\{\{\s*(\w+)\.(\w+)', tmpl):
+                    root_name = match.group(1)
+                    attr = match.group(2)
+                    if root_name in _BUILTINS:
+                        continue
+                    if root_name in step_ids and attr != "output":
+                        result.add_warning(
+                            f"Step '{step.id}': references {{{{ {root_name}.{attr} }}}} "
+                            f"— did you mean {{{{ {root_name}.output.{attr} }}}}? (T-BRIX-VAL-01)",
+                            hint="Step results are nested under .output — direct attribute access on a step ID is usually a mistake.",
+                        )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-02: tojson on already-string values
+    # ---------------------------------------------------------------------------
+
+    def _check_tojson_on_string(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when | tojson is applied to a value known to be a string."""
+        # Build a map of step_id → output_type from brick registry
+        string_output_steps: set[str] = set()
+        try:
+            registry = BrickRegistry()
+            for step in pipeline.steps:
+                effective_type = LEGACY_ALIASES.get(step.type, step.type)
+                brick = registry.get(effective_type)
+                if brick and getattr(brick, "output_type", "") == "string":
+                    string_output_steps.add(step.id)
+        except Exception:
+            return  # Can't determine types — skip
+
+        if not string_output_steps:
+            return
+
+        for step in pipeline.steps:
+            templates = self._collect_template_strings(getattr(step, "params", None), "params")
+            templates.extend(self._collect_template_strings(getattr(step, "config", None), "config"))
+
+            for field_path, tmpl in templates:
+                # Look for {{ step_id.output ... | tojson }}
+                for match in re.finditer(r'\{\{.*?(\w+)\.output.*?\|\s*tojson.*?\}\}', tmpl):
+                    ref_id = match.group(1)
+                    if ref_id in string_output_steps:
+                        result.add_warning(
+                            f"Step '{step.id}': applies | tojson to '{ref_id}.output' "
+                            f"which is already a string type (T-BRIX-VAL-02)",
+                            hint="| tojson on a string adds extra quotes — remove it if the value is already a string.",
+                        )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-03: Helper without code
+    # ---------------------------------------------------------------------------
+
+    def _check_helper_without_code(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when a step references a helper that exists but has no code."""
+        from brix.helper_registry import HelperRegistry
+        registry = HelperRegistry()
+
+        for step in pipeline.steps:
+            helper_name = getattr(step, "helper", None)
+            if not helper_name:
+                continue
+            entry = registry.get(helper_name)
+            if entry is None:
+                continue  # Already handled by _check_helper_reference
+            if not entry.code:
+                result.add_warning(
+                    f"Step '{step.id}': helper '{helper_name}' exists but has no code "
+                    f"(has_code=false) (T-BRIX-VAL-03)",
+                    hint="Register the helper with actual code or remove the reference.",
+                )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-04: Unused steps
+    # ---------------------------------------------------------------------------
+
+    def _check_unused_steps(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Info-level hint for steps not referenced by any other step and without side effects."""
+        _SIDE_EFFECT_TYPES = {
+            "db.upsert", "db.exec", "action.notify", "action.emit",
+            "action.queue", "action.approval", "action.respond",
+            "script.python", "script.cli", "mcp.call",
+            # Legacy aliases
+            "python", "cli", "mcp", "notify", "exec",
+        }
+
+        step_ids = {s.id for s in pipeline.steps}
+        # Collect all step IDs referenced in templates of other steps
+        referenced_ids: set[str] = set()
+        for step in pipeline.steps:
+            templates = self._collect_template_strings(getattr(step, "params", None))
+            templates.extend(self._collect_template_strings(getattr(step, "config", None)))
+            if getattr(step, "when", None):
+                templates.extend(self._collect_template_strings(step.when))
+            if getattr(step, "foreach", None):
+                templates.extend(self._collect_template_strings(step.foreach))
+            if getattr(step, "else_of", None):
+                referenced_ids.add(step.else_of)
+
+            for _, tmpl in templates:
+                for match in re.finditer(r'\{\{\s*(\w+)\.', tmpl):
+                    referenced_ids.add(match.group(1))
+
+        # Also consider output references
+        if pipeline.output:
+            for key, ref in pipeline.output.items():
+                for match in re.finditer(r'\{\{\s*(\w+)\.', str(ref)):
+                    referenced_ids.add(match.group(1))
+
+        # Last step is implicitly used (pipeline result)
+        last_step_id = pipeline.steps[-1].id if pipeline.steps else None
+
+        for step in pipeline.steps:
+            if step.id == last_step_id:
+                continue
+            if step.id in referenced_ids:
+                continue
+            effective_type = LEGACY_ALIASES.get(step.type, step.type)
+            if effective_type in _SIDE_EFFECT_TYPES or step.type in _SIDE_EFFECT_TYPES:
+                continue
+            result.add_info(
+                f"Step '{step.id}': appears unused — not referenced by any other step "
+                f"and has no side effects (T-BRIX-VAL-04)",
+                hint="Remove the step or reference its output in a downstream step.",
+            )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-05: Output-schema mismatch between sub-pipeline and parent
+    # ---------------------------------------------------------------------------
+
+    def _check_sub_pipeline_output_mismatch(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when parent references keys not in sub-pipeline output."""
+        store = PipelineStore()
+        sub_pipeline_outputs: dict[str, set[str]] = {}  # step_id → output keys
+
+        for step in pipeline.steps:
+            if step.type not in {"pipeline", "flow.pipeline"}:
+                continue
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+            pipeline_name = (
+                getattr(step, "pipeline", None)
+                or (params.get("pipeline") if isinstance(params, dict) else None)
+                or (config.get("pipeline") if isinstance(config, dict) else None)
+            )
+            if not pipeline_name or self._is_dynamic_ref(pipeline_name):
+                continue
+            try:
+                sub = store.load(pipeline_name)
+                if sub.output:
+                    sub_pipeline_outputs[step.id] = set(sub.output.keys())
+            except Exception:
+                continue  # Already handled by _check_sub_pipeline_existence
+
+        if not sub_pipeline_outputs:
+            return
+
+        # Check if parent step templates reference keys not in sub-pipeline output
+        for step in pipeline.steps:
+            templates = self._collect_template_strings(getattr(step, "params", None))
+            templates.extend(self._collect_template_strings(getattr(step, "config", None)))
+            if getattr(step, "foreach", None):
+                templates.extend(self._collect_template_strings(step.foreach))
+
+            for _, tmpl in templates:
+                for sub_step_id, output_keys in sub_pipeline_outputs.items():
+                    # Look for {{ sub_step_id.output.some_key }}
+                    for match in re.finditer(
+                        rf'\{{\{{\s*{re.escape(sub_step_id)}\.output\.(\w+)',
+                        tmpl,
+                    ):
+                        ref_key = match.group(1)
+                        if ref_key not in output_keys:
+                            result.add_warning(
+                                f"Step '{step.id}': references '{sub_step_id}.output.{ref_key}' "
+                                f"but sub-pipeline output only declares {sorted(output_keys)} "
+                                f"(T-BRIX-VAL-05)",
+                                hint="Check the sub-pipeline's output mapping or update the reference.",
+                            )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-06: foreach on non-list expression
+    # ---------------------------------------------------------------------------
+
+    def _check_foreach_on_non_list(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when foreach references a step whose brick output_type is 'dict'."""
+        # Build map of step_id → output_type
+        step_output_types: dict[str, str] = {}
+        try:
+            registry = BrickRegistry()
+            for step in pipeline.steps:
+                effective_type = LEGACY_ALIASES.get(step.type, step.type)
+                brick = registry.get(effective_type)
+                if brick and getattr(brick, "output_type", ""):
+                    step_output_types[step.id] = brick.output_type
+        except Exception:
+            return
+
+        for step in pipeline.steps:
+            if not step.foreach:
+                continue
+            foreach_str = str(step.foreach)
+            # Find which step the foreach references
+            for match in re.finditer(r'\{\{\s*(\w+)\.output', foreach_str):
+                ref_id = match.group(1)
+                output_type = step_output_types.get(ref_id, "")
+                if output_type == "dict":
+                    result.add_warning(
+                        f"Step '{step.id}': foreach references '{ref_id}' whose output_type "
+                        f"is 'dict' — foreach expects a list (T-BRIX-VAL-06)",
+                        hint=f"Wrap with | list or use a step type that returns a list.",
+                    )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-07: db.query used for DML
+    # ---------------------------------------------------------------------------
+
+    def _check_db_query_dml(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when db.query step contains DML statements."""
+        _DML_PATTERN = re.compile(
+            r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE)\b',
+            re.IGNORECASE,
+        )
+
+        for step in pipeline.steps:
+            effective_type = LEGACY_ALIASES.get(step.type, step.type)
+            if effective_type != "db.query":
+                continue
+
+            query = getattr(step, "query", None) or ""
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+            if not query:
+                query = (
+                    (params.get("query") if isinstance(params, dict) else "")
+                    or (config.get("query") if isinstance(config, dict) else "")
+                    or ""
+                )
+
+            # Skip Jinja2 dynamic queries — can't statically check
+            if not query or self._is_dynamic_ref(query):
+                continue
+
+            match = _DML_PATTERN.search(query)
+            if match:
+                result.add_warning(
+                    f"Step '{step.id}': db.query contains DML statement "
+                    f"'{match.group(1).upper()}' — use db.exec for DML operations (T-BRIX-VAL-07)",
+                    hint="db.query is for SELECT statements. Use db.exec for INSERT/UPDATE/DELETE.",
+                )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-08: Duplicate step IDs across sub-pipelines
+    # ---------------------------------------------------------------------------
+
+    def _check_duplicate_ids_across_sub_pipelines(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn on step ID collisions between parent and sub-pipelines."""
+        store = PipelineStore()
+        parent_ids = {s.id for s in pipeline.steps}
+
+        for step in pipeline.steps:
+            if step.type not in {"pipeline", "flow.pipeline"}:
+                continue
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+            pipeline_name = (
+                getattr(step, "pipeline", None)
+                or (params.get("pipeline") if isinstance(params, dict) else None)
+                or (config.get("pipeline") if isinstance(config, dict) else None)
+            )
+            if not pipeline_name or self._is_dynamic_ref(pipeline_name):
+                continue
+            try:
+                sub = store.load(pipeline_name)
+            except Exception:
+                continue
+
+            sub_ids = {s.id for s in sub.steps}
+            collisions = parent_ids & sub_ids
+            if collisions:
+                result.add_warning(
+                    f"Step '{step.id}': sub-pipeline '{pipeline_name}' shares step IDs "
+                    f"with parent: {sorted(collisions)} (T-BRIX-VAL-08)",
+                    hint="Step IDs are scoped per pipeline, but duplicate names can cause confusion in logs.",
+                )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-09: Large helper without input_schema/output_schema
+    # ---------------------------------------------------------------------------
+
+    def _check_large_helper_without_schema(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when a helper has substantial code but no input_schema."""
+        from brix.helper_registry import HelperRegistry
+        registry = HelperRegistry()
+        checked: set[str] = set()
+
+        for step in pipeline.steps:
+            helper_name = getattr(step, "helper", None)
+            if not helper_name or helper_name in checked:
+                continue
+            checked.add(helper_name)
+            entry = registry.get(helper_name)
+            if entry is None:
+                continue
+            if len(entry.code) > 500 and not entry.input_schema.get("properties"):
+                result.add_warning(
+                    f"Step '{step.id}': helper '{helper_name}' has {len(entry.code)} chars of code "
+                    f"but no input_schema — consider adding input_schema for validation (T-BRIX-VAL-09)",
+                    hint="Helpers with substantial logic benefit from declared input_schema for automated validation.",
+                )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-10: Cross-helper imports without imports field
+    # ---------------------------------------------------------------------------
+
+    def _check_cross_helper_imports(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when helper code imports another helper not listed in imports field."""
+        from brix.helper_registry import HelperRegistry
+        registry = HelperRegistry()
+
+        # Build set of all helper names in the registry
+        all_helper_names: set[str] = set()
+        try:
+            for entry in registry.list_all():
+                all_helper_names.add(entry.name)
+        except Exception:
+            return
+
+        if not all_helper_names:
+            return
+
+        checked: set[str] = set()
+        for step in pipeline.steps:
+            helper_name = getattr(step, "helper", None)
+            if not helper_name or helper_name in checked:
+                continue
+            checked.add(helper_name)
+            entry = registry.get(helper_name)
+            if entry is None or not entry.code:
+                continue
+
+            declared_imports = set(entry.imports or [])
+            # Scan code for import patterns
+            code = entry.code
+            # Match "from <name> import ..." and "import <name>"
+            import_refs: set[str] = set()
+            for match in re.finditer(r'^\s*from\s+(\w+)\s+import', code, re.MULTILINE):
+                import_refs.add(match.group(1))
+            for match in re.finditer(r'^\s*import\s+(\w+)', code, re.MULTILINE):
+                import_refs.add(match.group(1))
+
+            for imp in import_refs:
+                if imp in all_helper_names and imp not in declared_imports:
+                    result.add_warning(
+                        f"Step '{step.id}': helper '{helper_name}' imports '{imp}' "
+                        f"which is a registered helper but not listed in helper.imports (T-BRIX-VAL-10)",
+                        hint=f"Add '{imp}' to the imports field of helper '{helper_name}'.",
+                    )
