@@ -85,6 +85,11 @@ def run_integrity_checks(db: "BrixDB") -> dict:
         logger.warning("integrity: check_helper_references failed: %s", exc)
 
     try:
+        _check_helper_imports(db, issues)
+    except Exception as exc:
+        logger.warning("integrity: check_helper_imports failed: %s", exc)
+
+    try:
         org_issues = _check_entity_org_metadata(db)
         issues.extend(org_issues)
     except Exception as exc:
@@ -458,5 +463,79 @@ def _check_entity_org_metadata(db: "BrixDB") -> list[dict]:
                 })
 
     return issues
+
+
+def _check_helper_imports(
+    db: "BrixDB",
+    issues: list[dict],
+) -> None:
+    """Check helper imports for missing targets and circular dependencies."""
+    helpers = db.list_helpers()
+    known_names = {h["name"] for h in helpers}
+
+    # Build import graph: helper_name -> list of imported names
+    import_graph: dict[str, list[str]] = {}
+    for h in helpers:
+        imports = h.get("imports", [])
+        if imports:
+            import_graph[h["name"]] = imports
+
+    # Check for missing imports
+    missing: list[str] = []
+    for helper_name, imports in import_graph.items():
+        for imp in imports:
+            if imp not in known_names:
+                missing.append(f"{helper_name}->missing:{imp}")
+
+    if missing:
+        issues.append({
+            "code": "MISSING_IMPORT",
+            "message": (
+                f"{len(missing)} helper import(s) reference non-existent helpers: "
+                + ", ".join(missing[:10])
+                + ("..." if len(missing) > 10 else "")
+            ),
+            "severity": "warning",
+            "imports": missing,
+        })
+
+    # Check for circular imports via DFS
+    def _has_cycle(start: str, visited: set[str], path: set[str]) -> list[str] | None:
+        """Return the cycle path if found, else None."""
+        if start in path:
+            return [start]
+        if start in visited:
+            return None
+        visited.add(start)
+        path.add(start)
+        for dep in import_graph.get(start, []):
+            if dep not in known_names:
+                continue  # skip missing (already reported)
+            cycle = _has_cycle(dep, visited, path)
+            if cycle is not None:
+                cycle.append(start)
+                return cycle
+        path.discard(start)
+        return None
+
+    visited: set[str] = set()
+    circular: list[str] = []
+    for helper_name in import_graph:
+        cycle = _has_cycle(helper_name, visited, set())
+        if cycle is not None:
+            cycle.reverse()
+            circular.append(" -> ".join(cycle))
+
+    if circular:
+        issues.append({
+            "code": "CIRCULAR_IMPORT",
+            "message": (
+                f"{len(circular)} circular helper import chain(s) detected: "
+                + "; ".join(circular[:5])
+                + ("..." if len(circular) > 5 else "")
+            ),
+            "severity": "error",
+            "chains": circular,
+        })
 
 

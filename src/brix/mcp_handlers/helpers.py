@@ -107,6 +107,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
         input_schema=arguments.get("input_schema"),
         output_schema=arguments.get("output_schema"),
         code=code,
+        imports=arguments.get("imports") or [],
     )
 
     # Update project/tags/group_name in DB (T-BRIX-ORG-01)
@@ -356,7 +357,7 @@ async def _handle_update_helper(arguments: dict) -> dict:
 
     # Update path
     update_fields: dict = {}
-    for field_name in ("description", "requirements", "input_schema", "output_schema", "code"):
+    for field_name in ("description", "requirements", "input_schema", "output_schema", "code", "imports"):
         if field_name in arguments:
             update_fields[field_name] = arguments[field_name]
 

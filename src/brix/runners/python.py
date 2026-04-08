@@ -76,6 +76,35 @@ def _write_helper_cache_file(helper_name: str, code: str, content_hash: str | No
     return cache_path
 
 
+def _materialize_imports(helper_entry: Any) -> None:
+    """Materialize imported helpers as ``/tmp/brix-helpers/<name>.py``.
+
+    When a helper declares ``imports: ["other_helper"]``, we write each
+    imported helper's code under its *clear name* so that the main script
+    can simply ``import other_helper``.
+    """
+    imports = getattr(helper_entry, "imports", None) or []
+    if not imports:
+        return
+
+    from brix.helper_registry import HelperRegistry
+
+    registry = HelperRegistry()
+    HELPER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    for imp_name in imports:
+        imp_entry = registry.get(imp_name)
+        if imp_entry is None:
+            continue
+        imp_code = getattr(imp_entry, "code", "") or registry.get_code(imp_name)
+        if not imp_code:
+            continue
+        # Write under clear name so ``import <name>`` works
+        dest = HELPER_CACHE_DIR / f"{imp_name}.py"
+        if not dest.exists() or dest.read_text(encoding="utf-8") != imp_code:
+            dest.write_text(imp_code, encoding="utf-8")
+
+
 class PythonRunner(BaseRunner):
     """Runs Python scripts as subprocesses (D-19: never importlib)."""
 
@@ -177,6 +206,12 @@ class PythonRunner(BaseRunner):
                         "duration": time.monotonic() - start,
                     }
 
+            # Materialize imported helpers under their clear name
+            try:
+                _materialize_imports(helper_entry)
+            except Exception:
+                pass  # Non-fatal: imports are best-effort
+
         # Build the command: python3 <script> <json_params>
         # Params are passed as JSON string in sys.argv[1]
         clean_params = params
@@ -212,6 +247,14 @@ class PythonRunner(BaseRunner):
             if env is None:
                 env = dict(os.environ)
             env["BRIX_RUN_WORKDIR"] = str(context.workdir)
+
+        # Ensure /tmp/brix-helpers/ is on PYTHONPATH so imported helpers resolve
+        helper_cache_str = str(HELPER_CACHE_DIR)
+        if env is None:
+            env = dict(os.environ)
+        existing_pp = env.get("PYTHONPATH", "")
+        if helper_cache_str not in existing_pp.split(os.pathsep):
+            env["PYTHONPATH"] = f"{helper_cache_str}{os.pathsep}{existing_pp}" if existing_pp else helper_cache_str
 
         try:
             proc = await asyncio.create_subprocess_exec(

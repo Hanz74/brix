@@ -289,14 +289,17 @@ def _make_helper_dict(entry) -> dict:
             else:
                 d["tags"] = raw_tags if isinstance(raw_tags, list) else []
             d["group"] = db_row.get("group_name", "") or ""
+            d["imports"] = db_row.get("imports", []) or []
         else:
             d["project"] = ""
             d["tags"] = []
             d["group"] = ""
+            d["imports"] = []
     except Exception:
         d["project"] = ""
         d["tags"] = []
         d["group"] = ""
+        d["imports"] = []
     return d
 
 
