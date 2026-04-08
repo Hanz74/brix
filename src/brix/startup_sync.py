@@ -177,6 +177,7 @@ def run_startup_sync(db: "BrixDB") -> dict:
         "tool_schemas_synced": 0,
         "pipelines_imported": 0,
         "pipelines_normalized": 0,
+        "pipelines_without_steps": 0,
         "descriptions_backfilled": 0,
         "orphan_triggers": 0,
         "test_artifacts_cleaned": 0,
@@ -198,6 +199,11 @@ def run_startup_sync(db: "BrixDB") -> dict:
         logger.warning("startup_sync: pipeline sync failed: %s", exc)
 
     try:
+        summary["pipelines_without_steps"] = _warn_pipelines_without_steps(db)
+    except Exception as exc:
+        logger.warning("startup_sync: zero-step pipeline check failed: %s", exc)
+
+    try:
         summary["descriptions_backfilled"] = _backfill_descriptions(db)
     except Exception as exc:
         logger.warning("startup_sync: description backfill failed: %s", exc)
@@ -216,10 +222,12 @@ def run_startup_sync(db: "BrixDB") -> dict:
     # Log the summary
     logger.info(
         "startup_sync: pipelines_imported=%d, pipelines_normalized=%d, "
+        "pipelines_without_steps=%d, "
         "descriptions_backfilled=%d, orphan_triggers=%d, "
         "test_artifacts_cleaned=%d",
         summary["pipelines_imported"],
         summary["pipelines_normalized"],
+        summary["pipelines_without_steps"],
         summary["descriptions_backfilled"],
         summary["orphan_triggers"],
         summary["test_artifacts_cleaned"],
@@ -253,6 +261,27 @@ def _sync_pipelines(db: "BrixDB") -> int:
     )
     summary = _normalize_pipeline_steps_common(db, log_prefix="startup_sync")
     return summary["migrated"]
+
+
+def _warn_pipelines_without_steps(db: "BrixDB") -> int:
+    """Warn when pipeline rows exist without any normalized step rows."""
+    pipelines_without_steps: list[str] = []
+
+    for pipeline in db.list_pipelines():
+        pipeline_id = pipeline.get("id")
+        if not pipeline_id:
+            continue
+        if len(db.get_steps(pipeline_id)) == 0:
+            pipelines_without_steps.append(pipeline["name"])
+
+    if pipelines_without_steps:
+        logger.warning(
+            "startup_sync: %d pipeline(s) have 0 step rows in DB: %s",
+            len(pipelines_without_steps),
+            ", ".join(pipelines_without_steps[:5]) + ("..." if len(pipelines_without_steps) > 5 else ""),
+        )
+
+    return len(pipelines_without_steps)
 
 
 def _migrate_pipeline_steps(db: "BrixDB") -> int:

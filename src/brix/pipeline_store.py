@@ -151,6 +151,13 @@ class PipelineStore:
         pipeline_name = name or pipeline_data.get("name", "unnamed")
         filename = f"{pipeline_name}.yaml"
         path = self.pipelines_dir / filename
+        steps = pipeline_data.get("steps") or []
+
+        if len(steps) == 0:
+            logger.warning(
+                "pipeline_store.save: pipeline '%s' is being saved with 0 steps; integrity will flag NO_STEP_ROWS",
+                pipeline_name,
+            )
 
         now = _now_iso()
         existing_row = self._db.get_pipeline(pipeline_name)
@@ -189,7 +196,7 @@ class PipelineStore:
             conn.execute("DELETE FROM pipeline_credential WHERE pipeline_id=?", (pipeline_id,))
             conn.execute("DELETE FROM pipeline_input WHERE pipeline_id=?", (pipeline_id,))
 
-            for step_order, step in enumerate(pipeline_data.get("steps") or []):
+            for step_order, step in enumerate(steps):
                 try:
                     Step.model_validate(step)
                 except Exception as exc:
