@@ -216,11 +216,16 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
     - ``params`` is empty / missing
     - the step is not a specialist step, where ``config`` is semantic input
 
-    Independently of that legacy fallback, a nested ``config.params`` dict is
-    always merged into ``step.params`` for all step types. This lets DB-backed
-    steps persist runner arguments under ``config.params`` while still exposing
-    them through ``step.params``. Existing ``step.params`` keys are preserved
-    unless overridden by ``config.params``.
+    Independently of that legacy fallback, a nested ``config.params`` value is
+    surfaced through ``step.params`` for all step types:
+
+    - ``dict``: merged into ``step.params`` with ``config.params`` taking
+      precedence
+    - ``list``: replaces ``step.params`` directly
+    - ``None``: leaves ``step.params`` unchanged
+
+    This lets DB-backed steps persist runner arguments under ``config.params``
+    while still exposing them through ``step.params``.
 
     Additionally, any dedicated top-level Step field stored inside
     ``step.config`` is promoted back to ``step.<field>``. This keeps DB
@@ -243,7 +248,9 @@ def merge_step_config_into_params(step: dict[str, Any]) -> dict[str, Any]:
         step["params"] = dict(config)
         params = step["params"]
 
-    if isinstance(nested_config_params, dict):
+    if isinstance(nested_config_params, list):
+        step["params"] = list(nested_config_params)
+    elif isinstance(nested_config_params, dict):
         base_params = params if isinstance(params, dict) else {}
         step["params"] = {**base_params, **nested_config_params}
 
