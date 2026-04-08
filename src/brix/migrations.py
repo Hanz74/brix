@@ -419,6 +419,41 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_imports_to_helper_schemas_v81",
         "down": "",
     },
+    # T-BRIX-CHANGELOG-01: Changelog table
+    {
+        "version": 82,
+        "name": "create_changelog_entry_table",
+        "up": """
+            CREATE TABLE IF NOT EXISTS changelog_entry (
+                id          TEXT PRIMARY KEY,
+                version     TEXT NOT NULL,
+                timestamp   TEXT NOT NULL,
+                type        TEXT NOT NULL CHECK(type IN ('breaking','feature','fix','refactor','docs')),
+                title       TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                task_id     TEXT,
+                commit_sha  TEXT,
+                created_at  TEXT NOT NULL
+            )
+        """,
+        "down": "DROP TABLE IF EXISTS changelog_entry",
+    },
+    # T-BRIX-CHANGELOG-01: Import existing git log since v8.0.0
+    {
+        "version": 83,
+        "name": "import_git_log_to_changelog",
+        "up": "",
+        "up_fn": "_import_git_log_to_changelog_v83",
+        "down": "",
+    },
+    # T-BRIX-CHANGELOG-01: Register brix__changelog tool schema
+    {
+        "version": 84,
+        "name": "register_changelog_tool_schema",
+        "up": "",
+        "up_fn": "_register_changelog_tool_schema_v84",
+        "down": "",
+    },
 ]
 
 
@@ -473,6 +508,156 @@ def _add_imports_to_helper_schemas_v81(db: "BrixDB") -> None:
                 (_json.dumps(schema), tool_name),
             )
             logger.info("migration v81: added 'imports' param to '%s'", tool_name)
+
+
+def _import_git_log_to_changelog_v83(db: "BrixDB") -> None:
+    """Import existing git log since v8.0.0 into changelog_entry table."""
+    import re
+    import subprocess
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    # Check if already populated
+    with db._connect() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM changelog_entry").fetchone()[0]
+    if count > 0:
+        logger.info("migration v83: changelog_entry already has %d rows, skipping import", count)
+        return
+
+    # Parse git log — conventional commit format
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", "--format=%H|%aI|%s", "--no-merges"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd="/app",  # container workdir
+        )
+        if result.returncode != 0:
+            # Try host path
+            result = subprocess.run(
+                ["git", "log", "--oneline", "--format=%H|%aI|%s", "--no-merges"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        if result.returncode != 0:
+            logger.warning("migration v83: git log failed (rc=%d), skipping", result.returncode)
+            return
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.warning("migration v83: git not available: %s, skipping", exc)
+        return
+
+    # Classify conventional commit prefixes
+    prefix_map = {
+        "feat!": "breaking",
+        "fix!": "breaking",
+        "refactor!": "breaking",
+        "feat": "feature",
+        "fix": "fix",
+        "refactor": "refactor",
+        "docs": "docs",
+        "chore": "refactor",
+        "perf": "fix",
+        "test": "docs",
+        "ci": "docs",
+        "build": "refactor",
+        "style": "refactor",
+    }
+    cc_re = re.compile(r"^(feat|fix|refactor|docs|chore|perf|test|ci|build|style)(\([^)]*\))?(!)?\s*:\s*(.+)$", re.IGNORECASE)
+    ticket_re = re.compile(r"^(T-BRIX-\S+)\s*:\s*(.+)$")
+
+    # Read current version for latest entries
+    from brix.git_version_bump import read_pyproject_version
+    current_version = read_pyproject_version() or "0.0.0"
+
+    imported = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    with db._connect() as conn:
+        for line in result.stdout.strip().splitlines():
+            if "|" not in line:
+                continue
+            parts = line.split("|", 2)
+            if len(parts) < 3:
+                continue
+            sha, ts, subject = parts[0].strip(), parts[1].strip(), parts[2].strip()
+
+            # Classify
+            entry_type = "fix"  # default
+            title = subject
+            m = cc_re.match(subject)
+            if m:
+                prefix = m.group(1).lower()
+                bang = m.group(3)
+                title = m.group(4).strip()
+                if bang:
+                    entry_type = "breaking"
+                else:
+                    entry_type = prefix_map.get(prefix, "fix")
+            else:
+                tm = ticket_re.match(subject)
+                if tm:
+                    title = tm.group(2).strip()
+                    entry_type = "feature"
+
+            task_id = None
+            tm2 = re.search(r"(T-BRIX-\S+)", subject)
+            if tm2:
+                task_id = tm2.group(1)
+
+            entry_id = str(uuid4())
+            conn.execute(
+                """INSERT OR IGNORE INTO changelog_entry
+                   (id, version, timestamp, type, title, description, task_id, commit_sha, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (entry_id, current_version, ts, entry_type, title, "", task_id, sha, now_iso),
+            )
+            imported += 1
+
+    logger.info("migration v83: imported %d git log entries into changelog", imported)
+
+
+def _register_changelog_tool_schema_v84(db: "BrixDB") -> None:
+    """Register the brix__changelog MCP tool schema in the DB."""
+    import json as _json
+    from datetime import datetime, timezone
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "since": {
+                "type": "string",
+                "description": "Only return entries for versions >= this semver string (e.g. '10.0.0').",
+            },
+            "type": {
+                "type": "string",
+                "enum": ["breaking", "feature", "fix", "refactor", "docs"],
+                "description": "Filter by entry type.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of entries to return (default 50).",
+                "default": 50,
+            },
+        },
+        "required": [],
+    }
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    with db._connect() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                "brix__changelog",
+                "List changelog entries grouped by version. Returns breaking changes, features, fixes, refactors, and docs changes.",
+                _json.dumps(schema),
+                now_iso,
+                now_iso,
+            ),
+        )
+    logger.info("migration v84: registered brix__changelog tool schema")
 
 
 def _runner_json_schema_to_brick_config(schema: dict) -> dict[str, dict]:

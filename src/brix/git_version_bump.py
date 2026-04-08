@@ -100,7 +100,75 @@ def apply_commit_bump(
         return None
 
     old_version, _ = written
+
+    # T-BRIX-CHANGELOG-01: Auto-add changelog entry after version bump
+    _write_changelog_entry(message, new_version)
+
     return (bump, old_version, new_version)
+
+
+def _write_changelog_entry(message: str, version: str) -> None:
+    """Write a changelog entry to the DB for the current commit."""
+    try:
+        import subprocess
+        from brix.db import BrixDB
+
+        subject = message.strip().splitlines()[0].strip() if message.strip() else ""
+        if not subject:
+            return
+
+        # Get commit SHA (may not exist yet during commit-msg hook)
+        sha = ""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                sha = result.stdout.strip()
+        except Exception:
+            pass
+
+        # Classify type from conventional commit prefix
+        cc_re = re.compile(
+            r"^(feat|fix|refactor|docs|chore|perf)(\([^)]*\))?(!)?\s*:\s*(.+)$",
+            re.IGNORECASE,
+        )
+        m = cc_re.match(subject)
+        entry_type = "fix"
+        title = subject
+        if m:
+            prefix = m.group(1).lower()
+            bang = m.group(3)
+            title = m.group(4).strip()
+            if bang:
+                entry_type = "breaking"
+            else:
+                type_map = {
+                    "feat": "feature", "fix": "fix", "refactor": "refactor",
+                    "docs": "docs", "chore": "refactor", "perf": "fix",
+                }
+                entry_type = type_map.get(prefix, "fix")
+        else:
+            # Check for ticket prefix → feature
+            if re.match(r"^T-BRIX-", subject):
+                entry_type = "feature"
+
+        # Extract task_id if present
+        task_match = re.search(r"(T-BRIX-\S+)", subject)
+        task_id = task_match.group(1) if task_match else None
+
+        db = BrixDB()
+        db.add_changelog_entry(
+            version=version,
+            type=entry_type,
+            title=title,
+            commit_sha=sha or None,
+            task_id=task_id,
+        )
+    except Exception:
+        # Never fail the commit due to changelog
+        pass
 
 
 def main(argv: list[str] | None = None) -> int:

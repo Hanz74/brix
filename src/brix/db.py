@@ -51,6 +51,17 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_semver(version: str) -> tuple[int, ...]:
+    """Parse a semver string into a comparable tuple of ints."""
+    parts: list[int] = []
+    for p in version.split("."):
+        try:
+            parts.append(int(p))
+        except (ValueError, TypeError):
+            parts.append(0)
+    return tuple(parts)
+
+
 def _normalize_helper_ref(ref: str) -> str:
     """Normalise a helper/script reference to a bare helper name.
 
@@ -513,7 +524,8 @@ _DDL = [
         content_hash     TEXT DEFAULT '',
         project          TEXT DEFAULT '',
         tags             TEXT DEFAULT '[]',
-        group_name       TEXT DEFAULT ''
+        group_name       TEXT DEFAULT '',
+        imports_json     TEXT DEFAULT '[]'
     )
     """,
     """
@@ -1063,6 +1075,20 @@ _DDL = [
         UNIQUE (entry_type, name)
     )
     """,
+    # T-BRIX-CHANGELOG-01: Changelog entries
+    """
+    CREATE TABLE IF NOT EXISTS changelog_entry (
+        id          TEXT PRIMARY KEY,
+        version     TEXT NOT NULL,
+        timestamp   TEXT NOT NULL,
+        type        TEXT NOT NULL CHECK(type IN ('breaking','feature','fix','refactor','docs')),
+        title       TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        task_id     TEXT,
+        commit_sha  TEXT,
+        created_at  TEXT NOT NULL
+    )
+    """,
 ]
 
 # ---------------------------------------------------------------------------
@@ -1083,7 +1109,7 @@ _KNOWN_TABLES: frozenset[str] = frozenset(
     _re.findall(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", " ".join(_DDL))
 ) | frozenset({
     # Tables created via migrations (not in _DDL)
-    "tip", "schema_migration",
+    "tip", "schema_migration", "changelog_entry",
 })
 
 
@@ -2990,6 +3016,7 @@ class BrixDB:
         project: Optional[str] = None,
         tags: Optional[list] = None,
         group_name: Optional[str] = None,
+        imports: Optional[list[str]] = None,
     ) -> str:
         """Insert or update a helper index entry. Returns the helper id."""
         now = _now_iso()
@@ -3056,6 +3083,12 @@ class BrixDB:
                 cols.append("group_name")
                 vals.append(group_name)
                 updates.append("group_name=excluded.group_name")
+
+            has_imports = self._column_exists(conn, "helper", "imports_json")
+            if has_imports and imports is not None:
+                cols.append("imports_json")
+                vals.append(json.dumps(imports))
+                updates.append("imports_json=excluded.imports_json")
 
             placeholders = ",".join("?" * len(cols))
             col_str = ",".join(cols)
@@ -3159,6 +3192,7 @@ class BrixDB:
         row["input_schema"] = json.loads(row.get("input_schema_json") or "{}")
         row["output_schema"] = json.loads(row.get("output_schema_json") or "{}")
         row["content_hash"] = row.get("content_hash") or ""
+        row["imports"] = json.loads(row.get("imports_json") or "[]")
         return row
 
     def get_pipeline_yaml_content(self, name: str) -> Optional[str]:
@@ -5838,3 +5872,97 @@ class BrixDB:
                 pass
             out.append(d)
         return out
+
+    # ------------------------------------------------------------------
+    # Changelog — T-BRIX-CHANGELOG-01
+    # ------------------------------------------------------------------
+
+    def add_changelog_entry(
+        self,
+        version: str,
+        type: str,
+        title: str,
+        *,
+        description: str = "",
+        task_id: str | None = None,
+        commit_sha: str | None = None,
+        timestamp: str | None = None,
+    ) -> dict:
+        """Insert a changelog entry. Returns the stored row as a dict."""
+        entry_id = str(uuid4())
+        now = _now_iso()
+        ts = timestamp or now
+        valid_types = ("breaking", "feature", "fix", "refactor", "docs")
+        if type not in valid_types:
+            raise ValueError(f"Invalid changelog type '{type}'. Must be one of: {', '.join(valid_types)}")
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO changelog_entry
+                   (id, version, timestamp, type, title, description, task_id, commit_sha, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (entry_id, version, ts, type, title, description, task_id, commit_sha, now),
+            )
+        return {
+            "id": entry_id,
+            "version": version,
+            "timestamp": ts,
+            "type": type,
+            "title": title,
+            "description": description,
+            "task_id": task_id,
+            "commit_sha": commit_sha,
+            "created_at": now,
+        }
+
+    def list_changelog(
+        self,
+        *,
+        since: str | None = None,
+        type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """List changelog entries, optionally filtered.
+
+        Parameters
+        ----------
+        since:
+            If given, only return entries whose version is >= *since*
+            (lexicographic comparison on semver strings works for
+            same-length versions).  Entries are filtered by comparing
+            the ``version`` field.
+        type:
+            Filter to a specific entry type (breaking/feature/fix/refactor/docs).
+        limit:
+            Maximum number of entries to return (default 50).
+
+        Returns
+        -------
+        List of changelog entry dicts, ordered by version DESC, timestamp DESC.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+
+        if type:
+            clauses.append("type = ?")
+            params.append(type)
+
+        where = ""
+        if clauses:
+            where = "WHERE " + " AND ".join(clauses)
+
+        sql = f"SELECT * FROM changelog_entry {where} ORDER BY version DESC, timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(sql, params).fetchall()
+
+        entries = [dict(r) for r in rows]
+
+        # Apply semver-aware 'since' filter in Python (lexicographic SQL
+        # comparison fails for versions like "9.0.0" vs "10.0.0").
+        if since:
+            since_tuple = _parse_semver(since)
+            entries = [e for e in entries if _parse_semver(e["version"]) >= since_tuple]
+
+        return entries

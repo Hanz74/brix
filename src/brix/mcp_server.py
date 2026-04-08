@@ -359,6 +359,7 @@ from brix.mcp_handlers.testing import (
     _handle_list_pins,
 )
 from brix.mcp_handlers.smoke import _handle_smoke_test
+from brix.mcp_handlers.changelog import _handle_changelog
 # T-BRIX-DBF-04: DB-First CRUD for tool_schema, help_topic, keyword, type_compat
 from brix.mcp_handlers.dbfirst_crud import (
     _handle_tool_schema,
@@ -771,6 +772,8 @@ _HANDLERS = {
     "brix__help_topic": _handle_help_topic,
     "brix__keyword": _handle_keyword,
     "brix__type_compat": _handle_type_compat,
+    # T-BRIX-CHANGELOG-01: Changelog
+    "brix__changelog": _handle_changelog,
 }
 
 
