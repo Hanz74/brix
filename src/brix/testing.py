@@ -42,13 +42,15 @@ class TestFixture:
 
     def __init__(
         self,
-        pipeline_path: str,
+        pipeline_path: str = "",
+        pipeline: Optional[Pipeline] = None,
         input_data: Optional[dict] = None,
         mocks: Optional[dict] = None,
         assertions: Optional[dict] = None,
         description: str = "",
     ):
         self.pipeline_path = pipeline_path
+        self.pipeline = pipeline
         self.input_data = input_data or {}
         self.mocks = mocks or {}
         self.assertions = assertions or {}
@@ -92,8 +94,9 @@ class PipelineTestRunner:
         - assertions: list of AssertionResult
         - summary: {steps_passed, steps_total, assertions_passed, assertions_total}
         """
-        # Load pipeline
-        pipeline = self.loader.load(fixture.pipeline_path)
+        # Load pipeline from the fixture directly when provided; otherwise use
+        # the legacy file-based path for YAML-backed tests.
+        pipeline = fixture.pipeline or self.loader.load(fixture.pipeline_path)
 
         # Create engine with mock runners for mocked steps
         engine = PipelineEngine()

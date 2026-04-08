@@ -1013,26 +1013,27 @@ async def _handle_test_pipeline(arguments: dict) -> dict:
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
 
-    # Resolve pipeline path
     store = PipelineStore(pipelines_dir=_pipeline_dir())
-    if not store.exists(name):
-        return {"success": False, "error": f"Pipeline '{name}' not found"}
-
+    pipeline = None
     pipeline_path: "str | None" = None
-    for search_dir in store.search_paths:
-        for ext in [".yaml", ".yml"]:
-            candidate = Path(search_dir) / f"{name}{ext}"
-            if candidate.exists():
-                pipeline_path = str(candidate)
-                break
-        if pipeline_path:
-            break
 
-    if not pipeline_path:
-        return {"success": False, "error": f"Could not locate YAML file for '{name}'"}
+    try:
+        pipeline = store.load(name)
+    except FileNotFoundError:
+        for search_dir in store.search_paths:
+            for ext in [".yaml", ".yml"]:
+                candidate = Path(search_dir) / f"{name}{ext}"
+                if candidate.exists():
+                    pipeline_path = str(candidate)
+                    break
+            if pipeline_path:
+                break
+        if not pipeline_path:
+            return {"success": False, "error": f"Pipeline '{name}' not found"}
 
     fx = TestFixture(
-        pipeline_path=pipeline_path,
+        pipeline_path=pipeline_path or "",
+        pipeline=pipeline,
         input_data=arguments.get("input") or {},
         mocks=arguments.get("mocks") or {},
         assertions=arguments.get("assertions") or {},

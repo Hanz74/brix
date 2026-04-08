@@ -114,6 +114,33 @@ class PipelineValidator:
         self._lint_rules: list[dict] | None = lint_rules
         self._runner_config_schemas: dict[str, dict] | None = None
 
+    @staticmethod
+    def _params_values(step: Step) -> list[Any]:
+        params = getattr(step, "params", None)
+        if isinstance(params, dict):
+            return list(params.values())
+        return []
+
+    @staticmethod
+    def _params_items(step: Step) -> list[tuple[Any, Any]]:
+        params = getattr(step, "params", None)
+        if isinstance(params, dict):
+            return list(params.items())
+        return []
+
+    @staticmethod
+    def _params_keys(step: Step) -> set[Any]:
+        params = getattr(step, "params", None)
+        if isinstance(params, dict):
+            return set(params.keys())
+        return set()
+
+    @staticmethod
+    def _params_get(params: Any, key: str, default: Any = None) -> Any:
+        if isinstance(params, dict):
+            return params.get(key, default)
+        return default
+
     def _load_lint_rules(self) -> list[dict]:
         """Load lint rules from ~/.brix/lint_rules.yaml merged with defaults (T-BRIX-V6-16)."""
         if self._lint_rules is not None:
@@ -374,7 +401,7 @@ class PipelineValidator:
         # Check foreach, params, when, etc. for {{ step_id.output }} references
         fields_to_check = [step.foreach]
         if step.params:
-            fields_to_check.extend(str(v) for v in step.params.values())
+            fields_to_check.extend(str(v) for v in self._params_values(step))
         if step.when:
             fields_to_check.append(step.when)
 
@@ -402,7 +429,7 @@ class PipelineValidator:
                 continue
             fields_to_check = []
             if step.params:
-                fields_to_check.extend(str(v) for v in step.params.values())
+                fields_to_check.extend(str(v) for v in self._params_values(step))
             if step.foreach:
                 fields_to_check.append(step.foreach)
 
@@ -442,7 +469,7 @@ class PipelineValidator:
         input_schema = entry.input_schema or {}
         schema_properties = input_schema.get("properties", {})
         if schema_properties and step.params:
-            for param_key, param_val in step.params.items():
+            for param_key, param_val in self._params_items(step):
                 # Skip Jinja2-template values — considered dynamically supplied
                 if "{{" in str(param_val):
                     continue
@@ -479,7 +506,7 @@ class PipelineValidator:
         if not schema_required:
             return
 
-        provided_keys = set(step.params.keys()) if step.params else set()
+        provided_keys = self._params_keys(step) if step.params else set()
         for req_key in schema_required:
             if req_key not in provided_keys:
                 result.add_warning(
@@ -937,7 +964,7 @@ class PipelineValidator:
             referenced_ids: set[str] = set()
             fields_to_scan = []
             if step.params:
-                fields_to_scan.extend(str(v) for v in step.params.values())
+                fields_to_scan.extend(str(v) for v in self._params_values(step))
             if step.foreach:
                 fields_to_scan.append(step.foreach)
 
@@ -1001,7 +1028,7 @@ class PipelineValidator:
             if not step.foreach:
                 continue
             if step.params:
-                for k, v in step.params.items():
+                for k, v in self._params_items(step):
                     if "base64" in str(k).lower() or "base64" in str(v).lower():
                         result.add_warning(
                             f"Step '{step.id}': param '{k}' contains 'base64' in a foreach step "
@@ -1180,7 +1207,7 @@ class PipelineValidator:
 
         for step in pipeline.steps:
             effective_type = LEGACY_ALIASES.get(step.type, step.type)
-            params = getattr(step, "params", None) or {}
+            params = getattr(step, "params", None)
             config = getattr(step, "config", None) or {}
 
             if step.foreach:
@@ -1200,7 +1227,7 @@ class PipelineValidator:
                     step,
                     "db.upsert data",
                     "list[dict]",
-                    params.get("data"),
+                    self._params_get(params, "data"),
                     lambda ref_id, output_type: (
                         f"Step '{ref_id}' output is {output_type} but db.upsert data expects list[dict]. "
                         f"Did you mean {{{{ {ref_id}.output.rows }}}} or wrap the dict in a one-item list first?"
@@ -1222,7 +1249,7 @@ class PipelineValidator:
                     step,
                     "db.exec params",
                     "list",
-                    params.get("params"),
+                    self._params_get(params, "params"),
                     lambda ref_id, output_type: (
                         f"Step '{ref_id}' output is {output_type} but db.exec params expects list. "
                         f"Wrap the values in a positional list or map them with flow.transform first."
@@ -1244,7 +1271,7 @@ class PipelineValidator:
                     step,
                     "db.query params",
                     "dict",
-                    params.get("params"),
+                    self._params_get(params, "params"),
                     lambda ref_id, output_type: (
                         f"Step '{ref_id}' output is {output_type} but db.query params expects dict. "
                         f"Did you mean {{{{ {ref_id}.output[0] }}}} or map the fields with flow.set first?"
@@ -1266,7 +1293,7 @@ class PipelineValidator:
                     step,
                     "flow.filter input",
                     "list",
-                    params.get("input"),
+                    self._params_get(params, "input"),
                     lambda ref_id, output_type: (
                         f"Step '{ref_id}' output is {output_type} but flow.filter input expects list. "
                         f"Did you mean {{{{ {ref_id}.output.rows }}}} or use flow.flatten first?"
@@ -1287,7 +1314,7 @@ class PipelineValidator:
                 input_refs = []
                 if isinstance(step.inputs, list):
                     input_refs.extend(ref_id for ref_id in step.inputs if isinstance(ref_id, str))
-                params_inputs = params.get("inputs")
+                params_inputs = self._params_get(params, "inputs")
                 if isinstance(params_inputs, list):
                     input_refs.extend(ref_id for ref_id in params_inputs if isinstance(ref_id, str))
                 config_inputs = config.get("inputs")
