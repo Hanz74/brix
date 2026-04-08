@@ -293,6 +293,7 @@ class PipelineValidator:
             self._check_duplicate_ids_across_sub_pipelines(pipeline, result)  # VAL-08
             self._check_large_helper_without_schema(pipeline, result)  # VAL-09
             self._check_cross_helper_imports(pipeline, result)         # VAL-10
+            self._check_step_output_type_compatibility(pipeline, result)  # VAL-11
 
         if result.is_valid:
             result.add_check("Pipeline is valid")
@@ -1057,6 +1058,259 @@ class PipelineValidator:
         except ValueError:
             return None
 
+    @staticmethod
+    def _normalise_output_type(output_type: str) -> str:
+        return (output_type or "").strip().lower()
+
+    def _build_step_output_type_map(self, pipeline: Pipeline) -> dict[str, str]:
+        """Resolve output types for all steps using BrickRegistry with known fallbacks."""
+        known_output_types = {
+            "db.query": "list[dict]",
+            "db.exec": "dict",
+            "db.upsert": "dict",
+            "flow.filter": "list[dict]",
+            "flow.transform": "any",
+            "mcp.call": "any",
+            "script.python": "any",
+            "flow.set": "dict",
+            "flow.merge": "list[dict]",
+        }
+        step_output_types: dict[str, str] = {}
+        try:
+            registry = BrickRegistry()
+        except Exception:
+            registry = None
+
+        for step in pipeline.steps:
+            effective_type = LEGACY_ALIASES.get(step.type, step.type)
+            output_type = ""
+            if registry is not None:
+                try:
+                    brick = registry.get(effective_type)
+                except Exception:
+                    brick = None
+                if brick and getattr(brick, "output_type", ""):
+                    output_type = str(brick.output_type)
+            if not output_type:
+                output_type = known_output_types.get(effective_type, "")
+            if output_type:
+                step_output_types[step.id] = output_type
+        return step_output_types
+
+    @staticmethod
+    def _extract_step_output_refs(value: Any) -> list[str]:
+        if not isinstance(value, str) or "{{" not in value:
+            return []
+        return [match.group(1) for match in re.finditer(r'\{\{\s*(\w+)\.output\b', value)]
+
+    def _is_expected_list_type(self, output_type: str) -> bool:
+        norm = self._normalise_output_type(output_type)
+        if not norm or norm in {"any", "*"}:
+            return True
+        if norm.startswith("list[") or norm == "list":
+            return True
+        return False
+
+    def _is_expected_dict_type(self, output_type: str) -> bool:
+        norm = self._normalise_output_type(output_type)
+        if not norm or norm in {"any", "*"}:
+            return True
+        return norm in {"dict", "object", "json"}
+
+    def _is_single_dict_type(self, output_type: str) -> bool:
+        return self._normalise_output_type(output_type) in {"dict", "object", "json"}
+
+    def _iter_step_output_type_compatibility_issues(self, pipeline: Pipeline) -> list[dict[str, str]]:
+        """Collect output type mismatches for step-to-step references."""
+        step_output_types = self._build_step_output_type_map(pipeline)
+        issues: list[dict[str, str]] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        def add_issue(
+            consumer_step_id: str,
+            source_step_id: str,
+            context_name: str,
+            expected_type: str,
+            actual_type: str,
+            hint: str,
+        ) -> None:
+            key = (consumer_step_id, context_name, source_step_id)
+            if key in seen:
+                return
+            seen.add(key)
+            issues.append(
+                {
+                    "consumer_step_id": consumer_step_id,
+                    "source_step_id": source_step_id,
+                    "context_name": context_name,
+                    "expected_type": expected_type,
+                    "actual_type": actual_type,
+                    "hint": hint,
+                }
+            )
+
+        def check_template_ref(
+            consumer_step: Step,
+            context_name: str,
+            expected_type: str,
+            raw_value: Any,
+            hint_builder,
+        ) -> None:
+            for ref_id in self._extract_step_output_refs(raw_value):
+                output_type = step_output_types.get(ref_id, "")
+                if not output_type:
+                    continue
+                if expected_type == "list":
+                    if self._is_expected_list_type(output_type):
+                        continue
+                elif expected_type == "dict":
+                    if self._is_expected_dict_type(output_type):
+                        continue
+                elif expected_type == "list[dict]":
+                    if self._is_expected_list_type(output_type) and not self._is_single_dict_type(output_type):
+                        continue
+                add_issue(
+                    consumer_step.id,
+                    ref_id,
+                    context_name,
+                    expected_type,
+                    output_type,
+                    hint_builder(ref_id, output_type),
+                )
+
+        for step in pipeline.steps:
+            effective_type = LEGACY_ALIASES.get(step.type, step.type)
+            params = getattr(step, "params", None) or {}
+            config = getattr(step, "config", None) or {}
+
+            if step.foreach:
+                check_template_ref(
+                    step,
+                    "foreach",
+                    "list",
+                    step.foreach,
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but foreach expects list. "
+                        f"Did you mean {{{{ {ref_id}.output.rows }}}} or use flow.flatten first?"
+                    ),
+                )
+
+            if effective_type == "db.upsert":
+                check_template_ref(
+                    step,
+                    "db.upsert data",
+                    "list[dict]",
+                    params.get("data"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but db.upsert data expects list[dict]. "
+                        f"Did you mean {{{{ {ref_id}.output.rows }}}} or wrap the dict in a one-item list first?"
+                    ),
+                )
+                check_template_ref(
+                    step,
+                    "db.upsert data",
+                    "list[dict]",
+                    config.get("data"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but db.upsert data expects list[dict]. "
+                        f"Did you mean {{{{ {ref_id}.output.rows }}}} or wrap the dict in a one-item list first?"
+                    ),
+                )
+
+            if effective_type == "db.exec":
+                check_template_ref(
+                    step,
+                    "db.exec params",
+                    "list",
+                    params.get("params"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but db.exec params expects list. "
+                        f"Wrap the values in a positional list or map them with flow.transform first."
+                    ),
+                )
+                check_template_ref(
+                    step,
+                    "db.exec params",
+                    "list",
+                    config.get("params"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but db.exec params expects list. "
+                        f"Wrap the values in a positional list or map them with flow.transform first."
+                    ),
+                )
+
+            if effective_type == "db.query":
+                check_template_ref(
+                    step,
+                    "db.query params",
+                    "dict",
+                    params.get("params"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but db.query params expects dict. "
+                        f"Did you mean {{{{ {ref_id}.output[0] }}}} or map the fields with flow.set first?"
+                    ),
+                )
+                check_template_ref(
+                    step,
+                    "db.query params",
+                    "dict",
+                    config.get("params"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but db.query params expects dict. "
+                        f"Did you mean {{{{ {ref_id}.output[0] }}}} or map the fields with flow.set first?"
+                    ),
+                )
+
+            if effective_type == "flow.filter":
+                check_template_ref(
+                    step,
+                    "flow.filter input",
+                    "list",
+                    params.get("input"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but flow.filter input expects list. "
+                        f"Did you mean {{{{ {ref_id}.output.rows }}}} or use flow.flatten first?"
+                    ),
+                )
+                check_template_ref(
+                    step,
+                    "flow.filter input",
+                    "list",
+                    config.get("input"),
+                    lambda ref_id, output_type: (
+                        f"Step '{ref_id}' output is {output_type} but flow.filter input expects list. "
+                        f"Did you mean {{{{ {ref_id}.output.rows }}}} or use flow.flatten first?"
+                    ),
+                )
+
+            if effective_type == "flow.merge":
+                input_refs = []
+                if isinstance(step.inputs, list):
+                    input_refs.extend(ref_id for ref_id in step.inputs if isinstance(ref_id, str))
+                params_inputs = params.get("inputs")
+                if isinstance(params_inputs, list):
+                    input_refs.extend(ref_id for ref_id in params_inputs if isinstance(ref_id, str))
+                config_inputs = config.get("inputs")
+                if isinstance(config_inputs, list):
+                    input_refs.extend(ref_id for ref_id in config_inputs if isinstance(ref_id, str))
+                for ref_id in input_refs:
+                    output_type = step_output_types.get(ref_id, "")
+                    if not output_type or self._is_expected_list_type(output_type):
+                        continue
+                    add_issue(
+                        step.id,
+                        ref_id,
+                        "flow.merge inputs",
+                        "list",
+                        output_type,
+                        (
+                            f"Step '{ref_id}' output is {output_type} but flow.merge inputs should resolve to lists. "
+                            f"Use flow.flatten or wrap the item in a list first."
+                        ),
+                    )
+
+        return issues
+
     # ---------------------------------------------------------------------------
     # T-BRIX-VAL-01: Missing .output in step references
     # ---------------------------------------------------------------------------
@@ -1262,33 +1516,31 @@ class PipelineValidator:
     # ---------------------------------------------------------------------------
 
     def _check_foreach_on_non_list(self, pipeline: Pipeline, result: ValidationResult) -> None:
-        """Warn when foreach references a step whose brick output_type is 'dict'."""
-        # Build map of step_id → output_type
-        step_output_types: dict[str, str] = {}
-        try:
-            registry = BrickRegistry()
-            for step in pipeline.steps:
-                effective_type = LEGACY_ALIASES.get(step.type, step.type)
-                brick = registry.get(effective_type)
-                if brick and getattr(brick, "output_type", ""):
-                    step_output_types[step.id] = brick.output_type
-        except Exception:
-            return
-
-        for step in pipeline.steps:
-            if not step.foreach:
+        """Warn when foreach references a step whose output type is not list-like."""
+        for issue in self._iter_step_output_type_compatibility_issues(pipeline):
+            if issue["context_name"] != "foreach":
                 continue
-            foreach_str = str(step.foreach)
-            # Find which step the foreach references
-            for match in re.finditer(r'\{\{\s*(\w+)\.output', foreach_str):
-                ref_id = match.group(1)
-                output_type = step_output_types.get(ref_id, "")
-                if output_type == "dict":
-                    result.add_warning(
-                        f"Step '{step.id}': foreach references '{ref_id}' whose output_type "
-                        f"is 'dict' — foreach expects a list (T-BRIX-VAL-06)",
-                        hint=f"Wrap with | list or use a step type that returns a list.",
-                    )
+            result.add_warning(
+                f"Step '{issue['consumer_step_id']}': foreach references '{issue['source_step_id']}' "
+                f"whose output_type is '{issue['actual_type']}' — foreach expects a list (T-BRIX-VAL-06)",
+                hint=issue["hint"],
+            )
+
+    # ---------------------------------------------------------------------------
+    # T-BRIX-VAL-11: Output type compatibility between referenced steps
+    # ---------------------------------------------------------------------------
+
+    def _check_step_output_type_compatibility(self, pipeline: Pipeline, result: ValidationResult) -> None:
+        """Warn when a step consumes another step's output with an incompatible type."""
+        for issue in self._iter_step_output_type_compatibility_issues(pipeline):
+            if issue["context_name"] == "foreach":
+                continue
+            result.add_warning(
+                f"Step '{issue['consumer_step_id']}': {issue['context_name']} references "
+                f"'{issue['source_step_id']}.output' whose output_type is '{issue['actual_type']}' "
+                f"but expects '{issue['expected_type']}' (T-BRIX-VAL-11)",
+                hint=issue["hint"],
+            )
 
     # ---------------------------------------------------------------------------
     # T-BRIX-VAL-07: db.query used for DML
