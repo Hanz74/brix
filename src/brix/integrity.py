@@ -6,6 +6,7 @@ Detects and auto-fixes common DB inconsistencies.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,9 @@ if TYPE_CHECKING:
     from brix.db import BrixDB
 
 logger = logging.getLogger(__name__)
+
+_HELP_LEGACY_STEP_TYPES = ("http", "python", "mcp", "filter", "transform", "set")
+_HELP_LEGACY_STEP_TYPE_PATTERN = re.compile(r"\b(" + "|".join(_HELP_LEGACY_STEP_TYPES) + r")\b")
 
 # Pipeline search paths mirrored from seed.py
 _PIPELINE_SEARCH_PATHS = [
@@ -88,6 +92,16 @@ def run_integrity_checks(db: "BrixDB") -> dict:
         _check_helper_imports(db, issues)
     except Exception as exc:
         logger.warning("integrity: check_helper_imports failed: %s", exc)
+
+    try:
+        _check_help_brick_consistency(db, issues)
+    except Exception as exc:
+        logger.warning("integrity: check_help_brick_consistency failed: %s", exc)
+
+    try:
+        _check_pipeline_legacy_types(db, issues)
+    except Exception as exc:
+        logger.warning("integrity: check_pipeline_legacy_types failed: %s", exc)
 
     try:
         org_issues = _check_entity_org_metadata(db)
@@ -391,6 +405,70 @@ def _check_helper_references(
         })
 
 
+def _check_help_brick_consistency(
+    db: "BrixDB",
+    issues: list[dict],
+) -> None:
+    """Warn when help topic content still documents legacy flat step types."""
+    findings: list[str] = []
+
+    for topic in db.help_topics_list():
+        name = topic.get("name", "?")
+        content = topic.get("content") or ""
+        matches = sorted(set(_HELP_LEGACY_STEP_TYPE_PATTERN.findall(content)))
+        if matches:
+            findings.append(f"{name}:{','.join(matches)}")
+
+    if findings:
+        issues.append({
+            "code": "HELP_LEGACY_TYPE",
+            "message": (
+                f"{len(findings)} help topic(s) mention legacy flat step types: "
+                + ", ".join(findings[:5])
+                + ("..." if len(findings) > 5 else "")
+            ),
+            "severity": "warning",
+            "topics": findings,
+        })
+
+
+def _check_pipeline_legacy_types(
+    db: "BrixDB",
+    issues: list[dict],
+) -> None:
+    """Warn when pipeline_step rows still use legacy flat step type aliases."""
+    from brix.engine import LEGACY_ALIASES
+
+    findings: list[str] = []
+
+    for pipeline in db.list_pipelines():
+        pipeline_id = pipeline.get("id")
+        if not pipeline_id:
+            continue
+        try:
+            step_rows = db.get_steps(pipeline_id)
+        except Exception:
+            continue
+
+        for step_row in step_rows:
+            step_type = step_row.get("type", "")
+            if step_type in LEGACY_ALIASES:
+                step_id = step_row.get("id", "?")
+                findings.append(f"{pipeline['name']}/{step_id}:{step_type}")
+
+    if findings:
+        issues.append({
+            "code": "PIPELINE_LEGACY_TYPE",
+            "message": (
+                f"{len(findings)} pipeline step(s) use legacy flat step types: "
+                + ", ".join(findings[:5])
+                + ("..." if len(findings) > 5 else "")
+            ),
+            "severity": "warning",
+            "steps": findings,
+        })
+
+
 def _check_entity_org_metadata(db: "BrixDB") -> list[dict]:
     """Check pipeline, helper, and trigger_group rows for missing project/description.
 
@@ -537,5 +615,4 @@ def _check_helper_imports(
             "severity": "error",
             "chains": circular,
         })
-
 
