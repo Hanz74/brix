@@ -3415,6 +3415,13 @@
             "type": "object",
             "description": "JSON Schema describing the helper's output structure."
           },
+          "imports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of helper names this helper imports. Brix materializes them alongside under their clear name."
+          },
           "source": {
             "type": "object",
             "description": "Optional caller identity — expected on every MCP call. Fields: session (pipeline/session name), model (LLM model id), agent (agent name). Used for audit logging. Example: {\"session\": \"buddy-session\", \"model\": \"opus\", \"agent\": \"agent-alpha\"}",
@@ -6166,6 +6173,13 @@
           "output_schema": {
             "type": "object",
             "description": "New output schema (update only, replaces existing)."
+          },
+          "imports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of helper names this helper imports. Brix materializes them alongside under their clear name."
           },
           "source": {
             "type": "object",

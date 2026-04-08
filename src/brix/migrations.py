@@ -406,7 +406,73 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_import_env_profiles_from_yaml_v79",
         "down": "",
     },
+    {
+        "version": 80,
+        "name": "add_imports_json_to_helper",
+        "up": "ALTER TABLE helper ADD COLUMN imports_json TEXT DEFAULT '[]'",
+        "down": "",
+    },
+    {
+        "version": 81,
+        "name": "add_imports_param_to_helper_schemas",
+        "up": "",
+        "up_fn": "_add_imports_to_helper_schemas_v81",
+        "down": "",
+    },
 ]
+
+
+def _add_imports_to_helper_schemas_v81(db: "BrixDB") -> None:
+    """Add 'imports' parameter to input_schema of brix__create_helper and brix__update_helper."""
+    import json as _json
+
+    imports_property = {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": (
+            "List of helper names this helper imports. "
+            "Brix materializes them alongside under their clear name."
+        ),
+    }
+
+    tool_names = ("brix__create_helper", "brix__update_helper")
+    with db._connect() as conn:
+        for tool_name in tool_names:
+            row = conn.execute(
+                "SELECT input_schema FROM mcp_tool_schema WHERE name = ?",
+                (tool_name,),
+            ).fetchone()
+            if not row:
+                logger.warning("migration v81: tool '%s' not found in DB, skipping", tool_name)
+                continue
+
+            raw = row[0]
+            try:
+                schema = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+            except (_json.JSONDecodeError, TypeError):
+                schema = {}
+
+            props = schema.setdefault("properties", {})
+            if "imports" in props:
+                logger.info("migration v81: 'imports' already in '%s', skipping", tool_name)
+                continue
+
+            # Insert 'imports' after 'output_schema' key (preserve insertion order)
+            new_props: dict = {}
+            for key, val in props.items():
+                new_props[key] = val
+                if key == "output_schema":
+                    new_props["imports"] = imports_property
+            # If output_schema was not present, append at end
+            if "imports" not in new_props:
+                new_props["imports"] = imports_property
+            schema["properties"] = new_props
+
+            conn.execute(
+                "UPDATE mcp_tool_schema SET input_schema = ?, updated_at = datetime('now') WHERE name = ?",
+                (_json.dumps(schema), tool_name),
+            )
+            logger.info("migration v81: added 'imports' param to '%s'", tool_name)
 
 
 def _runner_json_schema_to_brick_config(schema: dict) -> dict[str, dict]:
