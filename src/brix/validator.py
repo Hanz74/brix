@@ -194,11 +194,7 @@ class PipelineValidator:
 
         # 5. Credentials
         for key, cred in pipeline.credentials.items():
-            env_val = os.environ.get(cred.env)
-            if env_val:
-                result.add_check(f"Credential '{key}' (env: {cred.env}): set")
-            else:
-                result.add_warning(f"Credential '{key}' (env: {cred.env}): NOT SET")
+            self._check_credential(key, cred.env, result)
 
         # 6. when + default check
         for step in pipeline.steps:
@@ -327,6 +323,29 @@ class PipelineValidator:
         if isinstance(value, dict):
             return "object"
         return type(value).__name__
+
+    def _check_credential(self, key: str, env_ref: str, result: "ValidationResult") -> None:
+        """Check a credential reference: UUID → CredentialStore, else → os.environ."""
+        from brix.credential_store import is_credential_uuid, CredentialStore, CredentialNotFoundError
+
+        if is_credential_uuid(env_ref):
+            try:
+                CredentialStore().get(env_ref)
+                result.add_check(f"Credential '{key}' (uuid: {env_ref}): found in store")
+            except CredentialNotFoundError:
+                result.add_warning(
+                    f"Credential '{key}' (uuid: {env_ref}): NOT FOUND in credential store"
+                )
+            except Exception:
+                result.add_warning(
+                    f"Credential '{key}' (uuid: {env_ref}): could not verify in credential store"
+                )
+        else:
+            env_val = os.environ.get(env_ref)
+            if env_val:
+                result.add_check(f"Credential '{key}' (env: {env_ref}): set")
+            else:
+                result.add_warning(f"Credential '{key}' (env: {env_ref}): NOT SET")
 
     def _check_step_references(self, step, all_step_ids, pipeline, result):
         """Check that step references point to earlier steps."""
