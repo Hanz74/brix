@@ -467,6 +467,11 @@ class PipelineLoader:
             if native is not _SENTINEL:
                 return native
             rendered = self.render_template(value, context)
+            # T-BRIX-LOADER-01: When the template explicitly uses | tojson,
+            # the user wants a JSON *string* — do NOT auto-parse it back to
+            # a Python object via json.loads/ast.literal_eval.
+            if "tojson" in value:
+                return rendered
             try:
                 return json.loads(rendered)
             except (json.JSONDecodeError, ValueError):
