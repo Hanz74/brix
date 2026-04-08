@@ -58,6 +58,16 @@ def _delete_helper_cache_files(name: str, content_hash: str | None = None) -> li
     return deleted
 
 
+def _scan_db_pipelines_for_helper(helper_name: str) -> list[str]:
+    """Return DB-backed pipeline names whose step rows reference the helper."""
+    try:
+        from brix.db import BrixDB as _BrixDB
+
+        return _BrixDB().find_pipelines_referencing_helper(helper_name)
+    except Exception:
+        return []
+
+
 async def _handle_create_helper(arguments: dict) -> dict:
     """Create a new Python helper script with inline code and register it."""
     name = arguments.get("name", "").strip()
@@ -460,8 +470,12 @@ async def _handle_delete_helper(arguments: dict) -> dict:
     if entry is None:
         return {"success": False, "error": f"Helper '{name}' not found in registry"}
 
-    # Scan pipelines for references
-    affected_pipelines = _scan_pipelines_for_helper(name)
+    # Scan DB-backed step rows first; keep the YAML scan as a fallback for any
+    # stale filesystem-only pipeline definitions.
+    affected_pipelines = sorted({
+        *_scan_db_pipelines_for_helper(name),
+        *_scan_pipelines_for_helper(name),
+    })
 
     if affected_pipelines and not force:
         return {

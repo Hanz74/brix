@@ -3265,6 +3265,19 @@ class BrixDB:
             ).fetchall()
             return [self._helper_row_to_dict(dict(r)) for r in rows]
 
+    def find_pipelines_referencing_helper(self, helper_name: str) -> list[str]:
+        """Return pipeline names whose step rows reference ``helper_name``."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT DISTINCT p.name
+                   FROM pipeline_step ps
+                   JOIN pipeline p ON p.id = ps.pipeline_id
+                   WHERE ps.helper = ?
+                   ORDER BY p.name""",
+                (helper_name,),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     # ------------------------------------------------------------------
     # Object Versions (prepared for T-BRIX-V5-07)
     # ------------------------------------------------------------------

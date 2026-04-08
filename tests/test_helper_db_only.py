@@ -187,6 +187,44 @@ async def test_delete_helper_removes_cache_file(
     assert helper_db.get_helper("delete_me") is None
 
 
+@pytest.mark.asyncio
+async def test_delete_helper_blocked_by_db_step_reference(
+    helper_db: BrixDB,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from brix.mcp_handlers import helpers as hh
+
+    monkeypatch.setattr("brix.helper_registry.BrixDB", lambda: helper_db)
+    monkeypatch.setattr("brix.db.BrixDB", lambda *args, **kwargs: helper_db)
+    monkeypatch.setattr("brix.mcp_handlers.helpers._scan_pipelines_for_helper", lambda name: [])
+
+    helper_db.upsert_helper(
+        name="still_used",
+        script_path="db://still_used",
+        description="Helper that is still referenced by a DB-backed step",
+        input_schema={},
+        output_schema={},
+        code="print('still used')\n",
+    )
+    helper_db.upsert_pipeline(
+        name="db-only-pipeline",
+        path="/tmp/db-only-pipeline.yaml",
+    )
+    pipeline = helper_db.get_pipeline("db-only-pipeline")
+    assert pipeline is not None
+    helper_db.upsert_step(
+        pipeline["id"],
+        {"id": "call", "type": "script.python", "helper": "still_used"},
+        step_order=0,
+    )
+
+    result = await hh._handle_delete_helper({"name": "still_used"})
+
+    assert result["success"] is False
+    assert result["affected_pipelines"] == ["db-only-pipeline"]
+    assert helper_db.get_helper("still_used") is not None
+
+
 def test_startup_sync_does_not_scan_disk_for_helpers(
     helper_db: BrixDB,
     monkeypatch: pytest.MonkeyPatch,
