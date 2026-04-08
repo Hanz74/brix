@@ -140,8 +140,8 @@ class PipelineGroupRunner(BaseRunner):
         resolved_shared: dict = {}
         try:
             jinja_ctx = context.to_jinja_context()
-            from jinja2.sandbox import SandboxedEnvironment
-            jinja_env = SandboxedEnvironment()
+            from brix.loader import SandboxedNativeEnvironment
+            jinja_env = SandboxedNativeEnvironment()
             for k, v in shared_params.items():
                 if isinstance(v, str):
                     try:

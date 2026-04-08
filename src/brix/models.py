@@ -110,41 +110,20 @@ class Step(BaseModel):
     """A single pipeline step."""
 
     id: str
-    type: Literal[
-        # Legacy flat names (backward-compatible, resolved via LEGACY_ALIASES in engine)
-        "python", "http", "cli", "mcp", "pipeline", "pipeline_group",
-        "filter", "transform", "set", "stop", "choose", "parallel", "repeat",
-        "notify", "approval", "validate", "specialist",
-        # New runners registered via discover_runners()
-        "db_query", "db_upsert", "db_exec", "llm_batch", "markitdown", "source",
-        "switch", "merge", "error_handler", "wait", "dedup", "aggregate",
-        "flatten", "diff", "respond",
-        # Advanced flow runners (T-BRIX-DB-22)
-        "queue", "emit",
-        # File I/O bricks (T-BRIX-BUG-15 / T-BRIX-BRICK-02)
-        "file_read", "file_write",
-        "file_read_base64", "file_list", "file_load_json",
-        # Brick-First dot-notation names (T-BRIX-DB-05c)
-        "script.python", "http.request", "mcp.call", "script.cli",
-        "flow.filter", "flow.transform", "flow.set", "flow.repeat",
-        "flow.choose", "flow.parallel", "flow.pipeline", "flow.pipeline_group",
-        "flow.validate", "flow.switch", "flow.merge", "flow.error_handler",
-        "flow.wait", "flow.dedup", "flow.aggregate", "flow.flatten", "flow.diff",
-        "action.notify", "action.approval", "action.respond",
-        "extract.specialist",
-        "db.query", "db.upsert", "db.exec",
-        "llm.batch",
-        "markitdown.convert",
-        "source.fetch",
-        # File I/O bricks (T-BRIX-BRICK-02)
-        "file.read", "file.read_base64", "file.write", "file.list", "file.load_json",
-        # Flow/Filter/Extract bricks (T-BRIX-BRICK-03)
-        "keyword_filter", "extract_url", "extract_ics",
-        "filter.keyword", "extract.url", "extract.ics",
-        # Util+LLM bricks (T-BRIX-BRICK-04)
-        "convert_batch", "llm_batch_poll", "util_wait", "util_load_dir",
-        "convert.batch", "llm.batch_poll", "util.wait", "util.load_dir",
-    ]
+    type: str  # Open string — accepts built-in types, legacy aliases, and custom brick names
+
+    @field_validator("type")
+    @classmethod
+    def validate_step_type(cls, v: str) -> str:
+        """Accept any non-empty string.
+
+        Built-in and legacy types are resolved at runtime via LEGACY_ALIASES and
+        _resolve_runner. Custom bricks registered in BrickRegistry are also valid.
+        Validation against the actual registry happens in the engine at execution time.
+        """
+        if not v or not v.strip():
+            raise ValueError("Step type must be a non-empty string")
+        return v.strip()
 
     # Step enablement — disabled steps are unconditionally skipped
     enabled: bool = True

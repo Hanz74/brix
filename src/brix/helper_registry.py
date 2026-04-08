@@ -33,6 +33,7 @@ class HelperEntry:
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     id: Optional[str] = None  # stable UUID
+    imports: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -51,6 +52,7 @@ class HelperEntry:
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
             id=data.get("id"),
+            imports=data.get("imports", []),
         )
 
 
@@ -75,6 +77,7 @@ class HelperRegistry:
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
             id=row.get("id"),
+            imports=row.get("imports", []),
         )
 
     # ------------------------------------------------------------------
@@ -90,6 +93,7 @@ class HelperRegistry:
         input_schema: Optional[dict] = None,
         output_schema: Optional[dict] = None,
         code: str = "",
+        imports: Optional[list[str]] = None,
     ) -> HelperEntry:
         """Register or replace a helper entry.
         """
@@ -122,6 +126,7 @@ class HelperRegistry:
             created_at=created_at,
             updated_at=now,
             id=stable_id,
+            imports=imports or [],
         )
 
         # Write to DB
@@ -135,6 +140,7 @@ class HelperRegistry:
             helper_id=stable_id,
             code=code,
             content_hash=content_hash,
+            imports=imports or [],
         )
         return entry
 
@@ -195,9 +201,10 @@ class HelperRegistry:
             "created_at": db_row.get("created_at"),
             "updated_at": db_row.get("updated_at"),
             "id": db_row.get("id"),
+            "imports": db_row.get("imports", []),
         }
 
-        allowed = {"script", "description", "requirements", "input_schema", "output_schema", "code"}
+        allowed = {"script", "description", "requirements", "input_schema", "output_schema", "code", "imports"}
         for key, value in fields.items():
             if key in allowed:
                 raw[key] = value
@@ -218,6 +225,7 @@ class HelperRegistry:
             helper_id=updated_entry.id,
             code=updated_entry.code,
             content_hash=updated_entry.content_hash,
+            imports=updated_entry.imports,
         )
         return updated_entry
 

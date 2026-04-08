@@ -157,8 +157,8 @@ class PipelineRunner(BaseRunner):
         if not output_slots:
             return {}
 
-        from jinja2.sandbox import SandboxedEnvironment
-        env = SandboxedEnvironment()
+        from brix.loader import SandboxedNativeEnvironment
+        env = SandboxedNativeEnvironment()
 
         # Build a simple context from the result
         result_data = getattr(sub_result, "result", None)
