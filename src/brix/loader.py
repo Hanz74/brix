@@ -9,9 +9,23 @@ import uuid
 
 import yaml
 from jinja2 import ChainableUndefined
+from jinja2.nativetypes import NativeCodeGenerator, native_concat
 from jinja2.sandbox import SandboxedEnvironment
 
 from brix.context import now as utcnow
+
+
+class SandboxedNativeEnvironment(SandboxedEnvironment):
+    """Sandboxed environment that preserves native Python types.
+
+    Combines SandboxedEnvironment's security (no arbitrary code execution)
+    with NativeCodeGenerator's type preservation (dicts/lists/ints stay as
+    their Python types instead of being stringified).
+    """
+
+    code_generator_class = NativeCodeGenerator
+    concat = staticmethod(native_concat)  # type: ignore[assignment]
+
 from brix.models import Pipeline, Step
 
 # Sentinel for _resolve_pure_expression to distinguish "not resolved" from None
@@ -43,22 +57,32 @@ class PipelineLoader:
         # (e.g. {{ skipped_step.output | default([]) }}) without raising
         # UndefinedError — callers use | default() for explicit fallbacks (D-16).
         self.env = SandboxedEnvironment(undefined=ChainableUndefined)
-        # Add tojson filter so dicts/lists render as proper JSON, not Python repr
-        self.env.filters["tojson"] = json.dumps
-        # iif: inline if — {{ condition | iif('true_val', 'false_val') }}
-        self.env.filters["iif"] = lambda val, true_val, false_val="": true_val if val else false_val
-        # unwrap_foreach: extract data values from a ForeachResult items list
-        self.env.filters["unwrap_foreach"] = lambda val: (
-            [item.get("data") for item in val if item.get("success")]
-            if isinstance(val, list)
-            else val
-        )
-        self.env.filters["b64encode"] = lambda s: base64.b64encode(
-            s.encode() if isinstance(s, str) else s
-        ).decode()
-        self.env.filters["b64decode"] = lambda s: base64.b64decode(s).decode()
-        self.env.filters["fromjson"] = json.loads
-        register_brix_jinja_globals(self.env)
+
+        # T-BRIX-LOADER-02: SandboxedNativeEnvironment for render_value().
+        # Preserves native Python types (dict, list, int, float, bool) instead
+        # of converting everything to str.  render_template() and
+        # evaluate_condition() keep using the regular SandboxedEnvironment
+        # because they need string output.
+        self.native_env = SandboxedNativeEnvironment(undefined=ChainableUndefined)
+
+        # Register filters and globals on BOTH environments
+        for env in (self.env, self.native_env):
+            # Add tojson filter so dicts/lists render as proper JSON, not Python repr
+            env.filters["tojson"] = json.dumps
+            # iif: inline if — {{ condition | iif('true_val', 'false_val') }}
+            env.filters["iif"] = lambda val, true_val, false_val="": true_val if val else false_val
+            # unwrap_foreach: extract data values from a ForeachResult items list
+            env.filters["unwrap_foreach"] = lambda val: (
+                [item.get("data") for item in val if item.get("success")]
+                if isinstance(val, list)
+                else val
+            )
+            env.filters["b64encode"] = lambda s: base64.b64encode(
+                s.encode() if isinstance(s, str) else s
+            ).decode()
+            env.filters["b64decode"] = lambda s: base64.b64decode(s).decode()
+            env.filters["fromjson"] = json.loads
+            register_brix_jinja_globals(env)
 
     # ------------------------------------------------------------------
     # Loading
@@ -456,8 +480,8 @@ class PipelineLoader:
     def render_value(self, value, context: dict):
         """Render a value recursively.
 
-        - ``str`` containing ``{{`` → rendered as Jinja2 template; if the
-          result is valid JSON it is parsed and returned as the native type.
+        - ``str`` containing ``{{`` → rendered via NativeEnvironment which
+          preserves Python types (dict, list, int, float, bool).
         - ``dict`` / ``list`` → recursed element by element.
         - Everything else → returned unchanged.
         """
@@ -466,17 +490,28 @@ class PipelineLoader:
             native = self._resolve_pure_expression(value, context)
             if native is not _SENTINEL:
                 return native
-            rendered = self.render_template(value, context)
+
             # T-BRIX-LOADER-01: When the template explicitly uses | tojson,
-            # the user wants a JSON *string* — do NOT auto-parse it back to
-            # a Python object via json.loads/ast.literal_eval.
+            # the user wants a JSON *string* — render with the regular
+            # string-based environment to guarantee a str result.
             if "tojson" in value:
+                return self.render_template(value, context)
+
+            # T-BRIX-LOADER-02: Use SandboxedNativeEnvironment which
+            # preserves Python types instead of stringifying everything.
+            template = self.native_env.from_string(value)
+            rendered = template.render(context)
+
+            # NativeEnvironment returns native types directly for pure
+            # expressions, but for mixed templates (e.g. "prefix_{{ x }}")
+            # it still returns a string.  Keep json.loads/ast.literal_eval
+            # as fallback for edge cases where NativeEnvironment returns str.
+            if not isinstance(rendered, str):
                 return rendered
             try:
                 return json.loads(rendered)
             except (json.JSONDecodeError, ValueError):
                 pass
-            # Fallback: Python repr (Jinja2 renders dicts as {'key': 'val'})
             try:
                 return ast.literal_eval(rendered)
             except (ValueError, SyntaxError):
