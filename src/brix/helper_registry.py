@@ -204,7 +204,18 @@ class HelperRegistry:
             "imports": db_row.get("imports", []),
         }
 
-        allowed = {"script", "description", "requirements", "input_schema", "output_schema", "code", "imports"}
+        allowed = {
+            "script",
+            "description",
+            "requirements",
+            "input_schema",
+            "output_schema",
+            "code",
+            "imports",
+            "project",
+            "tags",
+            "group_name",
+        }
         for key, value in fields.items():
             if key in allowed:
                 raw[key] = value
@@ -226,6 +237,9 @@ class HelperRegistry:
             code=updated_entry.code,
             content_hash=updated_entry.content_hash,
             imports=updated_entry.imports,
+            project=fields.get("project"),
+            tags=fields.get("tags"),
+            group_name=fields.get("group_name"),
         )
         return updated_entry
 

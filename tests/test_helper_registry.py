@@ -174,6 +174,15 @@ class TestHelperRegistryCRUD:
         assert updated.description == "new desc"
         assert updated.requirements == ["requests"]
 
+    def test_update_project_persists_to_db(self, registry):
+        registry.register("org_helper", "/org.py", description="helper with org metadata")
+
+        registry.update("org_helper", project="utility")
+
+        row = registry._db.get_helper("org_helper")
+        assert row is not None
+        assert row["project"] == "utility"
+
     def test_update_missing_raises(self, registry):
         with pytest.raises(KeyError, match="nonexistent"):
             registry.update("nonexistent", script="/x.py")
