@@ -212,7 +212,7 @@ class Step(BaseModel):
     handler_step: Optional[str] = None
 
     # Common to all runners
-    params: Optional[dict[str, Any]] = None
+    params: dict[str, Any] | list[Any] | None = None
 
     # Iteration / parallelism
     foreach: Optional[str] = None
