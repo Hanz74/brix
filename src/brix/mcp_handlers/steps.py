@@ -884,6 +884,20 @@ async def _handle_auto_fix_step(arguments: dict) -> dict:
     if "ModuleNotFoundError" in err_msg:
         module = _re_module_name(err_msg)
         if module:
+            # Check if the "missing" module is actually a registered Brix helper.
+            # Helpers are not pip-installable — the user needs to reference them
+            # via the `imports` field instead.
+            from brix.helper_registry import HelperRegistry
+            from brix.db import BrixDB
+            if HelperRegistry(db=BrixDB()).get(module) is not None:
+                return {
+                    "fixed": False,
+                    "action": f"'{module}' is a Brix helper, not a pip package",
+                    "rerun_hint": (
+                        f"'{module}' is a Brix helper, not a pip package. "
+                        f"Use: update_helper(name='...', imports=['{module}'])"
+                    ),
+                }
             from brix.deps import install_requirements
             ok = install_requirements([module])
             if ok:
