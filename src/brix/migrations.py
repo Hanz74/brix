@@ -454,6 +454,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_changelog_tool_schema_v84",
         "down": "",
     },
+    {
+        "version": 85,
+        "name": "add_group_to_brick_schemas",
+        "up": "",
+        "up_fn": "_add_group_to_brick_schemas_v85",
+        "down": "",
+    },
 ]
 
 
@@ -658,6 +665,47 @@ def _register_changelog_tool_schema_v84(db: "BrixDB") -> None:
             ),
         )
     logger.info("migration v84: registered brix__changelog tool schema")
+
+
+def _add_group_to_brick_schemas_v85(db: "BrixDB") -> None:
+    """Add 'group' parameter to input_schema of brix__create_brick and brix__update_brick."""
+    import json as _json
+
+    group_property = {
+        "type": "string",
+        "description": "Group name for organizational grouping",
+    }
+
+    tool_names = ("brix__create_brick", "brix__update_brick")
+    with db._connect() as conn:
+        for tool_name in tool_names:
+            row = conn.execute(
+                "SELECT input_schema FROM mcp_tool_schema WHERE name = ?",
+                (tool_name,),
+            ).fetchone()
+            if not row:
+                logger.warning("migration v85: tool '%s' not found in DB, skipping", tool_name)
+                continue
+
+            raw = row[0]
+            try:
+                schema = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+            except (_json.JSONDecodeError, TypeError):
+                schema = {}
+
+            props = schema.setdefault("properties", {})
+            if "group" in props:
+                logger.info("migration v85: 'group' already in '%s', skipping", tool_name)
+                continue
+
+            props["group"] = group_property
+            schema["properties"] = props
+
+            conn.execute(
+                "UPDATE mcp_tool_schema SET input_schema = ?, updated_at = datetime('now') WHERE name = ?",
+                (_json.dumps(schema), tool_name),
+            )
+            logger.info("migration v85: added 'group' param to '%s'", tool_name)
 
 
 def _runner_json_schema_to_brick_config(schema: dict) -> dict[str, dict]:
