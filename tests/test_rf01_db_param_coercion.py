@@ -4,6 +4,8 @@ import sqlite3
 import sys
 from types import SimpleNamespace
 
+from brix.loader import PipelineLoader
+from brix.models import Step
 from brix.runners.db_exec import _execute_postgresql as exec_postgresql
 from brix.runners.db_query import _colon_to_pyformat, _execute_sqlite
 
@@ -57,6 +59,35 @@ def test_colon_to_pyformat_escapes_plain_percent_literals():
     params = {"slug": "intro"}
 
     assert _colon_to_pyformat(query, params) == "SELECT '100%%' AS label, %(slug)s AS slug"
+
+
+def test_colon_to_pyformat_converts_param_inside_postgres_array_constructor():
+    query = "SELECT 1 WHERE batch_ref @> ARRAY[:batch_tag]"
+    params = {"batch_tag": "hmk-reextract"}
+
+    assert _colon_to_pyformat(query, params) == (
+        "SELECT 1 WHERE batch_ref @> ARRAY[%(batch_tag)s]"
+    )
+
+
+def test_render_step_params_renders_nested_db_query_params_values():
+    loader = PipelineLoader()
+    step = Step(
+        id="fetch",
+        type="db.query",
+        params={
+            "connection": "analytics",
+            "query": "SELECT 1 WHERE batch_ref @> ARRAY[:batch_tag]",
+            "params": {
+                "batch_tag": "{{ input.batch_tag }}",
+            },
+        },
+    )
+
+    rendered = loader.render_step_params(step, {"input": {"batch_tag": "hmk-reextract"}})
+
+    assert rendered["query"] == "SELECT 1 WHERE batch_ref @> ARRAY[:batch_tag]"
+    assert rendered["params"] == {"batch_tag": "hmk-reextract"}
 
 
 def test_sqlite_path_still_accepts_colon_name_params(tmp_path):

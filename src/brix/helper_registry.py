@@ -4,10 +4,13 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
 from brix.db import BrixDB
+
+REGISTRY_PATH = Path.home() / ".brix" / "helpers" / "registry.yaml"
 
 
 def _now_iso() -> str:

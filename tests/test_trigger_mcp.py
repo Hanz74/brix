@@ -398,6 +398,7 @@ def test_mcp_scheduler_stop(monkeypatch, tmp_path):
     """_handle_scheduler_stop sets running to False."""
     _patch_store(monkeypatch, tmp_path)
     monkeypatch.setattr("brix.mcp_handlers.triggers._scheduler_running", True)
+    monkeypatch.setattr("brix.mcp_handlers.triggers._scheduler_task", None)
 
     result = _run(_mcp._handle_scheduler_stop({}))
     assert result["success"] is True
@@ -410,6 +411,7 @@ def test_mcp_scheduler_stop_not_running(monkeypatch, tmp_path):
     """_handle_scheduler_stop is a no-op when not running."""
     _patch_store(monkeypatch, tmp_path)
     monkeypatch.setattr("brix.mcp_handlers.triggers._scheduler_running", False)
+    monkeypatch.setattr("brix.mcp_handlers.triggers._scheduler_task", None)
 
     result = _run(_mcp._handle_scheduler_stop({}))
     assert result["success"] is True

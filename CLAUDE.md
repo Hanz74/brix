@@ -25,6 +25,7 @@ Brix ist als MCP Server registriert. Claude sieht `mcp__brix__*` Tools automatis
 - **KEIN Container-Rebuild** -> `helpers/` ist Volume-gemountet; Pipeline-Aenderungen laufen ueber die DB
 - **IMMER `mcp__brix__get_tips` zuerst** bei Pipeline-Arbeit
 - **IMMER `mcp__brix__list_bricks` / `search_bricks`** bevor ein Brick genutzt wird
+- **IMMER `mcp__brix__get_brick_schema(name="...")`** bevor ein Step konfiguriert wird -- Schema zeigt required Fields, wo config vs params hingehoert, und welche Typen erwartet werden. 90% der "Bugs" sind Schema-Missachtung!
 
 Falls nicht registriert:
 ```bash

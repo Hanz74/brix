@@ -438,53 +438,16 @@ def _is_test_pipeline(name: str) -> bool:
 
 
 def import_pipeline_content(db: BrixDB) -> int:
-    """Import pipeline YAML content from filesystem into DB.
+    """DEPRECATED — no-op (T-BRIX-DBO-18).
 
-    Only imports if the DB has pipelines without yaml_content.
-    Idempotent: skips pipelines that already have content.
-    Test-pipeline names (see _TEST_PIPELINE_PREFIXES) are never imported.
+    yaml_content is no longer written from live code paths.  Pipelines are
+    registered via DB-only CRUD (upsert_pipeline + upsert_step) without
+    storing raw YAML in the pipeline table.
+
+    Returns 0 always.
     """
-    import yaml as _yaml
-
-    existing = db.count_pipelines_with_content()
-    if existing > 0:
-        logger.info("seed: pipeline table already has %d rows with content, skipping import", existing)
-        return 0
-
-    count = 0
-    seen: set[str] = set()
-
-    for search_dir in _PIPELINE_SEARCH_PATHS:
-        if not search_dir.exists():
-            continue
-        for ext in ("*.yaml", "*.yml"):
-            for f in sorted(search_dir.glob(ext)):
-                name = f.stem
-                if name in seen:
-                    continue
-                seen.add(name)
-                if _is_test_pipeline(name):
-                    logger.debug("Skipping test pipeline '%s' during seed import", name)
-                    continue
-                try:
-                    content = f.read_text(encoding="utf-8")
-                    data = _yaml.safe_load(content) or {}
-                    requirements = data.get("requirements", [])
-                    if not isinstance(requirements, list):
-                        requirements = []
-                    db.upsert_pipeline(
-                        name=name,
-                        path=str(f),
-                        requirements=requirements,
-                        yaml_content=content,
-                    )
-                    count += 1
-                except Exception as exc:
-                    logger.warning("Failed to import pipeline %s: %s", name, exc)
-
-    if count > 0:
-        logger.info("Imported %d pipeline YAML files into DB", count)
-    return count
+    logger.debug("seed: import_pipeline_content is a no-op (T-BRIX-DBO-18)")
+    return 0
 
 
 def import_helper_code(db: BrixDB) -> int:
@@ -677,50 +640,14 @@ def _migrate_steps_in_list(steps: list, changed: list) -> None:
 
 
 def migrate_legacy_step_types(db: BrixDB) -> int:
-    """Migrate all legacy step types in DB-stored pipeline YAML content.
+    """DEPRECATED — no-op (T-BRIX-DBO-18).
 
-    Reads yaml_content from all pipelines, replaces old type names with
-    namespaced equivalents, and writes back to DB. Idempotent.
-    Returns the number of pipelines modified.
+    Legacy step-type migration via yaml_content is no longer supported.
+    All step types are persisted as DB rows (pipeline_step.step_type) and
+    are already in their canonical namespaced form.  YAML content is not
+    read or written from this path.
+
+    Returns 0 always.
     """
-    import yaml as _yaml
-
-    pipelines = db.list_pipelines()
-    modified_count = 0
-
-    for p in pipelines:
-        yaml_content = db.get_pipeline_yaml_content(p["name"])
-        if not yaml_content:
-            continue
-
-        try:
-            data = _yaml.safe_load(yaml_content)
-            if not isinstance(data, dict):
-                continue
-        except Exception:
-            continue
-
-        steps = data.get("steps", [])
-        if not isinstance(steps, list):
-            continue
-
-        changed: list = []
-        _migrate_steps_in_list(steps, changed)
-
-        if changed:
-            new_content = _yaml.dump(data, default_flow_style=False, allow_unicode=True)
-            db.upsert_pipeline(
-                name=p["name"],
-                path=p.get("path", ""),
-                requirements=p.get("requirements", []),
-                yaml_content=new_content,
-            )
-            modified_count += 1
-            logger.debug(
-                "Migrated %d legacy step types in pipeline '%s': %s",
-                len(changed), p["name"], changed
-            )
-
-    if modified_count > 0:
-        logger.info("Migrated legacy step types in %d pipelines", modified_count)
-    return modified_count
+    logger.debug("seed: migrate_legacy_step_types is a no-op (T-BRIX-DBO-18)")
+    return 0

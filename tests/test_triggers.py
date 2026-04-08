@@ -3,11 +3,15 @@ import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
 
 from brix.triggers.models import TriggerConfig
 from brix.triggers.state import TriggerState
 from brix.triggers.service import TriggerService
+
+
+@pytest.fixture(autouse=True)
+def _patch_runtime_paths(monkeypatch, tmp_path):
+    monkeypatch.setattr("brix.context.WORKDIR_BASE", tmp_path / "runs")
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +209,7 @@ steps:
         "brix.triggers.state.TriggerState",
         return_value=state,
     ):
-        result = asyncio.get_event_loop().run_until_complete(engine.run(pipeline))
+        result = asyncio.run(engine.run(pipeline))
 
     assert result.success is True
     events = state.get_unprocessed_events(pipeline_name="test-done-event")
@@ -239,7 +243,7 @@ steps:
         "brix.triggers.state.TriggerState",
         return_value=state,
     ):
-        result = asyncio.get_event_loop().run_until_complete(engine.run(pipeline))
+        result = asyncio.run(engine.run(pipeline))
 
     assert result.success is False
     events = state.get_unprocessed_events(pipeline_name="test-done-failure")
@@ -267,19 +271,36 @@ def test_trigger_state_mark_processed(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_trigger_service_load(tmp_path):
-    """TriggerService.load_triggers reads triggers from a YAML config file."""
-    config = {
-        "triggers": [
-            {"id": "t1", "type": "mail", "pipeline": "import-mails"},
-            {"id": "t2", "type": "file", "pipeline": "process-file", "interval": "1m"},
-        ]
-    }
-    config_path = tmp_path / "triggers.yaml"
-    config_path.write_text(yaml.dump(config))
+    """TriggerService.load_triggers reads triggers from the DB."""
+    from brix.db import BrixDB
+
+    db_path = tmp_path / "brix.db"
+    db = BrixDB(db_path=db_path)
+    db.trigger_add(
+        name="t1",
+        type="mail",
+        pipeline="import-mails",
+        config={},
+        enabled=True,
+    )
+    db.trigger_add(
+        name="t2",
+        type="file",
+        pipeline="process-file",
+        config={"interval": "1m"},
+        enabled=True,
+    )
 
     state = TriggerState(db_path=tmp_path / "triggers.db")
-    svc = TriggerService(config_path=config_path, state=state)
-    svc.load_triggers()
+    svc = TriggerService(state=state)
+    svc._state = state
+    import brix.db as db_mod
+    old_db_path = db_mod.BRIX_DB_PATH
+    db_mod.BRIX_DB_PATH = db_path
+    try:
+        svc.load_triggers()
+    finally:
+        db_mod.BRIX_DB_PATH = old_db_path
 
     assert svc.trigger_count == 2
     assert svc.enabled_count == 2
@@ -288,11 +309,17 @@ def test_trigger_service_load(tmp_path):
 
 
 def test_trigger_service_empty(tmp_path):
-    """TriggerService with no config file has 0 triggers."""
-    config_path = tmp_path / "triggers.yaml"  # does not exist
+    """TriggerService with no DB triggers has 0 triggers."""
+    import brix.db as db_mod
+
+    old_db_path = db_mod.BRIX_DB_PATH
+    db_mod.BRIX_DB_PATH = tmp_path / "brix.db"
     state = TriggerState(db_path=tmp_path / "triggers.db")
-    svc = TriggerService(config_path=config_path, state=state)
-    svc.load_triggers()
+    svc = TriggerService(state=state)
+    try:
+        svc.load_triggers()
+    finally:
+        db_mod.BRIX_DB_PATH = old_db_path
 
     assert svc.trigger_count == 0
     assert svc.enabled_count == 0
@@ -300,19 +327,23 @@ def test_trigger_service_empty(tmp_path):
 
 def test_trigger_service_enabled_count(tmp_path):
     """enabled_count only counts triggers where enabled=True."""
-    config = {
-        "triggers": [
-            {"id": "t1", "type": "mail", "pipeline": "pipeline-a", "enabled": True},
-            {"id": "t2", "type": "mail", "pipeline": "pipeline-b", "enabled": True},
-            {"id": "t3", "type": "file", "pipeline": "pipeline-c", "enabled": False},
-        ]
-    }
-    config_path = tmp_path / "triggers.yaml"
-    config_path.write_text(yaml.dump(config))
+    from brix.db import BrixDB
+    import brix.db as db_mod
 
+    db_path = tmp_path / "brix.db"
+    db = BrixDB(db_path=db_path)
+    db.trigger_add(name="t1", type="mail", pipeline="pipeline-a", config={}, enabled=True)
+    db.trigger_add(name="t2", type="mail", pipeline="pipeline-b", config={}, enabled=True)
+    db.trigger_add(name="t3", type="file", pipeline="pipeline-c", config={}, enabled=False)
+
+    old_db_path = db_mod.BRIX_DB_PATH
+    db_mod.BRIX_DB_PATH = db_path
     state = TriggerState(db_path=tmp_path / "triggers.db")
-    svc = TriggerService(config_path=config_path, state=state)
-    svc.load_triggers()
+    svc = TriggerService(state=state)
+    try:
+        svc.load_triggers()
+    finally:
+        db_mod.BRIX_DB_PATH = old_db_path
 
     assert svc.trigger_count == 3
     assert svc.enabled_count == 2
@@ -357,7 +388,7 @@ def test_file_trigger_finds_files(tmp_path):
     state = _make_state(tmp_path)
     runner = FileTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     filenames = {e["filename"] for e in events}
     assert filenames == {"a.txt", "b.txt"}
     assert all("path" in e and "size" in e and "mtime" in e for e in events)
@@ -372,7 +403,7 @@ def test_file_trigger_empty_dir(tmp_path):
     state = _make_state(tmp_path)
     runner = FileTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     assert events == []
 
 
@@ -387,7 +418,7 @@ def test_file_trigger_pattern(tmp_path):
     state = _make_state(tmp_path)
     runner = FileTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     assert len(events) == 1
     assert events[0]["filename"] == "report.pdf"
 
@@ -398,7 +429,7 @@ def test_file_trigger_missing_path(tmp_path):
     state = _make_state(tmp_path)
     runner = FileTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     assert events == []
 
 
@@ -420,7 +451,7 @@ def test_http_poll_trigger(tmp_path):
         mock_client_cls.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
         mock_client_cls.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        events = asyncio.get_event_loop().run_until_complete(runner.poll())
+        events = asyncio.run(runner.poll())
 
     assert len(events) == 1
     ev = events[0]
@@ -444,7 +475,7 @@ def test_http_poll_trigger_error(tmp_path):
         mock_client_cls.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
         mock_client_cls.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        events = asyncio.get_event_loop().run_until_complete(runner.poll())
+        events = asyncio.run(runner.poll())
 
     assert events == []
 
@@ -464,13 +495,13 @@ def test_pipeline_done_trigger(tmp_path):
     )
     runner = PipelineDoneTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     assert len(events) == 2
     run_ids = {e["run_id"] for e in events}
     assert run_ids == {"run-001", "run-002"}
 
     # Second poll: already marked processed
-    events2 = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events2 = asyncio.run(runner.poll())
     assert events2 == []
 
 
@@ -487,7 +518,7 @@ def test_pipeline_done_trigger_status_filter(tmp_path):
     )
     runner = PipelineDoneTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     assert len(events) == 1
     assert events[0]["status"] == "success"
 
@@ -509,7 +540,7 @@ def test_mail_trigger_no_server(tmp_path):
         new_callable=mock.AsyncMock,
         side_effect=FileNotFoundError("No servers.yaml"),
     ):
-        events = asyncio.get_event_loop().run_until_complete(runner.poll())
+        events = asyncio.run(runner.poll())
 
     assert events == []
 
@@ -525,7 +556,7 @@ def test_mail_trigger_mcp_returns_failure(tmp_path):
         new_callable=mock.AsyncMock,
         return_value={"success": False, "error": "auth error"},
     ):
-        events = asyncio.get_event_loop().run_until_complete(runner.poll())
+        events = asyncio.run(runner.poll())
 
 
     assert events == []
@@ -547,7 +578,7 @@ def test_dedup_filters_already_seen(tmp_path):
     state = _make_state(tmp_path)
     runner = FileTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     assert len(events) == 1
 
     # First dedupe: not yet seen
@@ -576,7 +607,7 @@ def test_dedup_no_key_passes_all(tmp_path):
     trigger = _make_trigger(type="file", path=str(watch_dir), dedupe_key="")
     runner = FileTriggerRunner(trigger, state)
 
-    events = asyncio.get_event_loop().run_until_complete(runner.poll())
+    events = asyncio.run(runner.poll())
     new_events = runner.dedupe(events)
     # No dedupe_key → all events pass through
     assert len(new_events) == len(events)
@@ -585,8 +616,15 @@ def test_dedup_no_key_passes_all(tmp_path):
 # --- Registry ---
 
 def test_trigger_runner_registry():
-    """TRIGGER_RUNNERS contains all 4 expected runner types."""
-    assert set(TRIGGER_RUNNERS.keys()) == {"mail", "file", "http_poll", "pipeline_done"}
+    """TRIGGER_RUNNERS exposes the registered trigger types."""
+    assert set(TRIGGER_RUNNERS.keys()) == {
+        "mail",
+        "file",
+        "http_poll",
+        "pipeline_done",
+        "event",
+        "schedule",
+    }
     assert TRIGGER_RUNNERS["mail"] is MailTriggerRunner
     assert TRIGGER_RUNNERS["file"] is FileTriggerRunner
     assert TRIGGER_RUNNERS["http_poll"] is HttpPollTriggerRunner

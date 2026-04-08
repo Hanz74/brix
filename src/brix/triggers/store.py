@@ -1,9 +1,4 @@
-"""TriggerStore — DB-backed CRUD for trigger configurations.
-
-Stores triggers in brix.db (BrixDB).
-The TriggerService continues to read from trigger.yaml for backward compat;
-TriggerStore is the new MCP-facing layer.
-"""
+"""TriggerStore — DB-backed CRUD for trigger configurations."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
