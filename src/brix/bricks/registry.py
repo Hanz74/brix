@@ -49,6 +49,7 @@ def _row_to_brick(row: dict) -> BrickSchema:
         examples=examples,
         related_connector=row.get("related_connector", ""),
         system=bool(row.get("system", False)),
+        group_name=row.get("group_name", ""),
     )
 
 

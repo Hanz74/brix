@@ -146,6 +146,31 @@ async def _handle_search_bricks(arguments: dict) -> dict:
 
     results = _registry.search(query, category=category)
 
+    # T-BRIX-BRICK-GROUP: enrich with org fields from DB (same as list_bricks)
+    _org_map: dict = {}
+    try:
+        from brix.db import BrixDB as _BrixDB
+        import json as _search_json
+        _sdb = _BrixDB()
+        _sconn = _sdb._connect()
+        for row in _sconn.execute(
+            "SELECT name, namespace, org_tags, project, group_name FROM brick_definition"
+        ).fetchall():
+            raw_tags = row[2]
+            try:
+                _tags = _search_json.loads(raw_tags) if raw_tags else []
+            except (ValueError, TypeError):
+                _tags = []
+            _org_map[row[0]] = {
+                "namespace": row[1] or "",
+                "tags": _tags,
+                "project": row[3] or "",
+                "group": row[4] or "",
+            }
+        _sconn.close()
+    except Exception:
+        pass
+
     return {
         "success": True,
         "query": query,
@@ -156,6 +181,7 @@ async def _handle_search_bricks(arguments: dict) -> dict:
                 "description": b.description,
                 "when_to_use": b.when_to_use,
                 "category": b.category,
+                **_org_map.get(b.name, {"namespace": "", "tags": [], "project": "", "group": ""}),
             }
             for b in results
         ],

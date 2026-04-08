@@ -100,6 +100,7 @@ async def _handle_create_brick(arguments: dict) -> dict:
     when_NOT_to_use = arguments.get("when_NOT_to_use", "")
     namespace = arguments.get("namespace", "")
     category = arguments.get("category", "custom")
+    group = arguments.get("group", None)
     source = _extract_source(arguments)
 
     if not name:
@@ -148,6 +149,8 @@ async def _handle_create_brick(arguments: dict) -> dict:
     }
     if org_tags is not None:
         record["org_tags"] = org_tags if isinstance(org_tags, list) else []
+    if group is not None:
+        record["group_name"] = group
 
     db.brick_definitions_upsert(record)
 
@@ -186,6 +189,8 @@ async def _handle_create_brick(arguments: dict) -> dict:
         "category": category,
         "note": "Custom brick created and registered in BrickRegistry.",
     }
+    if group is not None:
+        result["group"] = group
     if org_tags is not None:
         result["tags"] = org_tags
     if warnings:
@@ -227,6 +232,8 @@ async def _handle_update_brick(arguments: dict) -> dict:
 
     # T-BRIX-ORG-01: tags support
     org_tags = arguments.get("tags") or None
+    # T-BRIX-BRICK-GROUP: group support
+    group = arguments.get("group", None)
 
     # Merge updates into existing record
     aliases_raw = existing.get("aliases", "[]")
@@ -255,6 +262,13 @@ async def _handle_update_brick(arguments: dict) -> dict:
     }
     if org_tags is not None:
         record["org_tags"] = org_tags if isinstance(org_tags, list) else []
+    if group is not None:
+        record["group_name"] = group
+    else:
+        # Preserve existing group_name if not being updated
+        existing_group = existing.get("group_name", "")
+        if existing_group:
+            record["group_name"] = existing_group
 
     db.brick_definitions_upsert(record)
 
@@ -279,6 +293,8 @@ async def _handle_update_brick(arguments: dict) -> dict:
         "updated_brick": name,
         "note": "Custom brick updated in DB and BrickRegistry refreshed.",
     }
+    if group is not None:
+        result_upd["group"] = group
     if org_tags is not None:
         result_upd["tags"] = org_tags
     return result_upd

@@ -44,6 +44,9 @@ class BrickSchema(BaseModel):
     # At get() time, child fields are merged over the parent schema — child values override.
     extends: str | None = None
 
+    # T-BRIX-BRICK-GROUP: group_name for logical grouping within a project
+    group_name: str = ""
+
     def to_json_schema(self) -> dict:
         """Export config as JSON Schema for MCP tool parameter definition."""
         properties: dict[str, Any] = {}

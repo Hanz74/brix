@@ -6798,6 +6798,10 @@
               "type": "string"
             },
             "description": "Tags for categorization."
+          },
+          "group": {
+            "type": "string",
+            "description": "Optional group name for logical grouping within a project (e.g. 'transforms', 'integrations')."
           }
         },
         "required": [
@@ -7316,6 +7320,10 @@
               "type": "string"
             },
             "description": "Tags."
+          },
+          "group": {
+            "type": "string",
+            "description": "Optional group name for logical grouping within a project (e.g. 'transforms', 'integrations')."
           }
         },
         "required": [
