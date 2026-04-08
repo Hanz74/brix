@@ -184,6 +184,8 @@ class PipelineEngine:
         self._current_pipeline_name: str = ""
         # Current pipeline strict_bricks flag (set per run)
         self._strict_bricks: bool = False
+        # Current pipeline policy level (set per run)
+        self._policy_level: str = "permissive"
         # Deprecation warnings accumulated during the current run
         self._deprecation_warnings: list[str] = []
 
@@ -258,6 +260,7 @@ class PipelineEngine:
         # Reset per-run deprecation state (T-BRIX-DB-05d)
         self._current_pipeline_name = pipeline.name
         self._strict_bricks = pipeline.strict_bricks
+        self._policy_level = pipeline.policy_level
         self._deprecation_warnings = []
 
         start_time = time.monotonic()

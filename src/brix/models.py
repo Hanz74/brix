@@ -441,6 +441,11 @@ class Pipeline(BaseModel):
     # raises an error instead of emitting a deprecation warning.
     # Compositor-Mode sets this automatically.
     strict_bricks: bool = False
+    # Runtime policy escalation for step-type enforcement.
+    # permissive: legacy flat names warn
+    # strict: legacy flat names error
+    # locked: any non-brick step type errors
+    policy_level: Literal["permissive", "strict", "locked"] = "permissive"
 
     # Test-Mode (T-BRIX-DB-24): when True, db.upsert steps are dry (logged but
     # not written to DB) and action.notify steps are log-only (no real sends).
@@ -456,6 +461,10 @@ class Pipeline(BaseModel):
             # We detect "explicitly set" via model_fields_set.
             if "allow_code" not in self.model_fields_set:
                 object.__setattr__(self, "allow_code", False)
+        # Backward compatibility: strict_bricks remains an opt-in alias for
+        # strict policy unless the caller chose a stronger policy explicitly.
+        if self.strict_bricks and self.policy_level == "permissive":
+            object.__setattr__(self, "policy_level", "strict")
         return self
 
     @field_validator("credentials", mode="before")
@@ -517,6 +526,7 @@ class Pipeline(BaseModel):
             "compositor_mode": bool(pipeline_row.get("compositor_mode")),
             "allow_code": bool(pipeline_row.get("allow_code")),
             "strict_bricks": bool(pipeline_row.get("strict_bricks")),
+            "policy_level": pipeline_row.get("policy_level") or "permissive",
             "test_mode": bool(pipeline_row.get("test_mode")),
             "template_params": _json_loads(pipeline_row.get("template_params_json")) or {},
             "blueprint_params": _json_loads(pipeline_row.get("blueprint_params_json")) or [],

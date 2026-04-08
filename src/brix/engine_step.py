@@ -56,6 +56,15 @@ class StepExecutor:
         """Return True when step output should be persisted to step_outputs table."""
         return step.persist_output or bool(os.environ.get("BRIX_DEBUG"))
 
+    def _effective_policy_level(self) -> Literal["permissive", "strict", "locked"]:
+        """Return the active step-type policy with strict_bricks back-compat."""
+        raw_level = getattr(self.engine, "_policy_level", "permissive")
+        if raw_level == "locked":
+            return "locked"
+        if raw_level == "strict" or getattr(self.engine, "_strict_bricks", False):
+            return "strict"
+        return "permissive"
+
     # ------------------------------------------------------------------
     # Methods moved from PipelineEngine (profile / brick / runner / creds)
     # ------------------------------------------------------------------
@@ -164,6 +173,7 @@ class StepExecutor:
         from brix.engine import LEGACY_ALIASES
 
         engine = self.engine
+        policy_level = self._effective_policy_level()
         # 0. Dynamic Dispatch (T-BRIX-DB-23): render Jinja2 step type
         if "{{" in step_type and jinja_ctx is not None:
             try:
@@ -182,8 +192,7 @@ class StepExecutor:
         # 1. Legacy-Alias layer — old flat name -> new brick name -> runner (with warning)
         new_name = LEGACY_ALIASES.get(step_type)
         if new_name:
-            # strict_bricks=True: block old types with an error (T-BRIX-DB-05d)
-            if engine._strict_bricks:
+            if policy_level in {"strict", "locked"}:
                 raise ValueError(
                     f"Step type '{step_type}' is a legacy alias (strict_bricks=True). "
                     f"Use '{new_name}' instead."
@@ -223,6 +232,12 @@ class StepExecutor:
             runner = engine._runners.get(brick.runner)
             if runner is not None:
                 return runner
+
+        if policy_level == "locked":
+            raise ValueError(
+                f"Step type '{step_type}' is not a registered brick (policy_level=locked). "
+                "Use a dot-notation brick type."
+            )
 
         # 3. Direct runner lookup (fast path for flat names not in LEGACY_ALIASES)
         runner = engine._runners.get(step_type)
@@ -827,7 +842,24 @@ class StepExecutor:
         _early_jinja_ctx = context.to_jinja_context() if "{{" in step.type else None
 
         # Get runner
-        runner = self._resolve_runner(step.type, jinja_ctx=_early_jinja_ctx)
+        try:
+            runner = self._resolve_runner(step.type, jinja_ctx=_early_jinja_ctx)
+        except ValueError as policy_err:
+            _policy_err_msg = str(policy_err)
+            step_statuses[step.id] = StepStatus(
+                status="error", duration=0.0, errors=1,
+                error_message=_policy_err_msg,
+            )
+            self.engine.progress.step_start(step.id, step.type)
+            self.engine.progress.step_error(step.id, _policy_err_msg)
+            effective_on_error = step.on_error or pipeline.error_handling.on_error
+            if effective_on_error == "stop":
+                return PreExecuteStepResult(
+                    step=step,
+                    action="break",
+                    pipeline_aborted=True,
+                )
+            return PreExecuteStepResult(step=step, action="continue")
         if not runner:
             _no_runner_msg = f"no runner registered for type '{step.type}'"
             step_statuses[step.id] = StepStatus(

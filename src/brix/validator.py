@@ -2,6 +2,7 @@
 import difflib
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 from pydantic_core import PydanticUndefined
@@ -71,6 +72,87 @@ _DEFAULT_LINT_RULES = [
 ]
 
 
+@dataclass(frozen=True)
+class StepAnalysis:
+    """Normalized, shape-safe read view over one step for validation."""
+
+    step: Step
+    index: int
+    effective_type: str
+    params: dict[str, Any] | list[Any] | None
+    config: dict[str, Any]
+
+    @property
+    def params_dict(self) -> dict[str, Any]:
+        return self.params if isinstance(self.params, dict) else {}
+
+    @property
+    def params_list(self) -> list[Any]:
+        return self.params if isinstance(self.params, list) else []
+
+    @property
+    def has_params(self) -> bool:
+        return bool(self.params_dict) or bool(self.params_list)
+
+    def params_values(self) -> list[Any]:
+        if self.params_dict:
+            return list(self.params_dict.values())
+        return list(self.params_list)
+
+    def params_items(self) -> list[tuple[Any, Any]]:
+        if self.params_dict:
+            return list(self.params_dict.items())
+        return []
+
+    def params_keys(self) -> set[Any]:
+        if self.params_dict:
+            return set(self.params_dict.keys())
+        return set()
+
+    def params_get(self, key: str, default: Any = None) -> Any:
+        return self.params_dict.get(key, default)
+
+
+@dataclass(frozen=True)
+class ValidationContext:
+    """Shared per-validate() analysis context."""
+
+    pipeline: Pipeline
+    analyses: tuple[StepAnalysis, ...]
+    by_step_id: dict[str, StepAnalysis]
+
+    @classmethod
+    def from_pipeline(cls, pipeline: Pipeline) -> "ValidationContext":
+        analyses = tuple(
+            StepAnalysis(
+                step=step,
+                index=index,
+                effective_type=LEGACY_ALIASES.get(step.type, step.type),
+                params=getattr(step, "params", None),
+                config=getattr(step, "config", None)
+                if isinstance(getattr(step, "config", None), dict)
+                else {},
+            )
+            for index, step in enumerate(pipeline.steps)
+        )
+        return cls(
+            pipeline=pipeline,
+            analyses=analyses,
+            by_step_id={analysis.step.id: analysis for analysis in analyses},
+        )
+
+    def for_step(self, step: Step) -> StepAnalysis:
+        return self.by_step_id.get(step.id) or StepAnalysis(
+            step=step,
+            index=-1,
+            effective_type=LEGACY_ALIASES.get(step.type, step.type),
+            params=getattr(step, "params", None),
+            config=getattr(step, "config", None)
+            if isinstance(getattr(step, "config", None), dict)
+            else {},
+        )
+
+
 class ValidationResult:
     def __init__(self):
         self.errors: list[str] = []
@@ -113,32 +195,56 @@ class PipelineValidator:
         # lint_rules: explicit list (for testing), otherwise load from disk + defaults
         self._lint_rules: list[dict] | None = lint_rules
         self._runner_config_schemas: dict[str, dict] | None = None
+        self._validation_ctx: ValidationContext | None = None
 
     @staticmethod
-    def _params_values(step: Step) -> list[Any]:
-        params = getattr(step, "params", None)
-        if isinstance(params, dict):
-            return list(params.values())
-        return []
+    def _params_values(step_or_analysis: Step | StepAnalysis) -> list[Any]:
+        if isinstance(step_or_analysis, StepAnalysis):
+            return step_or_analysis.params_values()
+        return StepAnalysis(
+            step=step_or_analysis,
+            index=-1,
+            effective_type=LEGACY_ALIASES.get(step_or_analysis.type, step_or_analysis.type),
+            params=getattr(step_or_analysis, "params", None),
+            config=getattr(step_or_analysis, "config", None)
+            if isinstance(getattr(step_or_analysis, "config", None), dict)
+            else {},
+        ).params_values()
 
     @staticmethod
-    def _params_items(step: Step) -> list[tuple[Any, Any]]:
-        params = getattr(step, "params", None)
-        if isinstance(params, dict):
-            return list(params.items())
-        return []
+    def _params_items(step_or_analysis: Step | StepAnalysis) -> list[tuple[Any, Any]]:
+        if isinstance(step_or_analysis, StepAnalysis):
+            return step_or_analysis.params_items()
+        return StepAnalysis(
+            step=step_or_analysis,
+            index=-1,
+            effective_type=LEGACY_ALIASES.get(step_or_analysis.type, step_or_analysis.type),
+            params=getattr(step_or_analysis, "params", None),
+            config=getattr(step_or_analysis, "config", None)
+            if isinstance(getattr(step_or_analysis, "config", None), dict)
+            else {},
+        ).params_items()
 
     @staticmethod
-    def _params_keys(step: Step) -> set[Any]:
-        params = getattr(step, "params", None)
-        if isinstance(params, dict):
-            return set(params.keys())
-        return set()
+    def _params_keys(step_or_analysis: Step | StepAnalysis) -> set[Any]:
+        if isinstance(step_or_analysis, StepAnalysis):
+            return step_or_analysis.params_keys()
+        return StepAnalysis(
+            step=step_or_analysis,
+            index=-1,
+            effective_type=LEGACY_ALIASES.get(step_or_analysis.type, step_or_analysis.type),
+            params=getattr(step_or_analysis, "params", None),
+            config=getattr(step_or_analysis, "config", None)
+            if isinstance(getattr(step_or_analysis, "config", None), dict)
+            else {},
+        ).params_keys()
 
     @staticmethod
-    def _params_get(params: Any, key: str, default: Any = None) -> Any:
-        if isinstance(params, dict):
-            return params.get(key, default)
+    def _params_get(params_or_analysis: Any, key: str, default: Any = None) -> Any:
+        if isinstance(params_or_analysis, StepAnalysis):
+            return params_or_analysis.params_get(key, default)
+        if isinstance(params_or_analysis, dict):
+            return params_or_analysis.get(key, default)
         return default
 
     def _load_lint_rules(self) -> list[dict]:
@@ -167,21 +273,23 @@ class PipelineValidator:
             raise ValueError("level must be one of: quick, standard, deep")
 
         result = ValidationResult()
+        self._validation_ctx = ValidationContext.from_pipeline(pipeline)
 
         # 1. Step IDs unique
-        step_ids = [s.id for s in pipeline.steps]
+        step_ids = [analysis.step.id for analysis in self._validation_ctx.analyses]
         if len(step_ids) != len(set(step_ids)):
             result.add_error("Duplicate step IDs found")
         else:
             result.add_check("Step IDs are unique")
 
         # 2. Step references valid (no dangling {{ step.output }})
-        for step in pipeline.steps:
-            self._check_step_references(step, step_ids, pipeline, result)
+        for analysis in self._validation_ctx.analyses:
+            self._check_step_references(analysis, step_ids, pipeline, result)
 
         # 3. MCP steps have server + tool
-        for step in pipeline.steps:
-            if step.type == "mcp":
+        for analysis in self._validation_ctx.analyses:
+            step = analysis.step
+            if analysis.effective_type == "mcp.call":
                 if not step.server:
                     result.add_error(f"Step '{step.id}': MCP step needs 'server'")
                 if not step.tool:
@@ -228,14 +336,14 @@ class PipelineValidator:
             self._check_credential(key, cred.env, result)
 
         # 6. when + default check
-        for step in pipeline.steps:
-            if step.when:
-                self._check_when_default(step, pipeline.steps, result)
+        for analysis in self._validation_ctx.analyses:
+            if analysis.step.when:
+                self._check_when_default(analysis, pipeline.steps, result)
 
         # 8. MCP step params vs cached tool schema (required params)
-        for step in pipeline.steps:
-            if step.type == "mcp" and step.server and step.tool:
-                self._check_mcp_params(step, result)
+        for analysis in self._validation_ctx.analyses:
+            if analysis.effective_type == "mcp.call" and analysis.step.server and analysis.step.tool:
+                self._check_mcp_params(analysis, result)
 
         # 7. Output references valid
         if pipeline.output:
@@ -264,17 +372,18 @@ class PipelineValidator:
                 )
 
         # 11. Proactive hints: on_error:continue on HTTP/MCP steps (T-BRIX-V5-03)
-        for step in pipeline.steps:
-            if step.on_error == "continue" and step.type in ("http", "mcp"):
+        for analysis in self._validation_ctx.analyses:
+            step = analysis.step
+            if step.on_error == "continue" and analysis.effective_type in ("http.request", "mcp.call"):
                 result.add_warning(
-                    f"Step '{step.id}': on_error: continue on a {step.type} step — "
+                    f"Step '{step.id}': on_error: continue on a {analysis.effective_type} step — "
                     f"consider on_error: retry for transient errors."
                 )
 
         # 9b. Helper references — check registry and validate input_schema (T-BRIX-V4-BUG-12)
-        for step in pipeline.steps:
-            if getattr(step, "helper", None):
-                self._check_helper_reference(step, result)
+        for analysis in self._validation_ctx.analyses:
+            if getattr(analysis.step, "helper", None):
+                self._check_helper_reference(analysis, result)
 
         # 9. Requirements — warn if packages not installed (T-BRIX-V4-BUG-11)
         if pipeline.requirements:
@@ -325,7 +434,17 @@ class PipelineValidator:
         if result.is_valid:
             result.add_check("Pipeline is valid")
 
+        self._validation_ctx = None
         return result
+
+    @staticmethod
+    def _effective_policy_level(pipeline: Pipeline) -> str:
+        """Return the active validation policy with strict_bricks back-compat."""
+        if pipeline.policy_level == "locked":
+            return "locked"
+        if pipeline.policy_level == "strict" or pipeline.strict_bricks:
+            return "strict"
+        return "permissive"
 
     def validate_input_params(self, pipeline: "Pipeline", user_input: dict) -> "ValidationResult":
         """Validate that all required pipeline input params are present in user_input.
@@ -348,6 +467,8 @@ class PipelineValidator:
         return f'get_brick_schema(name="{brick_name}")'
 
     def _step_schema_ref(self, step: Any) -> str | None:
+        if isinstance(step, StepAnalysis):
+            return self._schema_ref(step.effective_type)
         step_type = getattr(step, "type", None) or ""
         return self._schema_ref(LEGACY_ALIASES.get(step_type, step_type))
 
@@ -392,16 +513,18 @@ class PipelineValidator:
             else:
                 result.add_warning(f"Credential '{key}' (env: {env_ref}): NOT SET")
 
-    def _check_step_references(self, step, all_step_ids, pipeline, result):
+    def _check_step_references(self, step_or_analysis, all_step_ids, pipeline, result):
         """Check that step references point to earlier steps."""
-        step_idx = next(i for i, s in enumerate(pipeline.steps) if s.id == step.id)
+        analysis = step_or_analysis if isinstance(step_or_analysis, StepAnalysis) else self._validation_ctx.for_step(step_or_analysis)
+        step = analysis.step
+        step_idx = analysis.index if analysis.index >= 0 else next(i for i, s in enumerate(pipeline.steps) if s.id == step.id)
         earlier_ids = set(all_step_ids[:step_idx])
         input_keys = set(pipeline.input.keys())
 
         # Check foreach, params, when, etc. for {{ step_id.output }} references
         fields_to_check = [step.foreach]
-        if step.params:
-            fields_to_check.extend(str(v) for v in self._params_values(step))
+        if analysis.has_params:
+            fields_to_check.extend(str(v) for v in self._params_values(analysis))
         if step.when:
             fields_to_check.append(step.when)
 
@@ -422,14 +545,21 @@ class PipelineValidator:
                                 hint=f"Available step IDs: {all_step_ids}",
                             )
 
-    def _check_when_default(self, when_step, all_steps, result):
+    def _check_when_default(self, when_step_or_analysis, all_steps, result):
         """Warn if a conditional step is referenced without | default."""
+        when_analysis = (
+            when_step_or_analysis
+            if isinstance(when_step_or_analysis, StepAnalysis)
+            else self._validation_ctx.for_step(when_step_or_analysis)
+        )
+        when_step = when_analysis.step
         for step in all_steps:
             if step.id == when_step.id:
                 continue
             fields_to_check = []
-            if step.params:
-                fields_to_check.extend(str(v) for v in self._params_values(step))
+            analysis = self._validation_ctx.for_step(step)
+            if analysis.has_params:
+                fields_to_check.extend(str(v) for v in self._params_values(analysis))
             if step.foreach:
                 fields_to_check.append(step.foreach)
 
@@ -442,7 +572,7 @@ class PipelineValidator:
                             hint=f"Use something like {{ {when_step.id}.output | default(...) }} when '{when_step.id}' may be skipped.",
                         )
 
-    def _check_helper_reference(self, step, result) -> None:
+    def _check_helper_reference(self, step_or_analysis, result) -> None:
         """Validate a step's ``helper`` field against the HelperRegistry (T-BRIX-V4-BUG-12).
 
         Checks:
@@ -451,6 +581,8 @@ class PipelineValidator:
           do not appear in the schema (schema mismatch) — skips Jinja2 templates.
         """
         from brix.helper_registry import HelperRegistry
+        analysis = step_or_analysis if isinstance(step_or_analysis, StepAnalysis) else self._validation_ctx.for_step(step_or_analysis)
+        step = analysis.step
         registry = HelperRegistry()
         entry = registry.get(step.helper)
 
@@ -468,8 +600,8 @@ class PipelineValidator:
         # Schema validation — warn on params not declared in input_schema
         input_schema = entry.input_schema or {}
         schema_properties = input_schema.get("properties", {})
-        if schema_properties and step.params:
-            for param_key, param_val in self._params_items(step):
+        if schema_properties and analysis.has_params:
+            for param_key, param_val in self._params_items(analysis):
                 # Skip Jinja2-template values — considered dynamically supplied
                 if "{{" in str(param_val):
                     continue
@@ -481,7 +613,7 @@ class PipelineValidator:
                         schema_ref=self._schema_ref("script.python"),
                     )
 
-    def _check_mcp_params(self, step, result):
+    def _check_mcp_params(self, step_or_analysis, result):
         """Warn if required MCP tool params are not supplied in the step definition (T-BRIX-V4-21).
 
         Looks up the cached tool schema and checks whether any schema-required
@@ -489,6 +621,8 @@ class PipelineValidator:
         templates (``{{ ... }}``) are considered dynamically supplied and are
         not flagged.
         """
+        analysis = step_or_analysis if isinstance(step_or_analysis, StepAnalysis) else self._validation_ctx.for_step(step_or_analysis)
+        step = analysis.step
         cached_tools = self.cache.load_tools(step.server)
         if not cached_tools:
             return  # No schema cached — skip check
@@ -506,7 +640,7 @@ class PipelineValidator:
         if not schema_required:
             return
 
-        provided_keys = self._params_keys(step) if step.params else set()
+        provided_keys = self._params_keys(analysis) if analysis.has_params else set()
         for req_key in schema_required:
             if req_key not in provided_keys:
                 result.add_warning(
@@ -565,8 +699,9 @@ class PipelineValidator:
     def _resolve_step_schema(self, step) -> dict | None:
         """Resolve JSON schema for a step via BrickRegistry first, then runner schema."""
         registry = BrickRegistry()
-        step_type = getattr(step, "type", "") or ""
-        effective_type = LEGACY_ALIASES.get(step_type, step_type)
+        analysis = step if isinstance(step, StepAnalysis) else self._validation_ctx.for_step(step)
+        step_type = getattr(analysis.step, "type", "") or ""
+        effective_type = analysis.effective_type
 
         brick = registry.get(effective_type)
         if brick is None:
@@ -595,12 +730,13 @@ class PipelineValidator:
 
     def _check_brick_config_schema(self, pipeline: Pipeline, result: ValidationResult) -> None:
         """Validate step config against brick or runner JSON schema."""
-        for step in pipeline.steps:
-            schema = self._resolve_step_schema(step)
+        for analysis in self._validation_ctx.analyses:
+            step = analysis.step
+            schema = self._resolve_step_schema(analysis)
             if not schema:
                 continue
             instance = self._step_to_validation_config(step)
-            schema_ref = self._step_schema_ref(step)
+            schema_ref = self._step_schema_ref(analysis)
             try:
                 jsonschema.validate(instance=instance, schema=schema)
             except ValidationError as exc:
@@ -779,16 +915,50 @@ class PipelineValidator:
                     )
 
     def _check_deprecated_step_types(self, pipeline: Pipeline, result: ValidationResult) -> None:
-        """Warn on legacy flat step types that have dot-notation replacements."""
+        """Escalate legacy flat step types according to pipeline policy."""
+        policy_level = self._effective_policy_level(pipeline)
         for step in pipeline.steps:
             replacement = LEGACY_ALIASES.get(step.type)
             if not replacement:
                 continue
-            result.add_warning(
-                f'Step "{step.id}": type "{step.type}" is deprecated.',
-                hint=f'Use "{replacement}" instead. See list_bricks().',
-                schema_ref=self._schema_ref(replacement),
+            finding = (
+                f'Step "{step.id}": type "{step.type}" is deprecated.'
+                if policy_level == "permissive"
+                else f'Step "{step.id}": type "{step.type}" is not allowed under {policy_level} policy.'
             )
+            hint = (
+                f'Use "{replacement}" instead. See list_bricks().'
+                if policy_level == "permissive"
+                else f'Use "{replacement}" instead.'
+            )
+            if policy_level == "permissive":
+                result.add_warning(
+                    finding,
+                    hint=hint,
+                    schema_ref=self._schema_ref(replacement),
+                )
+            else:
+                result.add_error(
+                    finding,
+                    hint=hint,
+                    schema_ref=self._schema_ref(replacement),
+                )
+        if policy_level != "locked":
+            return
+
+        registry = BrickRegistry()
+        for step in pipeline.steps:
+            if "{{" in step.type:
+                continue
+            if LEGACY_ALIASES.get(step.type):
+                continue
+            brick = registry.get(step.type)
+            if brick is None:
+                result.add_error(
+                    f'Step "{step.id}": type "{step.type}" is not allowed under locked policy.',
+                    hint="Use a registered dot-notation brick type from list_bricks().",
+                    schema_ref=self._schema_ref(step.type),
+                )
 
     def _check_config_param_misplacement(self, pipeline: Pipeline, result: ValidationResult) -> None:
         """Warn when runner-consumed fields are placed in params instead of config."""
@@ -802,13 +972,14 @@ class PipelineValidator:
             "script.cli": ("command",),
         }
         for step in pipeline.steps:
-            effective_type = LEGACY_ALIASES.get(step.type, step.type)
+            analysis = self._validation_ctx.for_step(step)
+            effective_type = analysis.effective_type
             candidate_fields = field_map.get(effective_type)
             if not candidate_fields:
                 continue
-            params = getattr(step, "params", None) or {}
-            config = getattr(step, "config", None) or {}
-            if not isinstance(params, dict):
+            params = analysis.params_dict
+            config = analysis.config
+            if not params:
                 continue
             for field in candidate_fields:
                 if field in params and field not in config:
@@ -848,15 +1019,14 @@ class PipelineValidator:
     def _check_sub_pipeline_existence(self, pipeline: Pipeline, result: ValidationResult) -> None:
         """Ensure statically referenced sub-pipelines exist."""
         store = PipelineStore()
-        for step in pipeline.steps:
-            if step.type not in {"pipeline", "flow.pipeline"}:
+        for analysis in self._validation_ctx.analyses:
+            step = analysis.step
+            if analysis.effective_type != "flow.pipeline":
                 continue
-            params = getattr(step, "params", None) or {}
-            config = getattr(step, "config", None) or {}
             pipeline_name = (
                 getattr(step, "pipeline", None)
-                or (params.get("pipeline") if isinstance(params, dict) else None)
-                or (config.get("pipeline") if isinstance(config, dict) else None)
+                or analysis.params_get("pipeline")
+                or analysis.config.get("pipeline")
             )
             if not pipeline_name or self._is_dynamic_ref(pipeline_name):
                 continue
@@ -871,13 +1041,12 @@ class PipelineValidator:
 
     def _collect_connection_refs(self, pipeline: Pipeline) -> list[tuple[str, str]]:
         refs: list[tuple[str, str]] = []
-        for step in pipeline.steps:
-            params = getattr(step, "params", None) or {}
-            config = getattr(step, "config", None) or {}
+        for analysis in self._validation_ctx.analyses:
+            step = analysis.step
             connection_name = (
                 getattr(step, "connection", None)
-                or (params.get("connection") if isinstance(params, dict) else None)
-                or (config.get("connection") if isinstance(config, dict) else None)
+                or analysis.params_get("connection")
+                or analysis.config.get("connection")
             )
             if not connection_name or self._is_dynamic_ref(connection_name):
                 continue
