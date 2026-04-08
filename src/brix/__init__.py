@@ -1,3 +1,3 @@
 """Brix — DB-First Pipeline Orchestrator for Claude Code."""
 
-__version__ = "10.5.6"
+__version__ = "10.6.1"
