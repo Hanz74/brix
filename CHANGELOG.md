@@ -1,6 +1,6 @@
 # Changelog
 
-## [11.1.1] — 2026-04-09
+## [11.1.3] — 2026-04-09
 
 - docs: capture the live integrity baseline in `docs/drift-inventory.md` and `docs/drift-inventory.json`
 - docs: record all current `NO_STEP_ROWS`, `UNKNOWN_HELPER_REF`, `HELP_LEGACY_TYPE`, and `MISSING_DESCRIPTION` findings from the running system
