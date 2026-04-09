@@ -5,6 +5,7 @@ import pytest
 
 from brix.db import BrixDB
 from brix.integrity import run_integrity_checks
+from brix.mcp_handlers.help import _handle_get_tips
 from brix.migrations import run_pending_migrations
 from brix.pipeline_store import PipelineStore
 
@@ -58,3 +59,23 @@ def test_integrity_detects_help_and_pipeline_legacy_types(tmp_path, db):
     pipeline_issue = next(issue for issue in result["issues"] if issue["code"] == "PIPELINE_LEGACY_TYPE")
     assert pipeline_issue["severity"] == "warning"
     assert "legacy-pipeline/s1:python" in pipeline_issue["steps"]
+
+
+@pytest.mark.asyncio
+async def test_get_tips_surfaces_help_legacy_type_integrity_issue(tmp_path, db, monkeypatch):
+    db.help_topics_upsert(
+        {
+            "name": "legacy-help",
+            "title": "Legacy Help",
+            "content": '{"id": "fetch", "type": "http"}',
+            "category": "docs",
+        }
+    )
+
+    monkeypatch.setattr("brix.db.BRIX_DB_PATH", db.db_path)
+    monkeypatch.setattr("brix.mcp_handlers.help._pipeline_dir", lambda: tmp_path)
+
+    result = await _handle_get_tips({})
+
+    tips_text = "\n".join(result["tips"])
+    assert "[HELP_LEGACY_TYPE]" in tips_text
