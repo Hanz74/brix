@@ -354,6 +354,19 @@ def test_next_actions_recommend_supported_path_for_db_query_dml(_patch_heavy_che
     assert all("workaround" not in action.lower() for action in actions)
 
 
+def test_db_query_dml_escalates_to_error_under_strict_policy(_patch_heavy_checks):
+    pipeline = _pipeline(
+        [_step("write", type="db.query", query="UPDATE users SET active = 1")],
+        policy_level="strict",
+    )
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+    finding = next(f for f in result.findings if f.code == "DB_QUERY_DML")
+
+    assert finding.severity == "error"
+    assert any("db.query contains DML statement" in error for error in result.errors)
+
+
 def test_invalid_ref_inside_choose_branch_is_detected(_patch_heavy_checks):
     pipeline = _pipeline(
         [

@@ -2179,6 +2179,7 @@ class PipelineValidator:
             r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE)\b',
             re.IGNORECASE,
         )
+        policy_level = self._effective_policy_level(ctx.pipeline)
 
         for analysis in ctx.steps:
             step = analysis.step
@@ -2200,16 +2201,22 @@ class PipelineValidator:
 
             match = _DML_PATTERN.search(query)
             if match:
-                result.add_warning(
+                message = (
                     f"Step '{step.id}': db.query contains DML statement "
-                    f"'{match.group(1).upper()}' — use db.exec for DML operations (T-BRIX-VAL-07)",
-                    hint="Use db.exec for UPDATE/DELETE/INSERT",
-                    code="DB_QUERY_DML",
-                    step_id=step.id,
-                    field="query",
-                    why="db.query is SELECT-only, no commit",
-                    schema_ref='get_brick_schema(name="db.exec")',
+                    f"'{match.group(1).upper()}' — use db.exec for DML operations (T-BRIX-VAL-07)"
                 )
+                common_kwargs = {
+                    "hint": "Use db.exec for UPDATE/DELETE/INSERT",
+                    "code": "DB_QUERY_DML",
+                    "step_id": step.id,
+                    "field": "query",
+                    "why": "db.query is SELECT-only, no commit",
+                    "schema_ref": 'get_brick_schema(name="db.exec")',
+                }
+                if policy_level in {"strict", "locked"}:
+                    result.add_error(message, **common_kwargs)
+                else:
+                    result.add_warning(message, **common_kwargs)
 
     # ---------------------------------------------------------------------------
     # T-BRIX-VAL-08: Duplicate step IDs across sub-pipelines
