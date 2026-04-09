@@ -305,22 +305,97 @@ class PipelineValidator:
         if level not in {"quick", "standard", "deep"}:
             raise ValueError("level must be one of: quick, standard, deep")
 
-        result = ValidationResult()
         ctx = ValidationContext.from_pipeline(pipeline)
+        result = ValidationResult()
         self._validation_ctx = ctx
+        try:
+            self.run_core_checks(ctx, result, pipeline_dir=pipeline_dir)
+            if level in {"standard", "deep"}:
+                self.run_schema_checks(ctx, result)
+                self.run_reference_checks(ctx, result)
+                self.run_flow_checks(ctx, result)
+                self.run_lint_checks(ctx, result)
+            if level == "deep":
+                self.run_deep_checks(ctx, result)
 
-        # 1. Step IDs unique
+            if result.is_valid:
+                result.add_check("Pipeline is valid")
+            return result
+        finally:
+            self._validation_ctx = None
+
+    def run_core_checks(
+        self,
+        ctx: ValidationContext,
+        result: ValidationResult,
+        pipeline_dir: Path | None = None,
+    ) -> None:
+        """Run fast structural checks: IDs, references, ordering, and conditions."""
         step_ids = [analysis.step.id for analysis in ctx.steps]
         if len(step_ids) != len(set(step_ids)):
             result.add_error("Duplicate step IDs found")
         else:
             result.add_check("Step IDs are unique")
 
-        # 2. Step references valid (no dangling {{ step.output }})
         for analysis in ctx.steps:
             self._check_step_references(ctx, analysis, result)
 
-        # 3. MCP steps have server + tool
+        if pipeline_dir:
+            for analysis in ctx.steps:
+                step = analysis.step
+                if step.type == "python" and step.script:
+                    script_path = pipeline_dir / step.script
+                    if not script_path.exists():
+                        if not Path(step.script).exists():
+                            result.add_error(
+                                f"Step '{step.id}': Script not found: {step.script}"
+                            )
+                        else:
+                            result.add_check(f"Step '{step.id}': Script exists")
+                    else:
+                        result.add_check(f"Step '{step.id}': Script exists")
+
+        for analysis in ctx.steps:
+            if analysis.step.when:
+                self._check_when_default(ctx, analysis, result)
+
+        if ctx.pipeline.output:
+            input_keys = set(ctx.pipeline.input.keys())
+            for key, ref in ctx.pipeline.output.items():
+                for step_id in step_ids:
+                    if step_id in ref:
+                        break
+                else:
+                    if "{{" in ref:
+                        refs = re.findall(r'\{\{\s*(\w+)\.', str(ref))
+                        if any(r == "input" or r in input_keys for r in refs):
+                            pass
+                        else:
+                            result.add_warning(
+                                f"Output '{key}': may reference non-existent step"
+                            )
+
+        for analysis in ctx.steps:
+            step = analysis.step
+            if step.when and step.else_of:
+                result.add_warning(
+                    f"Step '{step.id}': has both 'when' and 'else_of' — these are mutually exclusive. "
+                    f"'else_of' already implies a condition (runs only when the referenced step was skipped)."
+                )
+
+    def run_schema_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Run schema and config-shape validation checks."""
+        for analysis in ctx.steps:
+            if analysis.effective_type == "mcp.call" and analysis.step.server and analysis.step.tool:
+                self._check_mcp_params(ctx, analysis, result)
+
+        self._check_schema_contracts(ctx, result)
+        self._check_config_param_misplacement(ctx, result)
+        self._check_config_toplevel_conflicts(ctx, result)
+        self._check_brick_config_schema(ctx, result)
+
+    def run_reference_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Run validations for helpers, connections, sub-pipelines, and credentials."""
         for analysis in ctx.steps:
             step = analysis.step
             if analysis.effective_type == "mcp.call":
@@ -328,7 +403,6 @@ class PipelineValidator:
                     result.add_error(f"Step '{step.id}': MCP step needs 'server'")
                 if not step.tool:
                     result.add_error(f"Step '{step.id}': MCP step needs 'tool'")
-                # Check if server is registered
                 if step.server:
                     try:
                         from brix.server_manager import ServerManager
@@ -341,7 +415,6 @@ class PipelineValidator:
                         result.add_warning(
                             f"Could not verify server '{step.server}' in DB"
                         )
-                # Check tool against cache
                 if step.server and step.tool:
                     cached_tools = self.cache.get_tool_names(step.server)
                     if cached_tools and step.tool not in cached_tools:
@@ -349,65 +422,45 @@ class PipelineValidator:
                             f"Step '{step.id}': Tool '{step.tool}' not in cached schema for '{step.server}'"
                         )
 
-        # 4. Python scripts exist
-        if pipeline_dir:
-            for analysis in ctx.steps:
-                step = analysis.step
-                if step.type == "python" and step.script:
-                    script_path = pipeline_dir / step.script
-                    if not script_path.exists():
-                        # Try absolute
-                        if not Path(step.script).exists():
-                            result.add_error(
-                                f"Step '{step.id}': Script not found: {step.script}"
-                            )
-                        else:
-                            result.add_check(f"Step '{step.id}': Script exists")
-                    else:
-                        result.add_check(f"Step '{step.id}': Script exists")
-
-        # 5. Credentials
-        for key, cred in pipeline.credentials.items():
+        for key, cred in ctx.pipeline.credentials.items():
             self._check_credential(key, cred.env, result)
 
-        # 6. when + default check
         for analysis in ctx.steps:
-            if analysis.step.when:
-                self._check_when_default(ctx, analysis, result)
+            if getattr(analysis.step, "helper", None):
+                self._check_helper_reference(ctx, analysis, result)
 
-        # 8. MCP step params vs cached tool schema (required params)
-        for analysis in ctx.steps:
-            if analysis.effective_type == "mcp.call" and analysis.step.server and analysis.step.tool:
-                self._check_mcp_params(ctx, analysis, result)
+        self._check_jinja_ast(ctx, result)
+        self._check_sub_pipeline_existence(ctx, result)
+        self._check_connection_existence(ctx, result)
+        self._check_helper_without_code(ctx, result)
+        self._check_large_helper_without_schema(ctx, result)
+        self._check_cross_helper_imports(ctx, result)
 
-        # 7. Output references valid
-        if pipeline.output:
-            input_keys = set(pipeline.input.keys())
-            for key, ref in pipeline.output.items():
-                for step_id in step_ids:
-                    if step_id in ref:
-                        break
-                else:
-                    if "{{" in ref:
-                        # Allow references to input.* (pipeline input params)
-                        refs = re.findall(r'\{\{\s*(\w+)\.', str(ref))
-                        if any(r == "input" or r in input_keys for r in refs):
-                            pass  # Valid input reference
-                        else:
-                            result.add_warning(
-                                f"Output '{key}': may reference non-existent step"
-                            )
+    def run_flow_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Run data-flow and nested-pipeline validation checks."""
+        if ctx.pipeline.requirements:
+            from brix.deps import check_requirements
 
-        # 10. Proactive hints: when + else_of on same step (T-BRIX-V5-03)
-        for analysis in ctx.steps:
-            step = analysis.step
-            if step.when and step.else_of:
-                result.add_warning(
-                    f"Step '{step.id}': has both 'when' and 'else_of' — these are mutually exclusive. "
-                    f"'else_of' already implies a condition (runs only when the referenced step was skipped)."
+            missing = check_requirements(ctx.pipeline.requirements)
+            if missing:
+                for req in missing:
+                    result.add_warning(
+                        f"Requirement '{req}' is not installed — will be auto-installed at runtime"
+                    )
+            else:
+                result.add_check(
+                    f"All {len(ctx.pipeline.requirements)} requirement(s) installed"
                 )
 
-        # 11. Proactive hints: on_error:continue on HTTP/MCP steps (T-BRIX-V5-03)
+        self._check_missing_output_in_refs(ctx, result)
+        self._check_unused_steps(ctx, result)
+        self._check_sub_pipeline_output_mismatch(ctx, result)
+        self._check_foreach_on_non_list(ctx, result)
+        self._check_duplicate_ids_across_sub_pipelines(ctx, result)
+        self._check_step_output_type_compatibility(ctx, result)
+
+    def run_lint_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Run lint-style warnings and performance hints."""
         for analysis in ctx.steps:
             step = analysis.step
             if step.on_error == "continue" and analysis.effective_type in ("http.request", "mcp.call"):
@@ -416,62 +469,14 @@ class PipelineValidator:
                     f"consider on_error: retry for transient errors."
                 )
 
-        # 9b. Helper references — check registry and validate input_schema (T-BRIX-V4-BUG-12)
-        for analysis in ctx.steps:
-            if getattr(analysis.step, "helper", None):
-                self._check_helper_reference(ctx, analysis, result)
-
-        # 9. Requirements — warn if packages not installed (T-BRIX-V4-BUG-11)
-        if pipeline.requirements:
-            from brix.deps import check_requirements
-            missing = check_requirements(pipeline.requirements)
-            if missing:
-                for req in missing:
-                    result.add_warning(
-                        f"Requirement '{req}' is not installed — will be auto-installed at runtime"
-                    )
-            else:
-                result.add_check(f"All {len(pipeline.requirements)} requirement(s) installed")
-
-        # 12. Schema-Contracts: inter-step output→input schema compatibility (T-BRIX-V6-13)
-        self._check_schema_contracts(ctx, result)
-
-        # 13. Pipeline Linting Rules (T-BRIX-V6-16)
         self._run_lint_rules(ctx, result)
+        self._check_deprecated_step_types(ctx, result)
+        self._check_tojson_on_string(ctx, result)
+        self._check_db_query_dml(ctx, result)
 
-        # 14. Preflight validation (E-BRIX-PREFLIGHT)
-        if level in {"standard", "deep"}:
-            self._check_deprecated_step_types(ctx, result)
-            self._check_config_param_misplacement(ctx, result)
-            self._check_config_toplevel_conflicts(ctx, result)
-            self._check_brick_config_schema(ctx, result)
-            self._check_jinja_ast(ctx, result)
-            self._check_sub_pipeline_existence(ctx, result)
-            self._check_connection_existence(ctx, result)
-
-        # 15. Deep preflight: active connection tests
-        if level == "deep":
-            self._check_connection_health(ctx, result)
-
-        # 16–25. Extended validation checks (T-BRIX-VAL-01 through T-BRIX-VAL-10)
-        if level in {"standard", "deep"}:
-            self._check_missing_output_in_refs(ctx, result)       # VAL-01
-            self._check_tojson_on_string(ctx, result)             # VAL-02
-            self._check_helper_without_code(ctx, result)          # VAL-03
-            self._check_unused_steps(ctx, result)                 # VAL-04
-            self._check_sub_pipeline_output_mismatch(ctx, result) # VAL-05
-            self._check_foreach_on_non_list(ctx, result)          # VAL-06
-            self._check_db_query_dml(ctx, result)                 # VAL-07
-            self._check_duplicate_ids_across_sub_pipelines(ctx, result)  # VAL-08
-            self._check_large_helper_without_schema(ctx, result)  # VAL-09
-            self._check_cross_helper_imports(ctx, result)         # VAL-10
-            self._check_step_output_type_compatibility(ctx, result)  # VAL-11
-
-        if result.is_valid:
-            result.add_check("Pipeline is valid")
-
-        self._validation_ctx = None
-        return result
+    def run_deep_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Run expensive deep validation checks."""
+        self._check_connection_health(ctx, result)
 
     @staticmethod
     def _effective_policy_level(pipeline: Pipeline) -> str:
