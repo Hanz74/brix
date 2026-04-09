@@ -275,7 +275,15 @@ class _RenderedStep:
 
     def __init__(self, step: Step, rendered: Any, loader: PipelineLoader, jinja_ctx: dict):
         rendered_dict = rendered if isinstance(rendered, dict) else {}
-        rendered_params = rendered_dict.get("_params") if "_params" in rendered_dict else rendered
+        rendered_config = rendered_dict.get("_config") if "_config" in rendered_dict else getattr(step, "config", None)
+        if "_params" in rendered_dict:
+            rendered_params = rendered_dict["_params"]
+        elif isinstance(rendered, list):
+            rendered_params = rendered
+        elif isinstance(rendered_config, dict) and "params" in rendered_config:
+            rendered_params = rendered_config.get("params")
+        else:
+            rendered_params = rendered
 
         # Copy original step attributes
         self.id = step.id
@@ -297,7 +305,7 @@ class _RenderedStep:
         self.script = step.script
         self.server = step.server
         self.tool = step.tool
-        self.config = rendered_dict.get("_config") if "_config" in rendered_dict else getattr(step, "config", None)
+        self.config = rendered_config
         self.pipeline = rendered_dict.get("_pipeline") or step.pipeline
         self.params = rendered_params if rendered_params not in (None, {}) else _step_config_dict(step)
         # set runner: rendered values under _values key, fall back to raw values field

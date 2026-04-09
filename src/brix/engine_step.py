@@ -881,10 +881,13 @@ class StepExecutor:
             return PreExecuteStepResult(step=step, action="continue")
 
         # --- validate_config (T-BRIX-STD-03) ---
-        _vc_config = _step_config_dict(step)
+        _vc_jinja_ctx = context.to_jinja_context()
+        _vc_rendered_params = self.engine.loader.render_step_params(step, _vc_jinja_ctx)
+        _vc_rendered_step = _RenderedStep(step, _vc_rendered_params, self.engine.loader, _vc_jinja_ctx)
+        _vc_config = _step_config_dict(_vc_rendered_step)
         # Merge top-level step attributes that runners may read
         for _vc_attr in _VALIDATE_CONFIG_TOP_LEVEL_FIELDS:
-            _vc_val = getattr(step, _vc_attr, None)
+            _vc_val = getattr(_vc_rendered_step, _vc_attr, None)
             if _vc_val is not None:
                 _vc_config[_vc_attr] = _vc_val
         logger.error(
