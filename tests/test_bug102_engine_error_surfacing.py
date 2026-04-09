@@ -33,9 +33,10 @@ steps:
   - id: first
     type: cli
     args: ["echo", "hello"]
-""")
+    """)
 
     engine = PipelineEngine()
+    engine.register_runner("flow.set", engine._runners["set"])
     result = await engine.run(pipeline)
 
     assert result.success is False
@@ -59,3 +60,50 @@ steps:
     assert len(errors) == 1
     assert errors[0]["step_id"] == "_engine_error"
     assert "synthetic engine crash" in errors[0]["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_real_engine_path_persists_engine_error_when_rendering_crashes(monkeypatch, tmp_path):
+    """Unexpected crashes inside step execution must still surface as _engine_error."""
+    import brix.context as context_mod
+    from brix.loader import PipelineLoader as LoaderClass
+
+    original_render_step_params = LoaderClass.render_step_params
+
+    def crashing_render_step_params(self, step, context):
+        if step.id == "explode":
+            raise RuntimeError("synthetic render crash")
+        return original_render_step_params(self, step, context)
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", tmp_path / "runs")
+    monkeypatch.setattr(LoaderClass, "render_step_params", crashing_render_step_params)
+
+    pipeline = PipelineLoader().load_from_string("""
+name: bug102-real-engine-crash
+steps:
+  - id: prepare
+    type: flow.set
+    values:
+      ready: true
+  - id: explode
+    type: flow.set
+    values:
+      never: reached
+""")
+
+    engine = PipelineEngine()
+    engine.register_runner("flow.set", engine._runners["set"])
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert result.steps["prepare"].status == "ok"
+    assert "_engine_error" in result.steps
+    assert result.steps["_engine_error"].status == "error"
+    assert "synthetic render crash" in (result.steps["_engine_error"].error_message or "")
+
+    history = RunHistory()
+    errors = history.get_run_errors(run_id=result.run_id)
+
+    assert len(errors) == 1
+    assert errors[0]["step_id"] == "_engine_error"
+    assert "synthetic render crash" in errors[0]["error_message"]
