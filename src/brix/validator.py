@@ -219,6 +219,7 @@ class ValidationFinding:
     message: str
     why: str = ""
     hint: str = ""
+    suggestion: dict[str, Any] | None = None
     schema_ref: str = ""
 
 
@@ -268,6 +269,7 @@ class ValidationResult:
         field: str | None = None,
         why: str = "",
         hint: str = "",
+        suggestion: dict[str, Any] | None = None,
         schema_ref: str = "",
     ) -> None:
         self.findings.append(
@@ -279,6 +281,7 @@ class ValidationResult:
                 message=message,
                 why=why,
                 hint=hint,
+                suggestion=suggestion,
                 schema_ref=schema_ref,
             )
         )
@@ -293,6 +296,7 @@ class ValidationResult:
         step_id: str | None = None,
         field: str | None = None,
         why: str = "",
+        suggestion: dict[str, Any] | None = None,
     ) -> None:
         self.add_finding(
             code=code,
@@ -302,6 +306,7 @@ class ValidationResult:
             field=field,
             why=why,
             hint=hint or "",
+            suggestion=suggestion,
             schema_ref=schema_ref or "",
         )
 
@@ -324,6 +329,7 @@ class ValidationResult:
         step_id: str | None = None,
         field: str | None = None,
         why: str = "",
+        suggestion: dict[str, Any] | None = None,
     ) -> None:
         self.add_finding(
             code=code,
@@ -333,6 +339,7 @@ class ValidationResult:
             field=field,
             why=why,
             hint=hint or "",
+            suggestion=suggestion,
             schema_ref=schema_ref or "",
         )
 
@@ -346,6 +353,7 @@ class ValidationResult:
         step_id: str | None = None,
         field: str | None = None,
         why: str = "",
+        suggestion: dict[str, Any] | None = None,
     ) -> None:
         self.add_finding(
             code=code,
@@ -355,6 +363,7 @@ class ValidationResult:
             field=field,
             why=why,
             hint=hint or "",
+            suggestion=suggestion,
             schema_ref=schema_ref or "",
         )
 
@@ -1739,11 +1748,15 @@ class PipelineValidator:
                         result.add_warning(
                             f"Step '{step.id}': references {{{{ {root_name}.{attr} }}}} "
                             f"— did you mean {{{{ {root_name}.output.{attr} }}}}? (T-BRIX-VAL-01)",
-                            hint="Step results are nested under .output — direct attribute access on a step ID is usually a mistake.",
+                            hint=f"Change {{{{ {root_name}.{attr} }}}} to {{{{ {root_name}.output.{attr} }}}}",
                             code="MISSING_OUTPUT_REF",
                             step_id=step.id,
                             field=field_path,
-                            why="Step data is exposed through .output, not as direct attributes on the step name.",
+                            why="Step outputs are wrapped in .output layer",
+                            suggestion={
+                                "kind": "rewrite",
+                                "example": f"{{{{ {root_name}.output.{attr} }}}}",
+                            },
                         )
 
     # ---------------------------------------------------------------------------
@@ -1922,7 +1935,11 @@ class PipelineValidator:
                                 f"Step '{step.id}': references '{sub_step_id}.output.{ref_key}' "
                                 f"but sub-pipeline output only declares {sorted(output_keys)} "
                                 f"(T-BRIX-VAL-05)",
-                                hint="Check the sub-pipeline's output mapping or update the reference.",
+                                hint="Check sub-pipeline output: section",
+                                code="SUB_PIPELINE_OUTPUT_MISMATCH",
+                                step_id=step.id,
+                                field="template_ref",
+                                why="Parent references keys not in sub-pipeline output",
                             )
 
     # ---------------------------------------------------------------------------
@@ -1937,7 +1954,11 @@ class PipelineValidator:
             result.add_warning(
                 f"Step '{issue['consumer_step_id']}': foreach references '{issue['source_step_id']}' "
                 f"whose output_type is '{issue['actual_type']}' — foreach expects a list (T-BRIX-VAL-06)",
-                hint=issue["hint"],
+                hint="Use {{ step.output.rows }} or flow.flatten",
+                code="FOREACH_ON_NON_LIST",
+                step_id=issue["consumer_step_id"],
+                field="foreach",
+                why=f"foreach expects list, got {issue['actual_type']}",
             )
 
     # ---------------------------------------------------------------------------
@@ -1953,7 +1974,11 @@ class PipelineValidator:
                 f"Step '{issue['consumer_step_id']}': {issue['context_name']} references "
                 f"'{issue['source_step_id']}.output' whose output_type is '{issue['actual_type']}' "
                 f"but expects '{issue['expected_type']}' (T-BRIX-VAL-11)",
-                hint=issue["hint"],
+                hint="Add flow.flatten or change source",
+                code="STEP_OUTPUT_TYPE_MISMATCH",
+                step_id=issue["consumer_step_id"],
+                field=issue["context_name"],
+                why="Source output type incompatible with consumer",
             )
 
     # ---------------------------------------------------------------------------
@@ -1990,7 +2015,12 @@ class PipelineValidator:
                 result.add_warning(
                     f"Step '{step.id}': db.query contains DML statement "
                     f"'{match.group(1).upper()}' — use db.exec for DML operations (T-BRIX-VAL-07)",
-                    hint="db.query is for SELECT statements. Use db.exec for INSERT/UPDATE/DELETE.",
+                    hint="Use db.exec for UPDATE/DELETE/INSERT",
+                    code="DB_QUERY_DML",
+                    step_id=step.id,
+                    field="query",
+                    why="db.query is SELECT-only, no commit",
+                    schema_ref='get_brick_schema(name="db.exec")',
                 )
 
     # ---------------------------------------------------------------------------

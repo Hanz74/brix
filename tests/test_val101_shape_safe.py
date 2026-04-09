@@ -1,5 +1,4 @@
 """Tests for T-BRIX-VAL-101 shape-safe validator access."""
-
 from unittest.mock import patch
 
 import pytest
@@ -186,9 +185,73 @@ def test_validation_result_exposes_structured_findings_and_compat_lists(_patch_h
     assert finding.step_id == "consumer"
     assert finding.field == "params.value"
     assert "source.items" in finding.message
-    assert finding.why
-    assert finding.hint
+    assert finding.why == "Step outputs are wrapped in .output layer"
+    assert finding.hint == "Change {{ source.items }} to {{ source.output.items }}"
+    assert finding.suggestion == {"kind": "rewrite", "example": "{{ source.output.items }}"}
 
     assert any("source.items" in warning for warning in result.warnings)
     assert result.errors == []
     assert result.infos == []
+
+
+def test_sub_pipeline_output_mismatch_includes_why_and_hint(monkeypatch, _patch_heavy_checks):
+    parent = _pipeline(
+        [
+            _step("sub", type="flow.pipeline", pipeline="child"),
+            _step("consumer", params={"value": "{{ sub.output.missing_key }}"}),
+        ]
+    )
+
+    child = _pipeline([_step("child-step")], output={"rows": "{{ child-step.output }}"})
+    child.name = "child"
+    monkeypatch.setattr("brix.validator.PipelineStore.load", lambda self, name: child)
+
+    result = PipelineValidator(lint_rules=[]).validate(parent, level="standard")
+
+    finding = next(f for f in result.findings if f.code == "SUB_PIPELINE_OUTPUT_MISMATCH")
+    assert finding.why == "Parent references keys not in sub-pipeline output"
+    assert finding.hint == "Check sub-pipeline output: section"
+
+
+def test_foreach_and_type_mismatch_include_structured_metadata(monkeypatch, _patch_heavy_checks):
+    pipeline = _pipeline([_step("consumer", foreach="{{ source.output }}", type="flow.filter", params={"input": "{{ source.output }}"})])
+    issues = [
+        {
+            "consumer_step_id": "consumer",
+            "source_step_id": "source",
+            "context_name": "foreach",
+            "expected_type": "list",
+            "actual_type": "dict",
+            "hint": "unused",
+        },
+        {
+            "consumer_step_id": "consumer",
+            "source_step_id": "source",
+            "context_name": "flow.filter input",
+            "expected_type": "list",
+            "actual_type": "dict",
+            "hint": "unused",
+        },
+    ]
+    monkeypatch.setattr(PipelineValidator, "_iter_step_output_type_compatibility_issues", lambda self, ctx: issues)
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+
+    foreach_finding = next(f for f in result.findings if f.code == "FOREACH_ON_NON_LIST")
+    assert foreach_finding.why == "foreach expects list, got dict"
+    assert foreach_finding.hint == "Use {{ step.output.rows }} or flow.flatten"
+
+    mismatch_finding = next(f for f in result.findings if f.code == "STEP_OUTPUT_TYPE_MISMATCH")
+    assert mismatch_finding.why == "Source output type incompatible with consumer"
+    assert mismatch_finding.hint == "Add flow.flatten or change source"
+
+
+def test_db_query_dml_includes_schema_ref(_patch_heavy_checks):
+    pipeline = _pipeline([_step("write", type="db.query", query="UPDATE users SET active = 1")])
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+
+    finding = next(f for f in result.findings if f.code == "DB_QUERY_DML")
+    assert finding.why == "db.query is SELECT-only, no commit"
+    assert finding.hint == "Use db.exec for UPDATE/DELETE/INSERT"
+    assert finding.schema_ref == 'get_brick_schema(name="db.exec")'
