@@ -210,22 +210,100 @@ class ValidationContext:
         return self.step_map
 
 
+@dataclass(frozen=True)
+class ValidationFinding:
+    code: str
+    severity: str
+    step_id: str | None
+    field: str | None
+    message: str
+    why: str = ""
+    hint: str = ""
+    schema_ref: str = ""
+
+
 class ValidationResult:
     def __init__(self):
-        self.errors: list[str] = []
-        self.warnings: list[str] = []
-        self.infos: list[str] = []  # info-level hints (non-actionable)
+        self.findings: list[ValidationFinding] = []
         self.checks: list[str] = []  # successful checks
 
     @property
     def is_valid(self) -> bool:
         return len(self.errors) == 0
 
+    @property
+    def errors(self) -> list[str]:
+        return [
+            self._format_finding(finding.message, hint=finding.hint or None, schema_ref=finding.schema_ref or None)
+            for finding in self.findings
+            if finding.severity == "error"
+        ]
+
+    @property
+    def warnings(self) -> list[str]:
+        return [
+            self._format_finding(finding.message, hint=finding.hint or None, schema_ref=finding.schema_ref or None)
+            for finding in self.findings
+            if finding.severity == "warning"
+        ]
+
+    @property
+    def infos(self) -> list[str]:
+        return [
+            self._format_finding(finding.message, hint=finding.hint or None, schema_ref=finding.schema_ref or None)
+            for finding in self.findings
+            if finding.severity == "info"
+        ]
+
     def add_check(self, msg: str):
         self.checks.append(msg)
 
-    def add_info(self, msg: str, hint: str | None = None, schema_ref: str | None = None):
-        self.infos.append(self._format_finding(msg, hint=hint, schema_ref=schema_ref))
+    def add_finding(
+        self,
+        *,
+        code: str,
+        severity: str,
+        message: str,
+        step_id: str | None = None,
+        field: str | None = None,
+        why: str = "",
+        hint: str = "",
+        schema_ref: str = "",
+    ) -> None:
+        self.findings.append(
+            ValidationFinding(
+                code=code,
+                severity=severity,
+                step_id=step_id,
+                field=field,
+                message=message,
+                why=why,
+                hint=hint,
+                schema_ref=schema_ref,
+            )
+        )
+
+    def add_info(
+        self,
+        msg: str,
+        hint: str | None = None,
+        schema_ref: str | None = None,
+        *,
+        code: str = "INFO",
+        step_id: str | None = None,
+        field: str | None = None,
+        why: str = "",
+    ) -> None:
+        self.add_finding(
+            code=code,
+            severity="info",
+            message=msg,
+            step_id=step_id,
+            field=field,
+            why=why,
+            hint=hint or "",
+            schema_ref=schema_ref or "",
+        )
 
     @staticmethod
     def _format_finding(msg: str, hint: str | None = None, schema_ref: str | None = None) -> str:
@@ -236,11 +314,49 @@ class ValidationResult:
             parts.append(f"Schema: {schema_ref}")
         return " | ".join(parts)
 
-    def add_error(self, msg: str, hint: str | None = None, schema_ref: str | None = None):
-        self.errors.append(self._format_finding(msg, hint=hint, schema_ref=schema_ref))
+    def add_error(
+        self,
+        msg: str,
+        hint: str | None = None,
+        schema_ref: str | None = None,
+        *,
+        code: str = "ERROR",
+        step_id: str | None = None,
+        field: str | None = None,
+        why: str = "",
+    ) -> None:
+        self.add_finding(
+            code=code,
+            severity="error",
+            message=msg,
+            step_id=step_id,
+            field=field,
+            why=why,
+            hint=hint or "",
+            schema_ref=schema_ref or "",
+        )
 
-    def add_warning(self, msg: str, hint: str | None = None, schema_ref: str | None = None):
-        self.warnings.append(self._format_finding(msg, hint=hint, schema_ref=schema_ref))
+    def add_warning(
+        self,
+        msg: str,
+        hint: str | None = None,
+        schema_ref: str | None = None,
+        *,
+        code: str = "WARNING",
+        step_id: str | None = None,
+        field: str | None = None,
+        why: str = "",
+    ) -> None:
+        self.add_finding(
+            code=code,
+            severity="warning",
+            message=msg,
+            step_id=step_id,
+            field=field,
+            why=why,
+            hint=hint or "",
+            schema_ref=schema_ref or "",
+        )
 
 
 class PipelineValidator:
@@ -333,7 +449,12 @@ class PipelineValidator:
         """Run fast structural checks: IDs, references, ordering, and conditions."""
         step_ids = [analysis.step.id for analysis in ctx.steps]
         if len(step_ids) != len(set(step_ids)):
-            result.add_error("Duplicate step IDs found")
+            result.add_error(
+                "Duplicate step IDs found",
+                code="DUPLICATE_STEP_ID",
+                field="steps[].id",
+                why="Step IDs must be unique so references resolve unambiguously.",
+            )
         else:
             result.add_check("Step IDs are unique")
 
@@ -580,11 +701,19 @@ class PipelineValidator:
                             result.add_error(
                                 f"Step '{step.id}' references future step '{ref}'",
                                 hint=f"Only earlier step IDs are available here: {sorted(earlier_ids)}",
+                                code="FUTURE_STEP_REF",
+                                step_id=step.id,
+                                field="template_ref",
+                                why="Templates can only reference outputs from earlier steps.",
                             )
                         elif ref not in ["item", "credentials"]:
                             result.add_warning(
                                 f"Step '{step.id}' references unknown '{ref}'",
                                 hint=f"Available step IDs: {sorted(ctx.known_step_ids)}",
+                                code="UNKNOWN_STEP_REF",
+                                step_id=step.id,
+                                field="template_ref",
+                                why="The reference root does not match any known step ID or built-in name.",
                             )
 
     def _check_when_default(self, ctx: ValidationContext, when_step_or_analysis, result):
@@ -612,6 +741,10 @@ class PipelineValidator:
                             f"Step '{step.id}' references conditional step '{when_step.id}' "
                             f"without | default() — may fail if skipped (D-16)",
                             hint=f"Use something like {{ {when_step.id}.output | default(...) }} when '{when_step.id}' may be skipped.",
+                            code="CONDITIONAL_REF_NO_DEFAULT",
+                            step_id=step.id,
+                            field="template_ref",
+                            why="Conditional steps may be skipped, so their output can be undefined.",
                         )
 
     def _check_helper_reference(self, ctx: ValidationContext, step_or_analysis, result) -> None:
@@ -685,12 +818,16 @@ class PipelineValidator:
         provided_keys = analysis.param_keys() if analysis.has_params else set()
         for req_key in schema_required:
             if req_key not in provided_keys:
-                result.add_warning(
-                    f"Step '{step.id}': MCP tool '{step.tool}' requires param '{req_key}' "
-                    f"but it is not set in step params (T-BRIX-V4-21)",
-                    hint=f"Add '{req_key}' to step params or make it optional in the tool schema.",
-                    schema_ref=self._schema_ref("mcp.call"),
-                )
+                    result.add_warning(
+                        f"Step '{step.id}': MCP tool '{step.tool}' requires param '{req_key}' "
+                        f"but it is not set in step params (T-BRIX-V4-21)",
+                        hint=f"Add '{req_key}' to step params or make it optional in the tool schema.",
+                        schema_ref=self._schema_ref("mcp.call"),
+                        code="MCP_REQUIRED_PARAM_MISSING",
+                        step_id=step.id,
+                        field=f"params.{req_key}",
+                        why="The cached MCP tool schema marks this parameter as required.",
+                    )
 
     def _get_runner_config_schema(self, runner_name: str) -> dict | None:
         """Return config_schema() for a runner, cached lazily."""
@@ -788,6 +925,10 @@ class PipelineValidator:
                         f'Step "{step.id}": missing required field "{missing_field}".',
                         hint=f'{schema_ref} shows required fields.' if schema_ref else "Check the brick schema for required fields.",
                         schema_ref=schema_ref,
+                        code="SCHEMA_REQUIRED_FIELD_MISSING",
+                        step_id=step.id,
+                        field=missing_field,
+                        why="The step config does not satisfy the schema's required fields.",
                     )
                     continue
 
@@ -806,6 +947,10 @@ class PipelineValidator:
                         f'Step "{step.id}": "{field_name}" is {actual_type}, schema expects {expected_type}.',
                         hint=hint,
                         schema_ref=schema_ref,
+                        code="SCHEMA_TYPE_MISMATCH",
+                        step_id=step.id,
+                        field=field_name,
+                        why="The supplied value type does not match the declared schema type.",
                     )
                     continue
 
@@ -813,6 +958,10 @@ class PipelineValidator:
                     f"Step '{step.id}': config does not match schema: {exc.message}",
                     hint="Align the step fields with the brick schema.",
                     schema_ref=schema_ref,
+                    code="SCHEMA_VALIDATION_FAILED",
+                    step_id=step.id,
+                    field=str(exc.path[-1]) if exc.path else None,
+                    why="JSON Schema validation reported a config mismatch.",
                 )
 
     @staticmethod
@@ -1591,6 +1740,10 @@ class PipelineValidator:
                             f"Step '{step.id}': references {{{{ {root_name}.{attr} }}}} "
                             f"— did you mean {{{{ {root_name}.output.{attr} }}}}? (T-BRIX-VAL-01)",
                             hint="Step results are nested under .output — direct attribute access on a step ID is usually a mistake.",
+                            code="MISSING_OUTPUT_REF",
+                            step_id=step.id,
+                            field=field_path,
+                            why="Step data is exposed through .output, not as direct attributes on the step name.",
                         )
 
     # ---------------------------------------------------------------------------
@@ -1629,6 +1782,10 @@ class PipelineValidator:
                             f"Step '{step.id}': applies | tojson to '{ref_id}.output' "
                             f"which is already a string type (T-BRIX-VAL-02)",
                             hint="| tojson on a string adds extra quotes — remove it if the value is already a string.",
+                            code="TOJSON_ON_STRING",
+                            step_id=step.id,
+                            field=field_path,
+                            why="Serializing an already-string value usually adds unwanted quoting.",
                         )
 
     # ---------------------------------------------------------------------------
@@ -1708,6 +1865,10 @@ class PipelineValidator:
                 f"Step '{step.id}': appears unused — not referenced by any other step "
                 f"and has no side effects (T-BRIX-VAL-04)",
                 hint="Remove the step or reference its output in a downstream step.",
+                code="UNUSED_STEP",
+                step_id=step.id,
+                field="id",
+                why="The step is neither referenced nor known to cause side effects.",
             )
 
     # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from brix.models import Pipeline, Step
-from brix.validator import PipelineValidator, StepAnalysis, ValidationContext
+from brix.validator import PipelineValidator, StepAnalysis, ValidationContext, ValidationFinding
 
 
 def _step(step_id: str, type: str = "flow.set", **kwargs) -> Step:
@@ -167,3 +167,28 @@ def test_legacy_mcp_and_mcp_call_validate_identically(monkeypatch):
     assert legacy_result.warnings == brick_result.warnings
     assert legacy_result.infos == brick_result.infos
     assert legacy_result.checks == brick_result.checks
+
+
+def test_validation_result_exposes_structured_findings_and_compat_lists(_patch_heavy_checks):
+    pipeline = _pipeline(
+        [
+            _step("source", type="flow.set"),
+            _step("consumer", type="flow.transform", params={"value": "{{ source.items }}"}),
+        ]
+    )
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+
+    finding = next(f for f in result.findings if f.code == "MISSING_OUTPUT_REF")
+
+    assert isinstance(finding, ValidationFinding)
+    assert finding.severity == "warning"
+    assert finding.step_id == "consumer"
+    assert finding.field == "params.value"
+    assert "source.items" in finding.message
+    assert finding.why
+    assert finding.hint
+
+    assert any("source.items" in warning for warning in result.warnings)
+    assert result.errors == []
+    assert result.infos == []
