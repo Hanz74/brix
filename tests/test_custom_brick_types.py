@@ -94,6 +94,12 @@ def test_pipeline_builtin_type_no_pydantic_error():
     assert pipeline.steps[0].type == "db.query"
 
 
+def test_step_conflict_key_list_accepted():
+    """db.upsert steps may use a composite conflict_key list."""
+    step = Step(id="upsert1", type="db.upsert", conflict_key=["person_name", "event_type"])
+    assert step.conflict_key == ["person_name", "event_type"]
+
+
 def test_pipeline_custom_brick_type_passes_validate_pipeline():
     """validate_pipeline on a pipeline with custom brick type does not error on type."""
     from brix.validator import PipelineValidator

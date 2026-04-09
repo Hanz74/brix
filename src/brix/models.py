@@ -152,7 +152,7 @@ class Step(BaseModel):
     connection: Optional[str] = None
     query: Optional[str] = None
     table: Optional[str] = None
-    conflict_key: Optional[str] = None
+    conflict_key: Optional[str | list[str]] = None
     set_columns: Optional[list[str]] = None
 
     # Pipeline (sub-pipeline) runner

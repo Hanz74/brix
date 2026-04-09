@@ -756,6 +756,31 @@ class TestBuilderHandlers:
         assert isinstance(result["checks"], list)
 
     @pytest.mark.asyncio
+    async def test_validate_pipeline_db_upsert_conflict_key_list(self, tmp_path, monkeypatch):
+        """db.upsert pipelines with composite conflict keys validate successfully."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "test-validate-upsert-list",
+            "steps": [
+                {
+                    "id": "insert",
+                    "type": "db.upsert",
+                    "config": {
+                        "connection": "buddy-db",
+                        "table": "life_events",
+                        "data": [{"person_name": "A", "event_type": "birthday"}],
+                        "conflict_key": ["person_name", "event_type"],
+                    },
+                },
+            ],
+        })
+        result = await _handle_validate_pipeline({"pipeline_id": "test-validate-upsert-list"})
+        assert result["success"] is True
+        assert not any("conflict_key" in err for err in result["errors"])
+        core_findings = result.get("findings_by_category", {}).get("core", [])
+        assert not any(f.get("code") == "VALIDATION_EXCEPTION" for f in core_findings)
+
+    @pytest.mark.asyncio
     async def test_validate_pipeline_not_found(self, tmp_path, monkeypatch):
         """Validate nonexistent pipeline returns error."""
         monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
