@@ -24,8 +24,9 @@ def test_integrity_detects_help_and_pipeline_legacy_types(tmp_path, db):
             "name": "legacy-help",
             "title": "Legacy Help",
             "content": (
-                "Use http or python for old examples. "
-                "Modern docs should use http.request and script.python instead."
+                '{"id": "fetch", "type": "http"}\n'
+                '{"id": "script", "type": "python"}\n'
+                'Modern docs should use brick-specific step names instead.'
             ),
             "category": "docs",
         }

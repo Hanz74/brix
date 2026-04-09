@@ -15,8 +15,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_HELP_LEGACY_STEP_TYPES = ("http", "python", "mcp", "filter", "transform", "set")
-_HELP_LEGACY_STEP_TYPE_PATTERN = re.compile(r"\b(" + "|".join(_HELP_LEGACY_STEP_TYPES) + r")\b")
+_HELP_LEGACY_STEP_TYPES = ("http", "python", "mcp", "filter", "transform", "set", "pipeline")
+_HELP_LEGACY_STEP_TYPE_PATTERN = re.compile(
+    r"(?:"
+    r'"type"\s*:\s*"'
+    r"|"
+    r"'type'\s*:\s*'"
+    r"|"
+    r"\btype\s*[:=]\s*"
+    r")("
+    + "|".join(_HELP_LEGACY_STEP_TYPES)
+    + r")(?=[\"'])"
+)
 
 # Pipeline search paths mirrored from seed.py
 _PIPELINE_SEARCH_PATHS = [
@@ -615,4 +625,3 @@ def _check_helper_imports(
             "severity": "error",
             "chains": circular,
         })
-

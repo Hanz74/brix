@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.2.2] — 2026-04-09
+
+- fix: narrow `HELP_LEGACY_TYPE` detection to actual legacy flat step-type declarations in help content
+- fix: repair live help topics that still stored legacy `type` examples such as `http`, `python`, `mcp`, and `pipeline`
+- test: cover the refined help drift detection with an isolated integrity regression
+
 ## [11.2.1] — 2026-04-09
 
 - fix: add meaningful descriptions to all live helper rows previously flagged by `MISSING_DESCRIPTION`
