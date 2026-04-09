@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.2.1] — 2026-04-09
+
+- fix: add meaningful descriptions to all live helper rows previously flagged by `MISSING_DESCRIPTION`
+- fix: reduce live integrity findings by clearing the helper metadata gap in the running Brix DB
+- ops: re-verify `mcp__brix__brix__get_tips` and live helper metadata after the update
+
 ## [11.1.4] — 2026-04-09
 
 - fix: restore the 8 live helper rows still referenced by persisted pipeline steps
