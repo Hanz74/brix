@@ -9,7 +9,7 @@ import pytest
 import brix.context as context_module
 import brix.db as db_module
 import brix.history as history_module
-from brix.engine import PipelineEngine
+from brix.engine import PipelineEngine, _RenderedStep
 from brix.loader import PipelineLoader
 from brix.models import Step
 
@@ -25,6 +25,52 @@ def test_render_step_params_renders_list_items_individually() -> None:
     rendered = loader.render_step_params(step, {"input": {"name": "Alice", "age": 33}})
 
     assert rendered == ["Alice", 33]
+
+
+def test_render_step_params_wraps_list_params_with_rendered_config() -> None:
+    loader = PipelineLoader()
+    step = Step(
+        id="insert_user",
+        type="db.exec",
+        params=["{{ input.name }}", "{{ input.age }}"],
+        config={
+            "connection": "sqlite:///tmp/test.db",
+            "query": "INSERT INTO users (name, age) VALUES (?, ?)",
+        },
+    )
+
+    rendered = loader.render_step_params(step, {"input": {"name": "Alice", "age": 33}})
+
+    assert rendered == {
+        "_params": ["Alice", 33],
+        "_config": {
+            "connection": "sqlite:///tmp/test.db",
+            "query": "INSERT INTO users (name, age) VALUES (?, ?)",
+        },
+    }
+
+
+def test_rendered_step_unwraps_list_params_wrapper() -> None:
+    loader = PipelineLoader()
+    step = Step(
+        id="insert_user",
+        type="db.exec",
+        params=["{{ input.name }}", "{{ input.age }}"],
+        config={
+            "connection": "sqlite:///tmp/test.db",
+            "query": "INSERT INTO users (name, age) VALUES (?, ?)",
+        },
+    )
+    jinja_ctx = {"input": {"name": "Alice", "age": 33}}
+
+    rendered = loader.render_step_params(step, jinja_ctx)
+    rendered_step = _RenderedStep(step, rendered, loader, jinja_ctx)
+
+    assert rendered_step.params == ["Alice", 33]
+    assert rendered_step.config == {
+        "connection": "sqlite:///tmp/test.db",
+        "query": "INSERT INTO users (name, age) VALUES (?, ?)",
+    }
 
 
 @pytest.mark.asyncio
