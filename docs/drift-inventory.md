@@ -1,10 +1,10 @@
 # Drift Inventory
 
-Generated from `run_integrity_checks(db)` on 2026-04-08.
+Generated from live `mcp__brix__brix__get_tips` output plus direct DB inspection on 2026-04-09.
 
 ## Summary
 
-- Total findings: 7
+- Total findings: 8
 - Auto-fixed findings: 0
 
 ## Count Per Issue Type
@@ -12,7 +12,8 @@ Generated from `run_integrity_checks(db)` on 2026-04-08.
 | Issue type | Count |
 | --- | ---: |
 | `NO_STEP_ROWS` | 1 |
-| `UNKNOWN_HELPER_REF` | 1 |
+| `UNKNOWN_HELPER_REF` | 8 |
+| `HELP_LEGACY_TYPE` | 14 |
 | `MISSING_DESCRIPTION` | 5 |
 
 ## Categorized Inventory
@@ -21,11 +22,12 @@ Generated from `run_integrity_checks(db)` on 2026-04-08.
 
 - `NO_STEP_ROWS` (1)
   - Pipeline: `buddy-test-pipe`
-  - Finding: pipeline has 0 step rows in DB
+  - Pipeline ID: `5015c088-788b-4ed1-ac87-6eb558d2b2e7`
+  - Finding: pipeline row exists without any `pipeline_step` rows
 
-### Unknown Refs
+### Unknown Helper References
 
-- `UNKNOWN_HELPER_REF` (8 affected step references across 1 finding)
+- `UNKNOWN_HELPER_REF` (8)
   - `apply-template-updates/apply:helper=apply_template_updates`
   - `buddy-extract-all/llm-structured:helper=buddy_extract_structured_llm`
   - `buddy-extract-all/merge:helper=buddy_extract_merge_validate`
@@ -35,6 +37,24 @@ Generated from `run_integrity_checks(db)` on 2026-04-08.
   - `enrich-markitdown-templates/enrich:helper=enrich_markitdown_templates`
   - `import-markitdown-templates/import:helper=import_templates_to_markitdown`
 
+### Legacy Help Content
+
+- `HELP_LEGACY_TYPE` (14)
+  - `anti-patterns:mcp,python`
+  - `beispiele:http,mcp,python`
+  - `credentials:python`
+  - `dag:python`
+  - `debugging:python`
+  - `error-patterns:filter,python`
+  - `foreach:python`
+  - `helpers:mcp,python`
+  - `lessons-learned:set`
+  - `quick-start:http,python`
+  - `registries:mcp`
+  - `sdk:http,mcp,set`
+  - `templates:http,python`
+  - `triggers:filter,mcp`
+
 ### Missing Metadata
 
 - `MISSING_DESCRIPTION` (5)
@@ -43,10 +63,6 @@ Generated from `run_integrity_checks(db)` on 2026-04-08.
   - Helper: `cody_epic_completion_check`
   - Helper: `cody_gk_verdict_router`
   - Helper: `cody_inbox_triage_filter`
-
-### Stale Artifacts
-
-- None found in the current integrity run.
 
 ## Affected Entities
 
@@ -78,8 +94,11 @@ Generated from `run_integrity_checks(db)` on 2026-04-08.
   - `cody_gk_verdict_router`
   - `cody_inbox_triage_filter`
 
-## Raw Finding Notes
+## Verification Basis
 
-- `NO_STEP_ROWS`: 1 pipeline has 0 step rows in DB.
-- `UNKNOWN_HELPER_REF`: 8 step references point to helpers that are not currently known to integrity checks / registry state.
-- `MISSING_DESCRIPTION`: 5 helper records exist without description metadata.
+- `mcp__brix__brix__get_tips` reported 8 integrity problems on 2026-04-09.
+- Direct DB inspection confirmed:
+  - the zero-step pipeline row,
+  - the 8 stale helper references,
+  - the 5 helpers without descriptions.
+- Help-topic legacy matches were reproduced against the live help content using the same legacy-step-type pattern used by `src/brix/integrity.py`.

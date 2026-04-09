@@ -1,0 +1,169 @@
+{
+  "generated_at": "2026-04-09",
+  "source": {
+    "mcp_tool": "mcp__brix__brix__get_tips",
+    "db": "/root/.brix/brix.db",
+    "help_pattern_source": "src/brix/integrity.py:_HELP_LEGACY_STEP_TYPE_PATTERN"
+  },
+  "summary": {
+    "total_findings": 8,
+    "auto_fixed": 0
+  },
+  "counts": {
+    "NO_STEP_ROWS": 1,
+    "UNKNOWN_HELPER_REF": 8,
+    "HELP_LEGACY_TYPE": 14,
+    "MISSING_DESCRIPTION": 5
+  },
+  "no_step_rows": [
+    {
+      "pipeline_name": "buddy-test-pipe",
+      "pipeline_id": "5015c088-788b-4ed1-ac87-6eb558d2b2e7"
+    }
+  ],
+  "unknown_helper_refs": [
+    {
+      "pipeline_name": "apply-template-updates",
+      "step_key": "apply",
+      "helper": "apply_template_updates"
+    },
+    {
+      "pipeline_name": "buddy-extract-all",
+      "step_key": "llm-structured",
+      "helper": "buddy_extract_structured_llm"
+    },
+    {
+      "pipeline_name": "buddy-extract-all",
+      "step_key": "merge",
+      "helper": "buddy_extract_merge_validate"
+    },
+    {
+      "pipeline_name": "buddy-process-attachments-v2",
+      "step_key": "find",
+      "helper": "att_find_candidates"
+    },
+    {
+      "pipeline_name": "buddy-process-attachments-v2",
+      "step_key": "process",
+      "helper": "att_process_single"
+    },
+    {
+      "pipeline_name": "convert-pdf",
+      "step_key": "read_file",
+      "helper": "file_to_base64"
+    },
+    {
+      "pipeline_name": "enrich-markitdown-templates",
+      "step_key": "enrich",
+      "helper": "enrich_markitdown_templates"
+    },
+    {
+      "pipeline_name": "import-markitdown-templates",
+      "step_key": "import",
+      "helper": "import_templates_to_markitdown"
+    }
+  ],
+  "help_legacy_topics": [
+    {
+      "name": "anti-patterns",
+      "matches": [
+        "mcp",
+        "python"
+      ]
+    },
+    {
+      "name": "beispiele",
+      "matches": [
+        "http",
+        "mcp",
+        "python"
+      ]
+    },
+    {
+      "name": "credentials",
+      "matches": [
+        "python"
+      ]
+    },
+    {
+      "name": "dag",
+      "matches": [
+        "python"
+      ]
+    },
+    {
+      "name": "debugging",
+      "matches": [
+        "python"
+      ]
+    },
+    {
+      "name": "error-patterns",
+      "matches": [
+        "filter",
+        "python"
+      ]
+    },
+    {
+      "name": "foreach",
+      "matches": [
+        "python"
+      ]
+    },
+    {
+      "name": "helpers",
+      "matches": [
+        "mcp",
+        "python"
+      ]
+    },
+    {
+      "name": "lessons-learned",
+      "matches": [
+        "set"
+      ]
+    },
+    {
+      "name": "quick-start",
+      "matches": [
+        "http",
+        "python"
+      ]
+    },
+    {
+      "name": "registries",
+      "matches": [
+        "mcp"
+      ]
+    },
+    {
+      "name": "sdk",
+      "matches": [
+        "http",
+        "mcp",
+        "set"
+      ]
+    },
+    {
+      "name": "templates",
+      "matches": [
+        "http",
+        "python"
+      ]
+    },
+    {
+      "name": "triggers",
+      "matches": [
+        "filter",
+        "mcp"
+      ]
+    }
+  ],
+  "missing_helper_descriptions": [
+    "cody_build_params",
+    "cody_diff_summarizer",
+    "cody_epic_completion_check",
+    "cody_gk_verdict_router",
+    "cody_inbox_triage_filter"
+  ]
+}
