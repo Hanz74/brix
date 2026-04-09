@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.1.4] — 2026-04-09
+
+- fix: restore the 8 live helper rows still referenced by persisted pipeline steps
+- fix: reduce live integrity findings by resolving `UNKNOWN_HELPER_REF` in the running Brix DB
+- ops: re-verify `mcp__brix__brix__get_tips` after the repair script against the live system
+
 ## [11.1.3] — 2026-04-09
 
 - docs: capture the live integrity baseline in `docs/drift-inventory.md` and `docs/drift-inventory.json`
