@@ -343,7 +343,7 @@ class PipelineValidator:
         if pipeline_dir:
             for analysis in ctx.steps:
                 step = analysis.step
-                if step.type == "python" and step.script:
+                if analysis.effective_type == "script.python" and step.script:
                     script_path = pipeline_dir / step.script
                     if not script_path.exists():
                         if not Path(step.script).exists():
@@ -993,16 +993,17 @@ class PipelineValidator:
         registry = BrickRegistry()
         for analysis in ctx.steps:
             step = analysis.step
-            if "{{" in step.type:
+            effective_type = analysis.effective_type
+            if "{{" in effective_type:
                 continue
             if LEGACY_ALIASES.get(step.type):
                 continue
-            brick = registry.get(step.type)
+            brick = registry.get(effective_type)
             if brick is None:
                 result.add_error(
                     f'Step "{step.id}": type "{step.type}" is not allowed under locked policy.',
                     hint="Use a registered dot-notation brick type from list_bricks().",
-                    schema_ref=self._schema_ref(step.type),
+                    schema_ref=self._schema_ref(effective_type),
                 )
 
     def _check_config_param_misplacement(self, ctx: ValidationContext, result: ValidationResult) -> None:
@@ -1227,16 +1228,16 @@ class PipelineValidator:
 
     def _lint_max_concurrency(self, ctx: ValidationContext, rule: dict, result: ValidationResult) -> None:
         """Warn when a step of the specified type exceeds max concurrency."""
-        target_type = rule.get("type")
+        target_type = LEGACY_ALIASES.get(rule.get("type"), rule.get("type"))
         max_conc = rule.get("max", 5)
         for analysis in ctx.steps:
             step = analysis.step
-            if target_type and step.type != target_type:
+            if target_type and analysis.effective_type != target_type:
                 continue
             if step.parallel and step.concurrency > max_conc:
                 result.add_warning(
                     f"Step '{step.id}': concurrency {step.concurrency} exceeds "
-                    f"recommended max {max_conc} for {step.type} steps "
+                    f"recommended max {max_conc} for {analysis.effective_type} steps "
                     f"[lint:{rule.get('id', 'max-concurrency')}]"
                 )
 
@@ -1263,13 +1264,13 @@ class PipelineValidator:
         """
         threshold = rule.get("timeout_threshold_seconds", 60)
         # Runners that do not support progress events
-        _PROGRESS_UNSUPPORTED = {"mcp", "mcp.call"}
+        _PROGRESS_UNSUPPORTED = {"mcp.call"}
         for analysis in ctx.steps:
             step = analysis.step
             if not step.timeout:
                 continue
             # Skip MCP steps — external servers don't support Brix progress events
-            if step.type in _PROGRESS_UNSUPPORTED:
+            if analysis.effective_type in _PROGRESS_UNSUPPORTED:
                 continue
             timeout_secs = self._parse_timeout_seconds(step.timeout)
             if timeout_secs is not None and timeout_secs > threshold and not step.progress:
@@ -1701,7 +1702,7 @@ class PipelineValidator:
             if step.id in referenced_ids:
                 continue
             effective_type = analysis.effective_type
-            if effective_type in _SIDE_EFFECT_TYPES or step.type in _SIDE_EFFECT_TYPES:
+            if effective_type in _SIDE_EFFECT_TYPES:
                 continue
             result.add_info(
                 f"Step '{step.id}': appears unused — not referenced by any other step "
@@ -1720,7 +1721,7 @@ class PipelineValidator:
 
         for analysis in ctx.steps:
             step = analysis.step
-            if analysis.effective_type != "flow.pipeline" and step.type != "pipeline":
+            if analysis.effective_type != "flow.pipeline":
                 continue
             pipeline_name = (
                 getattr(step, "pipeline", None)
@@ -1842,7 +1843,7 @@ class PipelineValidator:
 
         for analysis in ctx.steps:
             step = analysis.step
-            if analysis.effective_type != "flow.pipeline" and step.type != "pipeline":
+            if analysis.effective_type != "flow.pipeline":
                 continue
             pipeline_name = (
                 getattr(step, "pipeline", None)

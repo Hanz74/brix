@@ -108,3 +108,62 @@ def test_existing_checks_do_not_crash_with_list_params(_patch_heavy_checks):
 
     assert isinstance(result.errors, list)
     assert isinstance(result.warnings, list)
+
+
+def test_validate_quick_only_runs_core_checks(monkeypatch):
+    pipeline = _pipeline([_step("first"), _step("second", params={"value": "{{ first.output }}"})])
+    validator = PipelineValidator(lint_rules=[])
+    calls: list[str] = []
+
+    def make_recorder(name: str):
+        def recorder(self, ctx, result, *args, **kwargs):
+            calls.append(name)
+
+        return recorder
+
+    monkeypatch.setattr(PipelineValidator, "run_core_checks", make_recorder("core"))
+    monkeypatch.setattr(PipelineValidator, "run_schema_checks", make_recorder("schema"))
+    monkeypatch.setattr(PipelineValidator, "run_reference_checks", make_recorder("reference"))
+    monkeypatch.setattr(PipelineValidator, "run_flow_checks", make_recorder("flow"))
+    monkeypatch.setattr(PipelineValidator, "run_lint_checks", make_recorder("lint"))
+    monkeypatch.setattr(PipelineValidator, "run_deep_checks", make_recorder("deep"))
+
+    result = validator.validate(pipeline, level="quick")
+
+    assert result.is_valid
+    assert calls == ["core"]
+
+
+def test_legacy_mcp_and_mcp_call_validate_identically(monkeypatch):
+    monkeypatch.setattr(PipelineValidator, "_check_deprecated_step_types", _noop)
+
+    legacy_pipeline = _pipeline(
+        [
+            _step(
+                "call-tool",
+                type="mcp",
+                server="demo-server",
+                tool="demo-tool",
+                params={"query": "hello"},
+            )
+        ]
+    )
+    brick_pipeline = _pipeline(
+        [
+            _step(
+                "call-tool",
+                type="mcp.call",
+                server="demo-server",
+                tool="demo-tool",
+                params={"query": "hello"},
+            )
+        ]
+    )
+
+    legacy_result = PipelineValidator(lint_rules=[]).validate(legacy_pipeline, level="standard")
+    brick_result = PipelineValidator(lint_rules=[]).validate(brick_pipeline, level="standard")
+
+    assert legacy_result.errors == brick_result.errors
+    assert legacy_result.warnings == brick_result.warnings
+    assert legacy_result.infos == brick_result.infos
+    assert legacy_result.checks == brick_result.checks
