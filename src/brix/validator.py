@@ -1518,12 +1518,18 @@ class PipelineValidator:
             "db.query": "list[dict]",
             "db.exec": "dict",
             "db.upsert": "dict",
-            "flow.filter": "list[dict]",
+            "flow.filter": "list",
             "flow.transform": "any",
+            "flow.flatten": "list",
+            "flow.merge": "list",
+            "flow.dedup": "list",
+            "flow.aggregate": "dict",
+            "flow.set": "dict",
             "mcp.call": "any",
             "script.python": "any",
-            "flow.set": "dict",
-            "flow.merge": "list[dict]",
+            "http.request": "any",
+            "source.fetch": "list",
+            "flow.pipeline": "any",
         }
         step_output_types: dict[str, str] = {}
         try:
@@ -1570,6 +1576,9 @@ class PipelineValidator:
 
     def _is_single_dict_type(self, output_type: str) -> bool:
         return self._normalise_output_type(output_type) in {"dict", "object", "json"}
+
+    def _is_list_of_dict_type(self, output_type: str) -> bool:
+        return self._normalise_output_type(output_type) == "list[dict]"
 
     def _iter_step_output_type_compatibility_issues(self, ctx: ValidationContext) -> list[dict[str, str]]:
         """Collect output type mismatches for step-to-step references."""
@@ -1618,7 +1627,10 @@ class PipelineValidator:
                     if self._is_expected_dict_type(output_type):
                         continue
                 elif expected_type == "list[dict]":
-                    if self._is_expected_list_type(output_type) and not self._is_single_dict_type(output_type):
+                    if self._is_list_of_dict_type(output_type):
+                        continue
+                elif expected_type == "list of lists":
+                    if self._is_expected_list_type(output_type):
                         continue
                 add_issue(
                     consumer_step.id,
@@ -1734,15 +1746,33 @@ class PipelineValidator:
                 )
 
             if effective_type == "flow.merge":
-                input_refs = []
+                input_refs: list[str] = []
                 if isinstance(step.inputs, list):
-                    input_refs.extend(ref_id for ref_id in step.inputs if isinstance(ref_id, str))
+                    for input_value in step.inputs:
+                        if not isinstance(input_value, str):
+                            continue
+                        if "{{" in input_value:
+                            input_refs.extend(self._extract_step_output_refs(input_value))
+                        else:
+                            input_refs.append(input_value)
                 params_inputs = analysis.param_get("inputs")
                 if isinstance(params_inputs, list):
-                    input_refs.extend(ref_id for ref_id in params_inputs if isinstance(ref_id, str))
+                    for input_value in params_inputs:
+                        if not isinstance(input_value, str):
+                            continue
+                        if "{{" in input_value:
+                            input_refs.extend(self._extract_step_output_refs(input_value))
+                        else:
+                            input_refs.append(input_value)
                 config_inputs = analysis.config_get("inputs")
                 if isinstance(config_inputs, list):
-                    input_refs.extend(ref_id for ref_id in config_inputs if isinstance(ref_id, str))
+                    for input_value in config_inputs:
+                        if not isinstance(input_value, str):
+                            continue
+                        if "{{" in input_value:
+                            input_refs.extend(self._extract_step_output_refs(input_value))
+                        else:
+                            input_refs.append(input_value)
                 for ref_id in input_refs:
                     output_type = step_output_types.get(ref_id, "")
                     if not output_type or self._is_expected_list_type(output_type):
@@ -1751,7 +1781,7 @@ class PipelineValidator:
                         step.id,
                         ref_id,
                         "flow.merge inputs",
-                        "list",
+                        "list of lists",
                         output_type,
                         (
                             f"Step '{ref_id}' output is {output_type} but flow.merge inputs should resolve to lists. "

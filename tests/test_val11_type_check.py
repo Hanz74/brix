@@ -124,3 +124,84 @@ def test_db_query_with_list_params_warns():
     assert len(warnings) == 1
     assert "db.query params" in warnings[0]
     assert "list[dict]" in warnings[0]
+
+
+def test_db_upsert_with_single_dict_data_warns():
+    steps = [
+        _step("source", type="flow.set"),
+        _step(
+            "upsert",
+            type="db.upsert",
+            params={"data": "{{ source.output }}"},
+        ),
+    ]
+
+    with patch("brix.bricks.registry.BrickRegistry.get", side_effect=_brick_getter({
+        "flow.set": "dict",
+        "db.upsert": "dict",
+    })):
+        result = PipelineValidator().validate(_pipeline(steps), level="standard")
+
+    warnings = [warning for warning in result.warnings if "T-BRIX-VAL-11" in warning]
+    assert len(warnings) == 1
+    assert "db.upsert data" in warnings[0]
+    assert "dict" in warnings[0]
+
+
+def test_flow_filter_with_dict_input_warns():
+    steps = [
+        _step("source", type="flow.set"),
+        _step(
+            "filter",
+            type="flow.filter",
+            params={"input": "{{ source.output }}"},
+        ),
+    ]
+
+    with patch("brix.bricks.registry.BrickRegistry.get", side_effect=_brick_getter({
+        "flow.set": "dict",
+        "flow.filter": "list",
+    })):
+        result = PipelineValidator().validate(_pipeline(steps), level="standard")
+
+    warnings = [warning for warning in result.warnings if "T-BRIX-VAL-11" in warning]
+    assert len(warnings) == 1
+    assert "flow.filter input" in warnings[0]
+    assert "dict" in warnings[0]
+
+
+def test_flow_merge_with_templated_dict_input_warns():
+    steps = [
+        _step("source", type="flow.set"),
+        _step("merge", type="flow.merge", inputs=["{{ source.output }}"]),
+    ]
+
+    with patch("brix.bricks.registry.BrickRegistry.get", side_effect=_brick_getter({
+        "flow.set": "dict",
+        "flow.merge": "list",
+    })):
+        result = PipelineValidator().validate(_pipeline(steps), level="standard")
+
+    warnings = [warning for warning in result.warnings if "T-BRIX-VAL-11" in warning]
+    assert len(warnings) == 1
+    assert "flow.merge inputs" in warnings[0]
+    assert "dict" in warnings[0]
+    assert "list of lists" in warnings[0]
+
+
+def test_flow_merge_with_list_inputs_has_no_warning():
+    steps = [
+        _step("left", type="source.fetch"),
+        _step("right", type="flow.flatten"),
+        _step("merge", type="flow.merge", inputs=["{{ left.output }}", "{{ right.output }}"]),
+    ]
+
+    with patch("brix.bricks.registry.BrickRegistry.get", side_effect=_brick_getter({
+        "source.fetch": "list",
+        "flow.flatten": "list",
+        "flow.merge": "list",
+    })):
+        result = PipelineValidator().validate(_pipeline(steps), level="standard")
+
+    warnings = [warning for warning in result.warnings if "T-BRIX-VAL-11" in warning]
+    assert warnings == []
