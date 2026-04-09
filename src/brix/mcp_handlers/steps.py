@@ -23,6 +23,7 @@ from brix.db import _STEP_CONFIG_TOP_LEVEL_FIELDS
 from brix.pipeline_store import PipelineStore
 from brix.engine import LEGACY_ALIASES
 from brix.loader import PipelineLoader
+from brix.materialize import materialize_step
 from brix.models import Step
 from brix.validator import PipelineValidator
 
@@ -30,6 +31,78 @@ _logger = logging.getLogger(__name__)
 
 # Cache for runner config schemas — populated lazily on first call.
 _runner_config_schemas: dict[str, dict] | None = None
+
+
+def _walk_raw_steps(steps: list[dict] | None) -> list[dict]:
+    collected: list[dict] = []
+    for step in steps or []:
+        if not isinstance(step, dict):
+            continue
+        collected.append(step)
+        if "sequence" in step:
+            collected.extend(_walk_raw_steps(step.get("sequence", [])))
+        if "choices" in step:
+            for choice in step.get("choices", []):
+                if isinstance(choice, dict):
+                    collected.extend(_walk_raw_steps(choice.get("steps", [])))
+        if "default_steps" in step:
+            collected.extend(_walk_raw_steps(step.get("default_steps", [])))
+        if "sub_steps" in step:
+            collected.extend(_walk_raw_steps(step.get("sub_steps", [])))
+    return collected
+
+
+def _materialized_step_payload(raw_step: dict, step: Step, input_params: dict[str, Any] | None = None) -> dict:
+    loader = PipelineLoader()
+    context: dict[str, Any] = {
+        "input": input_params or {},
+        "credentials": {},
+        "var": {},
+        "store": {},
+    }
+    warnings: list[str] = []
+    try:
+        rendered = loader.render_step_params(step, context)
+    except Exception as exc:
+        rendered = {}
+        warnings.append(f"render failed: {exc}")
+    rendered_when = _diagnose_rendered_value(loader, step.when, context, field_name="when", warnings=warnings)
+    rendered_foreach = _diagnose_rendered_value(loader, step.foreach, context, field_name="foreach", warnings=warnings)
+    try:
+        should_execute = loader.evaluate_condition(step.when, context)
+    except Exception as exc:
+        should_execute = None
+        warnings.append(f"when: evaluate failed: {exc}")
+
+    materialized = materialize_step(step, raw_step=raw_step)
+    return {
+        "step_id": step.id,
+        "raw": {
+            "type": materialized.raw_type,
+            "config": materialized.raw_config,
+            "params": materialized.raw_params,
+            "step": raw_step,
+        },
+        "effective": {
+            "type": materialized.effective_type,
+            "config": materialized.effective_config,
+            "params": materialized.effective_params,
+            "step_fields": materialized.effective_step_fields,
+            "promoted_fields": materialized.promoted_fields,
+            "defaulted_fields": materialized.defaulted_fields,
+            "dependency_refs": materialized.dependency_refs,
+            "policy_flags": materialized.policy_flags,
+            "provenance": materialized.provenance,
+            "wrapper_keys": list(materialized.wrapper_keys),
+        },
+        "control_flow": {
+            "rendered_when": rendered_when,
+            "rendered_foreach": rendered_foreach,
+            "should_execute": should_execute,
+        },
+        "render_preview": rendered,
+        "warnings": warnings,
+    }
 
 
 def _get_pipeline_row(name: str) -> dict | None:
@@ -858,6 +931,64 @@ async def _handle_diagnose_step(arguments: dict) -> dict:
         },
         "warnings": warnings,
         "hint": f'get_brick_schema(name="{effective_type}") for full schema',
+    }
+
+
+async def _handle_materialize_step(arguments: dict) -> dict:
+    """Expose raw vs effective semantics for one step."""
+    pipeline_id = arguments.get("pipeline_id", "")
+    step_id = arguments.get("step_id", "")
+    input_params = arguments.get("input", {}) or {}
+
+    try:
+        raw_pipeline = _load_pipeline_yaml(pipeline_id)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+
+    raw_step = _find_step_recursive(raw_pipeline.get("steps", []), step_id)
+    if raw_step is None:
+        return {"success": False, "error": f"Step '{step_id}' not found in pipeline '{pipeline_id}'."}
+
+    try:
+        step = Step.model_validate(raw_step)
+    except Exception as exc:
+        return {"success": False, "error": f"Step '{step_id}' is invalid and could not be parsed: {exc}"}
+
+    payload = _materialized_step_payload(raw_step, step, input_params=input_params)
+    return {
+        "success": True,
+        "pipeline_id": pipeline_id,
+        "step_id": step_id,
+        **payload,
+    }
+
+
+async def _handle_inspect_effective_pipeline(arguments: dict) -> dict:
+    """Inspect raw vs effective step semantics for an entire pipeline."""
+    pipeline_id = arguments.get("pipeline_id", "")
+    input_params = arguments.get("input", {}) or {}
+
+    try:
+        raw_pipeline = _load_pipeline_yaml(pipeline_id)
+    except FileNotFoundError as exc:
+        return {"success": False, "error": str(exc)}
+
+    payloads: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for raw_step in _walk_raw_steps(raw_pipeline.get("steps", [])):
+        try:
+            step = Step.model_validate(raw_step)
+        except Exception as exc:
+            warnings.append(f"step '{raw_step.get('id', '<unknown>')}' invalid: {exc}")
+            continue
+        payloads.append(_materialized_step_payload(raw_step, step, input_params=input_params))
+
+    return {
+        "success": True,
+        "pipeline_id": pipeline_id,
+        "step_count": len(payloads),
+        "steps": payloads,
+        "warnings": warnings,
     }
 
 

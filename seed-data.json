@@ -3812,6 +3812,89 @@
       }
     },
     {
+      "name": "brix__materialize_step",
+      "description": "Inspect one pipeline step as raw vs effective semantics. Returns the persisted raw step, canonical effective type/config/params, promotions, provenance, and a render preview so a user or LLM can see how the step will execute.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "string",
+            "description": "Pipeline name containing the step."
+          },
+          "step_id": {
+            "type": "string",
+            "description": "Step ID within the pipeline."
+          },
+          "input": {
+            "type": "object",
+            "description": "Optional pipeline input params used to render a preview for the step."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity — expected on every MCP call. Fields: session (pipeline/session name), model (LLM model id), agent (agent name). Used for audit logging. Example: {\"session\": \"buddy-session\", \"model\": \"opus\", \"agent\": \"agent-alpha\"}",
+            "properties": {
+              "session": {
+                "type": "string",
+                "description": "Pipeline or session name that triggered this call."
+              },
+              "model": {
+                "type": "string",
+                "description": "LLM model identifier (e.g. 'opus', 'sonnet')."
+              },
+              "agent": {
+                "type": "string",
+                "description": "Agent name (e.g. 'agent-alpha')."
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "pipeline_id",
+          "step_id"
+        ]
+      }
+    },
+    {
+      "name": "brix__inspect_effective_pipeline",
+      "description": "Inspect raw vs effective step semantics for an entire pipeline. Returns every step, including nested steps, with canonical effective type/config/params, promotions, provenance, and render previews.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "string",
+            "description": "Pipeline name to inspect."
+          },
+          "input": {
+            "type": "object",
+            "description": "Optional pipeline input params used to render step previews."
+          },
+          "source": {
+            "type": "object",
+            "description": "Optional caller identity — expected on every MCP call. Fields: session (pipeline/session name), model (LLM model id), agent (agent name). Used for audit logging. Example: {\"session\": \"buddy-session\", \"model\": \"opus\", \"agent\": \"agent-alpha\"}",
+            "properties": {
+              "session": {
+                "type": "string",
+                "description": "Pipeline or session name that triggered this call."
+              },
+              "model": {
+                "type": "string",
+                "description": "LLM model identifier (e.g. 'opus', 'sonnet')."
+              },
+              "agent": {
+                "type": "string",
+                "description": "Agent name (e.g. 'agent-alpha')."
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "pipeline_id"
+        ]
+      }
+    },
+    {
       "name": "brix__diff_runs",
       "description": "Compare two pipeline runs side by side (T-BRIX-V7-05). Shows differences in input parameters, pipeline version, step statuses, step outputs (when persisted via persist_output), errors, and environment snapshots. Useful for debugging regressions: why did run A succeed but run B fail? Returns {success, run_id_a, run_id_b, diff}.",
       "input_schema": {

@@ -461,6 +461,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_group_to_brick_schemas_v85",
         "down": "",
     },
+    {
+        "version": 86,
+        "name": "register_effective_step_tool_schemas",
+        "up": "",
+        "up_fn": "_register_effective_step_tool_schemas_v86",
+        "down": "",
+    },
 ]
 
 
@@ -706,6 +713,65 @@ def _add_group_to_brick_schemas_v85(db: "BrixDB") -> None:
                 (_json.dumps(schema), tool_name),
             )
             logger.info("migration v85: added 'group' param to '%s'", tool_name)
+
+
+def _register_effective_step_tool_schemas_v86(db: "BrixDB") -> None:
+    """Register MCP schemas for effective-step inspection tools."""
+    import json as _json
+    from datetime import datetime, timezone
+
+    common_source = {
+        "type": "object",
+        "description": 'Optional caller identity — expected on every MCP call. Fields: session (pipeline/session name), model (LLM model id), agent (agent name). Used for audit logging. Example: {"session": "buddy-session", "model": "opus", "agent": "agent-alpha"}',
+        "properties": {
+            "session": {"type": "string", "description": "Pipeline or session name that triggered this call."},
+            "model": {"type": "string", "description": "LLM model identifier (e.g. 'opus', 'sonnet')."},
+            "agent": {"type": "string", "description": "Agent name (e.g. 'agent-alpha')."},
+        },
+        "additionalProperties": True,
+    }
+    schemas = {
+        "brix__materialize_step": {
+            "description": "Inspect one pipeline step as raw vs effective semantics. Returns the persisted raw step, canonical effective type/config/params, promotions, provenance, and a render preview so a user or LLM can see how the step will execute.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "pipeline_id": {"type": "string", "description": "Pipeline name containing the step."},
+                    "step_id": {"type": "string", "description": "Step ID within the pipeline."},
+                    "input": {"type": "object", "description": "Optional pipeline input params used to render a preview for the step."},
+                    "source": common_source,
+                },
+                "required": ["pipeline_id", "step_id"],
+            },
+        },
+        "brix__inspect_effective_pipeline": {
+            "description": "Inspect raw vs effective step semantics for an entire pipeline. Returns every step, including nested steps, with canonical effective type/config/params, promotions, provenance, and render previews.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "pipeline_id": {"type": "string", "description": "Pipeline name to inspect."},
+                    "input": {"type": "object", "description": "Optional pipeline input params used to render step previews."},
+                    "source": common_source,
+                },
+                "required": ["pipeline_id"],
+            },
+        },
+    }
+    now_iso = datetime.now(timezone.utc).isoformat()
+    with db._connect() as conn:
+        for name, payload in schemas.items():
+            conn.execute(
+                """INSERT OR REPLACE INTO mcp_tool_schema (name, description, input_schema, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    name,
+                    payload["description"],
+                    _json.dumps(payload["input_schema"]),
+                    now_iso,
+                    now_iso,
+                ),
+            )
+    logger.info("migration v86: registered effective-step MCP tool schemas")
 
 
 def _runner_json_schema_to_brick_config(schema: dict) -> dict[str, dict]:

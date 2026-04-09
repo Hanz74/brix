@@ -39,6 +39,8 @@ from brix.mcp_server import (
     _handle_update_helper,
     _handle_delete_pipeline,
     _handle_get_step,
+    _handle_materialize_step,
+    _handle_inspect_effective_pipeline,
     _handle_delete_helper,
     _handle_delete_run,
     _handle_cancel_run,
@@ -82,7 +84,7 @@ from brix.mcp_server import (
 )
 
 
-EXPECTED_HANDLER_COUNT = 102  # Includes brix__smoke_test
+EXPECTED_HANDLER_COUNT = 104  # Includes brix__smoke_test
 
 EXPECTED_TOOL_NAMES = {
     "brix__get_tips",
@@ -112,6 +114,8 @@ EXPECTED_TOOL_NAMES = {
     "brix__update_helper",
     "brix__delete_pipeline",
     "brix__get_step",
+    "brix__materialize_step",
+    "brix__inspect_effective_pipeline",
     "brix__delete_helper",
     "brix__delete_run",
     # Credential Store — consolidated (V8-12)

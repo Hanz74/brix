@@ -171,6 +171,8 @@ from brix.mcp_handlers.steps import (
     _handle_update_step,
     _handle_get_step,
     _handle_diagnose_step,
+    _handle_materialize_step,
+    _handle_inspect_effective_pipeline,
     _handle_auto_fix_step,
 )
 from brix.mcp_handlers.pipelines import (
@@ -639,6 +641,8 @@ _HANDLERS = {
     "brix__delete_pipeline": _handle_delete_pipeline,
     "brix__get_step": _handle_get_step,
     "brix__diagnose_step": _handle_diagnose_step,
+    "brix__materialize_step": _handle_materialize_step,
+    "brix__inspect_effective_pipeline": _handle_inspect_effective_pipeline,
     "brix__delete_helper": _handle_delete_helper,
     "brix__delete_run": _handle_delete_run,
     "brix__cancel_run": _handle_cancel_run,
