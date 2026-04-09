@@ -273,7 +273,10 @@ class DagSharedState:
 class _RenderedStep:
     """Wraps a Step with rendered Jinja2 values for the runner."""
 
-    def __init__(self, step: Step, rendered: dict, loader: PipelineLoader, jinja_ctx: dict):
+    def __init__(self, step: Step, rendered: Any, loader: PipelineLoader, jinja_ctx: dict):
+        rendered_dict = rendered if isinstance(rendered, dict) else {}
+        rendered_params = rendered_dict.get("_params") if "_params" in rendered_dict else rendered
+
         # Copy original step attributes
         self.id = step.id
         self.type = step.type
@@ -281,24 +284,24 @@ class _RenderedStep:
         self.shell = step.shell
 
         # Use rendered values where available, fall back to originals
-        self.args = rendered.get("_args") or (
+        self.args = rendered_dict.get("_args") or (
             [loader.render_value(a, jinja_ctx) for a in step.args] if step.args else None
         )
-        self.command = rendered.get("_command") or (
+        self.command = rendered_dict.get("_command") or (
             loader.render_value(step.command, jinja_ctx) if step.command else None
         )
-        self.url = rendered.get("_url") or step.url
-        self.headers = rendered.get("_headers") or step.headers
-        self.body = rendered["_body"] if "_body" in rendered else step.body
+        self.url = rendered_dict.get("_url") or step.url
+        self.headers = rendered_dict.get("_headers") or step.headers
+        self.body = rendered_dict["_body"] if "_body" in rendered_dict else step.body
         self.method = step.method
         self.script = step.script
         self.server = step.server
         self.tool = step.tool
-        self.config = rendered.get("_config") if "_config" in rendered else getattr(step, "config", None)
-        self.pipeline = rendered.get("_pipeline") or step.pipeline
-        self.params = rendered if rendered else _step_config_dict(step)
+        self.config = rendered_dict.get("_config") if "_config" in rendered_dict else getattr(step, "config", None)
+        self.pipeline = rendered_dict.get("_pipeline") or step.pipeline
+        self.params = rendered_params if rendered_params not in (None, {}) else _step_config_dict(step)
         # set runner: rendered values under _values key, fall back to raw values field
-        self.values = rendered.get("_values") or getattr(step, "values", None) or {}
+        self.values = rendered_dict.get("_values") or getattr(step, "values", None) or {}
         # set runner: persist flag (T-BRIX-DB-13)
         self.persist = getattr(step, "persist", False)
         # stop runner fields

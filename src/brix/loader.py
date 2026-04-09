@@ -523,25 +523,28 @@ class PipelineLoader:
             return [self.render_value(item, context) for item in value]
         return value
 
-    def render_step_params(self, step: Step, context: dict) -> dict:
+    def render_step_params(self, step: Step, context: dict):
         """Render all Jinja2 templates in a step's parameters.
 
-        Returns a dict with the rendered ``params`` merged with rendered
-        type-specific fields stored under ``_url``, ``_command``, ``_args``,
-        ``_headers``, and ``_config`` keys.
+        Returns the rendered ``params`` payload directly when possible. For
+        list-backed params plus rendered auxiliary fields, returns a wrapper
+        dict with the list stored under ``_params`` and the auxiliary values
+        stored under reserved underscore-prefixed keys.
         """
-        rendered: dict = {}
+        rendered_params = None
 
-        if step.params:
-            rendered = self.render_value(step.params, context)
+        if step.params is not None:
+            rendered_params = self.render_value(step.params, context)
             # flow.transform expressions are evaluated by the runner with item/data/value
             # in scope, so preserve the raw template instead of rendering it eagerly here.
             if (
                 step.type in {"transform", "flow.transform"}
                 and isinstance(step.params, dict)
                 and "expression" in step.params
+                and isinstance(rendered_params, dict)
             ):
-                rendered["expression"] = step.params["expression"]
+                rendered_params["expression"] = step.params["expression"]
+        rendered: dict = {}
         if getattr(step, "config", None):
             rendered["_config"] = self.render_value(step.config, context)
 
@@ -565,7 +568,15 @@ class PipelineLoader:
         if getattr(step, "values", None):
             rendered["_values"] = self.render_value(step.values, context)
 
-        return rendered
+        if isinstance(rendered_params, list):
+            if rendered:
+                return {"_params": rendered_params, **rendered}
+            return rendered_params
+        if isinstance(rendered_params, dict):
+            return {**rendered_params, **rendered}
+        if rendered:
+            return rendered
+        return rendered_params or {}
 
     # ------------------------------------------------------------------
     # Condition / foreach helpers
