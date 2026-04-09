@@ -508,8 +508,10 @@ class PipelineEngine:
                     else "last_completed_step=<none>"
                 )
                 error_message = (
-                    "Unhandled engine exception during pipeline execution phase "
-                    f"({step_context}, completed_steps={completed_steps}): {e}\n{tb}"
+                    "Unhandled engine exception "
+                    f"phase=execution boundary=engine {step_context} "
+                    f"completed_steps={completed_steps} "
+                    f"root_exception={type(e).__name__}: {e}\n{tb}"
                 )
                 step_statuses["_engine_error"] = StepStatus(
                     status="error",

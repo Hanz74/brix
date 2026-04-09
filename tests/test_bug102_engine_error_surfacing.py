@@ -7,6 +7,7 @@ import pytest
 from brix.engine import PipelineEngine
 from brix.history import RunHistory
 from brix.loader import PipelineLoader
+from brix.mcp_handlers.insights import _handle_diagnose_run
 
 
 @pytest.mark.asyncio
@@ -36,7 +37,6 @@ steps:
     """)
 
     engine = PipelineEngine()
-    engine.register_runner("flow.set", engine._runners["set"])
     result = await engine.run(pipeline)
 
     assert result.success is False
@@ -44,7 +44,8 @@ steps:
     assert result.steps["_engine_error"].status == "error"
     engine_error = result.steps["_engine_error"].error_message or ""
     assert "synthetic engine crash" in engine_error
-    assert "pipeline execution phase" in engine_error
+    assert "phase=execution" in engine_error
+    assert "root_exception=RuntimeError: synthetic engine crash" in engine_error
     assert "Traceback" in engine_error
 
     history = RunHistory()
@@ -60,6 +61,8 @@ steps:
     assert len(errors) == 1
     assert errors[0]["step_id"] == "_engine_error"
     assert "synthetic engine crash" in errors[0]["error_message"]
+    assert errors[0]["phase"] == "execution"
+    assert errors[0]["root_cause"] == "RuntimeError: synthetic engine crash"
 
 
 @pytest.mark.asyncio
@@ -107,3 +110,13 @@ steps:
     assert len(errors) == 1
     assert errors[0]["step_id"] == "_engine_error"
     assert "synthetic render crash" in errors[0]["error_message"]
+    assert errors[0]["phase"] == "execution"
+    assert errors[0]["root_cause"] == "RuntimeError: synthetic render crash"
+
+    diagnosis = await _handle_diagnose_run({"run_id": result.run_id})
+
+    assert diagnosis["success"] is True
+    assert diagnosis["total_failed_steps"] == 1
+    assert diagnosis["diagnoses"][0]["step_id"] == "_engine_error"
+    assert diagnosis["diagnoses"][0]["phase"] == "execution"
+    assert diagnosis["diagnoses"][0]["root_cause"] == "RuntimeError: synthetic render crash"

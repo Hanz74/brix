@@ -5,6 +5,7 @@ The legacy HISTORY_DB_PATH constant is kept for backwards-compatibility but
 new instances write to brix.db by default.
 """
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,6 +105,24 @@ def _error_hint(step_id: str, error_message: str) -> str | None:
     for keywords, hint in _ERROR_HINTS:
         if all(kw in combined for kw in keywords):
             return hint
+    return None
+
+
+def _error_phase(step_id: str, error_message: str) -> str | None:
+    """Extract the failure phase from a structured engine error message."""
+    if step_id == "_engine_error":
+        match = re.search(r"\bphase=([a-z_]+)\b", error_message)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _root_cause(step_id: str, error_message: str) -> str | None:
+    """Extract a concise root-cause summary from a structured engine error."""
+    if step_id == "_engine_error":
+        match = re.search(r"\broot_exception=([^\n]+)", error_message)
+        if match:
+            return match.group(1).strip()
     return None
 
 
@@ -353,6 +372,8 @@ class RunHistory:
                     "step_id": step_id,
                     "error_message": err_msg,
                     "hint": _error_hint(step_id, err_msg),
+                    "phase": _error_phase(step_id, err_msg),
+                    "root_cause": _root_cause(step_id, err_msg),
                 })
         return errors
 

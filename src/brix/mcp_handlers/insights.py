@@ -38,7 +38,7 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
     except (json.JSONDecodeError, TypeError):
         return {"success": False, "error": "Could not parse steps_data for this run."}
 
-    from brix.history import _error_hint
+    from brix.history import _error_hint, _error_phase, _root_cause
 
     pipeline_name = run.get("pipeline", "")
     store = PipelineStore(pipelines_dir=_pipeline_dir())
@@ -93,6 +93,8 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
         diagnoses.append({
             "step_id": step_id,
             "error": err_msg,
+            "phase": _error_phase(step_id, err_msg),
+            "root_cause": _root_cause(step_id, err_msg),
             "hint": hint,
             "fix_suggestion": fix_suggestion,
             "pipeline_context": step_ctx,
