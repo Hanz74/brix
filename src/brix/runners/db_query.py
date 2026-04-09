@@ -14,6 +14,10 @@ from brix.serialization import sanitize_for_json, sanitize_row
 
 logger = logging.getLogger(__name__)
 
+_LEADING_SQL_COMMENT_RE = re.compile(r"^(?:--[^\n]*(?:\n|$)|/\*.*?\*/)", re.DOTALL)
+_BLOCKED_DML_KEYWORDS = {"INSERT", "UPDATE", "DELETE", "MERGE"}
+_DML_GUARD_ERROR = "db.query does not support DML. Use db.exec for INSERT/UPDATE/DELETE."
+
 
 def _step_model_field_names() -> set[str]:
     """Return Step model field names for filtering promoted engine keys."""
@@ -80,6 +84,23 @@ def _colon_to_pyformat(query: str, params: dict[str, Any] | None) -> str:
     for idx in range(0, len(parts), 2):
         parts[idx] = re.sub(r"(?<!:):([a-zA-Z_]\w*)", r"%(\1)s", parts[idx])
     return "".join(parts)
+
+
+def _strip_leading_sql_comments(query: str) -> str:
+    """Remove leading whitespace and SQL comments before statement inspection."""
+    stripped = query.lstrip()
+    while True:
+        match = _LEADING_SQL_COMMENT_RE.match(stripped)
+        if not match:
+            return stripped
+        stripped = stripped[match.end():].lstrip()
+
+
+def _first_sql_keyword(query: str) -> str:
+    """Return the first SQL keyword after leading comments/whitespace."""
+    stripped = _strip_leading_sql_comments(query)
+    match = re.match(r"([A-Za-z]+)", stripped)
+    return match.group(1).upper() if match else ""
 
 
 def _execute_sqlite(dsn: str, query: str, params: dict | None) -> list[dict]:
@@ -255,6 +276,15 @@ class DbQueryRunner(BaseRunner):
             return {
                 "success": False,
                 "error": f"Jinja2 render error in query: {exc}",
+                "duration": time.monotonic() - start,
+            }
+
+        first_keyword = _first_sql_keyword(query)
+        if first_keyword in _BLOCKED_DML_KEYWORDS:
+            self.report_progress(0.0, "error: db.query rejected DML")
+            return {
+                "success": False,
+                "error": _DML_GUARD_ERROR,
                 "duration": time.monotonic() - start,
             }
 
