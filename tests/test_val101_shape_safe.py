@@ -321,6 +321,28 @@ def test_db_query_dml_includes_schema_ref(_patch_heavy_checks):
     assert finding.schema_ref == 'get_brick_schema(name="db.exec")'
 
 
+def test_structured_payload_preserves_finding_severity_location_and_correction(_patch_heavy_checks):
+    pipeline = _pipeline(
+        [
+            _step("source", type="flow.set"),
+            _step("consumer", type="flow.transform", params={"value": "{{ source.items }}"}),
+        ]
+    )
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+    payload = result.to_structured_payload()
+
+    finding = next(item for item in payload["findings"] if item["code"] == "MISSING_OUTPUT_REF")
+
+    assert finding["severity"] == "warning"
+    assert finding["category"] == "flow"
+    assert finding["step_id"] == "consumer"
+    assert finding["field"] == "params.value"
+    assert finding["why"] == "Step outputs are wrapped in .output layer"
+    assert finding["hint"] == "Change {{ source.items }} to {{ source.output.items }}"
+    assert finding["suggestion"] == {"kind": "rewrite", "example": "{{ source.output.items }}"}
+
+
 def test_invalid_ref_inside_choose_branch_is_detected(_patch_heavy_checks):
     pipeline = _pipeline(
         [
