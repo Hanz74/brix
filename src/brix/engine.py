@@ -499,7 +499,25 @@ class PipelineEngine:
             except Exception as e:
                 # Unexpected exception (e.g. schema validation error, MCP crash) —
                 # treat the run as failed but always reach the finally block.
-                logger.error(traceback.format_exc())
+                tb = traceback.format_exc()
+                completed_steps = list(context.step_outputs.keys())
+                last_completed_step = completed_steps[-1] if completed_steps else None
+                step_context = (
+                    f"last_completed_step={last_completed_step}"
+                    if last_completed_step is not None
+                    else "last_completed_step=<none>"
+                )
+                error_message = (
+                    "Unhandled engine exception during pipeline execution phase "
+                    f"({step_context}, completed_steps={completed_steps}): {e}\n{tb}"
+                )
+                step_statuses["_engine_error"] = StepStatus(
+                    status="error",
+                    duration=0.0,
+                    errors=1,
+                    error_message=error_message,
+                )
+                logger.error("Unhandled engine exception for run %s:\n%s", context.run_id, tb)
                 print(f"✗ Pipeline error: {e}", file=sys.stderr)
                 pipeline_aborted = True
 
