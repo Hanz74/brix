@@ -177,18 +177,39 @@ def _validate_pipeline_dict(data: dict, level: str = "standard") -> dict:
     try:
         pipeline = _loader.load_from_string(yaml.dump(data))
         result = _validator.validate(pipeline, level=level)
-        return {
-            "valid": result.is_valid,
-            "errors": result.errors,
-            "warnings": result.warnings,
-            "checks": result.checks,
-            "level": level,
-        }
+        payload = result.to_structured_payload()
+        payload["level"] = level
+        return payload
     except Exception as exc:
         return {
             "valid": False,
+            "summary": {"errors": 1, "warnings": 0, "infos": 0, "total": 1},
+            "next_actions": [f"Fix validation crash: {exc}"],
+            "findings": [
+                {
+                    "code": "VALIDATION_EXCEPTION",
+                    "severity": "error",
+                    "category": "core",
+                    "message": str(exc),
+                }
+            ],
+            "findings_by_category": {
+                "core": [
+                    {
+                        "code": "VALIDATION_EXCEPTION",
+                        "severity": "error",
+                        "category": "core",
+                        "message": str(exc),
+                    }
+                ],
+                "schema": [],
+                "reference": [],
+                "flow": [],
+                "lint": [],
+            },
             "errors": [str(exc)],
             "warnings": [],
+            "infos": [],
             "checks": [],
             "level": level,
         }

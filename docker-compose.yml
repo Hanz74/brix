@@ -21,9 +21,13 @@ services:
   brix-mcp:
     build: .
     container_name: brix-mcp
+    command: >
+      sh -c 'if [ "$$BRIX_MODE" = "mcp" ];
+      then exec brix mcp --transport "$${BRIX_MCP_TRANSPORT:-stdio}" --host 0.0.0.0 --port 8091;
+      else exec sleep infinity; fi'
     environment:
       - BRIX_MODE=mcp
-      - BRIX_MCP_TRANSPORT=stdio  # set to "http" to enable HTTP/SSE transport on port 8091
+      - BRIX_MCP_TRANSPORT=http
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker:ro

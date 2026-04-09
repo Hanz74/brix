@@ -323,7 +323,7 @@ class StepExecutor:
         run_id: str,
         step: Step,
         result: dict,
-        rendered_params: dict,
+        rendered_params: Any,
         context: Any,
         db: Any = None,
     ) -> None:
@@ -336,7 +336,10 @@ class StepExecutor:
             stored_params = rendered_params
             mcp_trace = result.get("mcp_trace")
             if mcp_trace is not None:
-                stored_params = dict(rendered_params) if rendered_params else {}
+                if isinstance(rendered_params, dict):
+                    stored_params = dict(rendered_params)
+                else:
+                    stored_params = {"_params": rendered_params}
                 stored_params["_mcp_trace"] = mcp_trace
             db.save_step_output(
                 run_id=run_id,
