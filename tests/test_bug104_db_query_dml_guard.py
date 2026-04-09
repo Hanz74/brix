@@ -5,6 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
+import brix.context as context_module
+import brix.db as db_module
+import brix.history as history_module
+from brix.engine import PipelineEngine
+from brix.history import RunHistory
+from brix.loader import PipelineLoader
 from brix.runners.db_query import DbQueryRunner
 
 
@@ -64,3 +70,69 @@ async def test_db_query_blocks_dml_before_execution(query):
     assert result["error"] == "db.query does not support DML. Use db.exec for INSERT/UPDATE/DELETE."
     resolve_connection.assert_not_called()
     run_query.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_engine_run_surfaces_db_query_dml_guard_in_real_runtime(tmp_path):
+    db_module.BRIX_DB_PATH = tmp_path / "brix.db"
+    history_module.HISTORY_DB_PATH = db_module.BRIX_DB_PATH
+    context_module.WORKDIR_BASE = tmp_path / "runs"
+    context_module.CACHE_BASE = tmp_path / "cache"
+
+    db_path = tmp_path / "bug104-runtime.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("INSERT INTO users VALUES (1, 'Alice')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    pipeline = PipelineLoader().load_from_string(
+        f"""
+name: bug104-runtime-dml-guard
+steps:
+  - id: prepare
+    type: flow.set
+    values:
+      target_id: 1
+  - id: blocked_write
+    type: db.query
+    config:
+      connection: "sqlite:///{db_path}"
+      query: "UPDATE users SET name = 'Bob' WHERE id = {{ prepare.output.target_id }}"
+  - id: after_write
+    type: flow.set
+    values:
+      marker: should-not-run
+"""
+    )
+
+    engine = PipelineEngine()
+    engine.register_runner("flow.set", engine._runners["set"])
+    engine.register_runner("db.query", engine._runners["db_query"])
+
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert result.steps["prepare"].status == "ok"
+    assert result.steps["blocked_write"].status == "error"
+    assert result.steps["blocked_write"].error_message == (
+        "db.query does not support DML. Use db.exec for INSERT/UPDATE/DELETE."
+    )
+    assert "after_write" not in result.steps or result.steps["after_write"].status != "ok"
+
+    history = RunHistory()
+    errors = history.get_run_errors(run_id=result.run_id)
+
+    assert len(errors) == 1
+    assert errors[0]["step_id"] == "blocked_write"
+    assert errors[0]["error_message"] == "db.query does not support DML. Use db.exec for INSERT/UPDATE/DELETE."
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute("SELECT name FROM users WHERE id = 1").fetchone()
+    finally:
+        conn.close()
+
+    assert row == ("Alice",)

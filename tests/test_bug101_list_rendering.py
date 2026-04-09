@@ -97,6 +97,27 @@ def test_rendered_step_uses_rendered_config_params_when_step_params_are_empty() 
     }
 
 
+def test_rendered_step_does_not_treat_reserved_wrapper_keys_as_user_params() -> None:
+    loader = PipelineLoader()
+    step = Step(
+        id="fetch_users",
+        type="db.query",
+        config={
+            "connection": "sqlite:///tmp/test.db",
+            "query": "SELECT * FROM users",
+        },
+    )
+
+    rendered = loader.render_step_params(step, {})
+    rendered_step = _RenderedStep(step, rendered, loader, {})
+
+    assert rendered_step.params == {
+        "connection": "sqlite:///tmp/test.db",
+        "query": "SELECT * FROM users",
+    }
+    assert rendered_step.params != {"_config": rendered_step.config}
+
+
 @pytest.mark.asyncio
 async def test_engine_run_db_exec_with_rendered_positional_params(tmp_path) -> None:
     db_module.BRIX_DB_PATH = tmp_path / "brix.db"

@@ -282,6 +282,12 @@ class _RenderedStep:
             rendered_params = rendered
         elif isinstance(rendered_config, dict) and "params" in rendered_config:
             rendered_params = rendered_config.get("params")
+        elif isinstance(rendered, dict):
+            rendered_params = {
+                key: value
+                for key, value in rendered_dict.items()
+                if not key.startswith("_")
+            } or None
         else:
             rendered_params = rendered
 
