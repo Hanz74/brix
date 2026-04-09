@@ -343,6 +343,17 @@ def test_structured_payload_preserves_finding_severity_location_and_correction(_
     assert finding["suggestion"] == {"kind": "rewrite", "example": "{{ source.output.items }}"}
 
 
+def test_next_actions_recommend_supported_path_for_db_query_dml(_patch_heavy_checks):
+    pipeline = _pipeline([_step("write", type="db.query", query="UPDATE users SET active = 1")])
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+    actions = result.next_actions()
+
+    assert any("Use db.exec for UPDATE/DELETE/INSERT" in action for action in actions)
+    assert all("raw db" not in action.lower() for action in actions)
+    assert all("workaround" not in action.lower() for action in actions)
+
+
 def test_invalid_ref_inside_choose_branch_is_detected(_patch_heavy_checks):
     pipeline = _pipeline(
         [

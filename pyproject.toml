@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "brix"
-version = "11.2.9"
+version = "11.2.10"
 description = "Generic process orchestrator for Claude Code"
 readme = "README.md"
 license = "MIT"
