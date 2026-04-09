@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from brix.db import BrixDB
+from brix.db import BrixDB, _parse_semver
 
 
 async def _handle_changelog(arguments: dict) -> dict:
@@ -33,8 +33,8 @@ async def _handle_changelog(arguments: dict) -> dict:
             "timestamp": e["timestamp"],
         })
 
-    # Sort versions descending (semver-like lexicographic)
-    versions = sorted(by_version.keys(), reverse=True)
+    # Sort versions descending using semantic version order.
+    versions = sorted(by_version.keys(), key=_parse_semver, reverse=True)
     result = [
         {"version": v, "entries": by_version[v]}
         for v in versions

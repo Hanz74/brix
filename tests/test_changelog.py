@@ -59,6 +59,16 @@ class TestChangelogCRUD:
         assert "10.0.0" in versions
         assert "10.1.0" in versions
 
+    def test_list_orders_double_digit_patch_semantically(self, db: BrixDB) -> None:
+        """Later patch versions sort ahead of single-digit patch strings."""
+        db.add_changelog_entry(version="11.2.9", type="fix", title="Patch 9")
+        db.add_changelog_entry(version="11.2.13", type="fix", title="Patch 13")
+        db.add_changelog_entry(version="11.2.12", type="fix", title="Patch 12")
+
+        entries = db.list_changelog()
+
+        assert [entry["version"] for entry in entries] == ["11.2.13", "11.2.12", "11.2.9"]
+
     def test_list_with_type_filter(self, db: BrixDB) -> None:
         """The type filter only returns matching entries."""
         db.add_changelog_entry(version="10.0.0", type="feature", title="A feature")
@@ -145,3 +155,19 @@ class TestChangelogMCPHandler:
 
         assert result["total_entries"] == 1
         assert result["versions"][0]["version"] == "10.0.0"
+
+    def test_handler_orders_versions_semantically(self, db: BrixDB, monkeypatch) -> None:
+        """The handler returns double-digit patch versions in semantic order."""
+        db.add_changelog_entry(version="11.2.9", type="fix", title="Patch 9")
+        db.add_changelog_entry(version="11.2.13", type="fix", title="Patch 13")
+        db.add_changelog_entry(version="11.2.12", type="fix", title="Patch 12")
+
+        import brix.mcp_handlers.changelog as changelog_mod
+
+        monkeypatch.setattr(changelog_mod, "BrixDB", lambda: db)
+
+        from brix.mcp_handlers.changelog import _handle_changelog
+
+        result = asyncio.get_event_loop().run_until_complete(_handle_changelog({}))
+
+        assert [version["version"] for version in result["versions"]] == ["11.2.13", "11.2.12", "11.2.9"]

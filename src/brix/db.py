@@ -5970,7 +5970,7 @@ class BrixDB:
         if clauses:
             where = "WHERE " + " AND ".join(clauses)
 
-        sql = f"SELECT * FROM changelog_entry {where} ORDER BY version DESC, timestamp DESC LIMIT ?"
+        sql = f"SELECT * FROM changelog_entry {where} ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
 
         with self._connect() as conn:
@@ -5978,6 +5978,14 @@ class BrixDB:
             rows = conn.execute(sql, params).fetchall()
 
         entries = [dict(r) for r in rows]
+
+        entries.sort(
+            key=lambda entry: (
+                _parse_semver(entry.get("version", "")),
+                entry.get("timestamp", ""),
+            ),
+            reverse=True,
+        )
 
         # Apply semver-aware 'since' filter in Python (lexicographic SQL
         # comparison fails for versions like "9.0.0" vs "10.0.0").
