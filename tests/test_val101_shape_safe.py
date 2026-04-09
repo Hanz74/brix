@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
+from brix.mcp_handlers.pipelines import _handle_create_pipeline, _handle_validate_pipeline
 from brix.models import Pipeline, Step
 from brix.validator import (
     PipelineValidator,
@@ -348,3 +349,50 @@ def test_invalid_ref_inside_choose_branch_is_detected(_patch_heavy_checks):
     assert finding.step_id == "branch-consumer"
     assert finding.field == "template_ref"
     assert "missing" in finding.message
+
+
+@pytest.mark.asyncio
+async def test_validate_pipeline_returns_structured_summary_and_next_actions(tmp_path, monkeypatch):
+    monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+
+    await _handle_create_pipeline(
+        {
+            "name": "val109-structured",
+            "steps": [
+                {
+                    "id": "call-tool",
+                    "type": "mcp.call",
+                },
+                {
+                    "id": "consumer",
+                    "type": "flow.set",
+                    "params": {"value": "{{ call-tool.result }}"},
+                },
+            ],
+        }
+    )
+
+    result = await _handle_validate_pipeline({"pipeline_id": "val109-structured"})
+
+    assert result["success"] is True
+    assert result["valid"] is False
+    assert result["summary"]["errors"] >= 1
+    assert result["summary"]["warnings"] >= 1
+    assert result["summary"]["infos"] >= 0
+    assert result["summary"]["total"] == (
+        result["summary"]["errors"] + result["summary"]["warnings"] + result["summary"]["infos"]
+    )
+    assert 1 <= len(result["next_actions"]) <= 3
+    assert all(isinstance(action, str) and action for action in result["next_actions"])
+    assert set(result["findings_by_category"]) == {"core", "schema", "reference", "flow", "lint"}
+    assert len(result["findings_by_category"]["reference"]) >= 1
+    assert all(item["severity"] == "error" for item in result["findings_by_category"]["reference"][:2])
+    assert sum(len(items) for items in result["findings_by_category"].values()) == result["summary"]["total"]
+    assert any(
+        item["severity"] == "warning"
+        for items in result["findings_by_category"].values()
+        for item in items
+    )
+    assert isinstance(result["errors"], list)
+    assert isinstance(result["warnings"], list)
+    assert isinstance(result["checks"], list)

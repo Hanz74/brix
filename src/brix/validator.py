@@ -3,6 +3,7 @@ import difflib
 import os
 import re
 from dataclasses import dataclass
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 from pydantic_core import PydanticUndefined
@@ -258,6 +259,7 @@ class ValidationContext:
 class ValidationFinding:
     code: str
     severity: str
+    category: str
     step_id: str | None
     field: str | None
     message: str
@@ -268,9 +270,14 @@ class ValidationFinding:
 
 
 class ValidationResult:
+    _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
+    _CATEGORY_ORDER = {"core": 0, "schema": 1, "reference": 2, "flow": 3, "lint": 4}
+    _DEFAULT_CATEGORIES = ("core", "schema", "reference", "flow", "lint")
+
     def __init__(self):
         self.findings: list[ValidationFinding] = []
         self.checks: list[str] = []  # successful checks
+        self._current_category = "core"
 
     @property
     def is_valid(self) -> bool:
@@ -309,6 +316,7 @@ class ValidationResult:
         code: str,
         severity: str,
         message: str,
+        category: str | None = None,
         step_id: str | None = None,
         field: str | None = None,
         why: str = "",
@@ -320,6 +328,7 @@ class ValidationResult:
             ValidationFinding(
                 code=code,
                 severity=severity,
+                category=category or self._current_category,
                 step_id=step_id,
                 field=field,
                 message=message,
@@ -329,6 +338,105 @@ class ValidationResult:
                 schema_ref=schema_ref,
             )
         )
+
+    @contextmanager
+    def category_scope(self, category: str):
+        previous = self._current_category
+        self._current_category = category
+        try:
+            yield
+        finally:
+            self._current_category = previous
+
+    def sorted_findings(self) -> list[ValidationFinding]:
+        return sorted(
+            self.findings,
+            key=lambda finding: (
+                self._SEVERITY_ORDER.get(finding.severity, 99),
+                self._CATEGORY_ORDER.get(finding.category, 99),
+                finding.step_id or "",
+                finding.field or "",
+                finding.code,
+                finding.message,
+            ),
+        )
+
+    def summary(self) -> dict[str, int]:
+        errors = sum(1 for finding in self.findings if finding.severity == "error")
+        warnings = sum(1 for finding in self.findings if finding.severity == "warning")
+        infos = sum(1 for finding in self.findings if finding.severity == "info")
+        return {
+            "errors": errors,
+            "warnings": warnings,
+            "infos": infos,
+            "total": errors + warnings + infos,
+        }
+
+    @staticmethod
+    def _serialize_finding(finding: ValidationFinding) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "code": finding.code,
+            "severity": finding.severity,
+            "category": finding.category,
+            "message": finding.message,
+        }
+        if finding.step_id is not None:
+            data["step_id"] = finding.step_id
+        if finding.field is not None:
+            data["field"] = finding.field
+        if finding.why:
+            data["why"] = finding.why
+        if finding.hint:
+            data["hint"] = finding.hint
+        if finding.suggestion is not None:
+            data["suggestion"] = finding.suggestion
+        if finding.schema_ref:
+            data["schema_ref"] = finding.schema_ref
+        return data
+
+    def findings_by_category(self) -> dict[str, list[dict[str, Any]]]:
+        grouped: dict[str, list[dict[str, Any]]] = {
+            category: [] for category in self._DEFAULT_CATEGORIES
+        }
+        for finding in self.sorted_findings():
+            grouped.setdefault(finding.category, []).append(self._serialize_finding(finding))
+        return grouped
+
+    @staticmethod
+    def _finding_to_next_action(finding: ValidationFinding) -> str:
+        target = f" in step '{finding.step_id}'" if finding.step_id else ""
+        if finding.hint:
+            hint = finding.hint.rstrip(".")
+            if hint.lower().startswith("fix "):
+                return f"{hint}{target}"
+            return f"{hint}{target}"
+        return f"Fix {finding.message.rstrip('.')}{target}"
+
+    def next_actions(self, limit: int = 3) -> list[str]:
+        actions: list[str] = []
+        seen: set[str] = set()
+        for finding in self.sorted_findings():
+            action = self._finding_to_next_action(finding)
+            if action in seen:
+                continue
+            seen.add(action)
+            actions.append(action)
+            if len(actions) >= limit:
+                break
+        return actions
+
+    def to_structured_payload(self) -> dict[str, Any]:
+        return {
+            "valid": self.is_valid,
+            "summary": self.summary(),
+            "next_actions": self.next_actions(),
+            "findings": [self._serialize_finding(finding) for finding in self.sorted_findings()],
+            "findings_by_category": self.findings_by_category(),
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "infos": self.infos,
+            "checks": self.checks,
+        }
 
     def add_info(
         self,
@@ -478,14 +586,20 @@ class PipelineValidator:
         result = ValidationResult()
         self._validation_ctx = ctx
         try:
-            self.run_core_checks(ctx, result, pipeline_dir=pipeline_dir)
+            with result.category_scope("core"):
+                self.run_core_checks(ctx, result, pipeline_dir=pipeline_dir)
             if level in {"standard", "deep"}:
-                self.run_schema_checks(ctx, result)
-                self.run_reference_checks(ctx, result)
-                self.run_flow_checks(ctx, result)
-                self.run_lint_checks(ctx, result)
+                with result.category_scope("schema"):
+                    self.run_schema_checks(ctx, result)
+                with result.category_scope("reference"):
+                    self.run_reference_checks(ctx, result)
+                with result.category_scope("flow"):
+                    self.run_flow_checks(ctx, result)
+                with result.category_scope("lint"):
+                    self.run_lint_checks(ctx, result)
             if level == "deep":
-                self.run_deep_checks(ctx, result)
+                with result.category_scope("reference"):
+                    self.run_deep_checks(ctx, result)
 
             if result.is_valid:
                 result.add_check("Pipeline is valid")
