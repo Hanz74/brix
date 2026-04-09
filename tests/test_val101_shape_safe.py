@@ -4,7 +4,13 @@ from unittest.mock import patch
 import pytest
 
 from brix.models import Pipeline, Step
-from brix.validator import PipelineValidator, StepAnalysis, ValidationContext, ValidationFinding
+from brix.validator import (
+    PipelineValidator,
+    StepAnalysis,
+    ValidationContext,
+    ValidationFinding,
+    _collect_all_steps,
+)
 
 
 def _step(step_id: str, type: str = "flow.set", **kwargs) -> Step:
@@ -72,6 +78,63 @@ def test_validation_context_builds_correctly():
     assert ctx.pipeline_metadata["name"] == "val101-pipeline"
     assert ctx.pipeline_metadata["version"] == pipeline.version
     assert ctx.step_map["second"].effective_type == "db.query"
+
+
+def test_collect_all_steps_flattens_nested_structures():
+    pipeline = _pipeline(
+        [
+            _step(
+                "chooser",
+                type="flow.choose",
+                choices=[
+                    {
+                        "when": "{{ input.use_branch }}",
+                        "steps": [
+                            {"id": "branch-step", "type": "flow.set"},
+                        ],
+                    }
+                ],
+                default_steps=[
+                    {"id": "default-step", "type": "flow.set"},
+                ],
+            ),
+            _step(
+                "repeater",
+                type="flow.repeat",
+                sequence=[
+                    {"id": "repeat-step", "type": "flow.set"},
+                ],
+            ),
+            _step(
+                "parallel-parent",
+                type="flow.parallel",
+                sub_steps=[
+                    {"id": "parallel-step", "type": "flow.set"},
+                ],
+            ),
+        ]
+    )
+
+    assert [step.id for step in _collect_all_steps(pipeline)] == [
+        "chooser",
+        "branch-step",
+        "default-step",
+        "repeater",
+        "repeat-step",
+        "parallel-parent",
+        "parallel-step",
+    ]
+
+    ctx = ValidationContext.from_pipeline(pipeline)
+    assert [analysis.step.id for analysis in ctx.steps] == [
+        "chooser",
+        "branch-step",
+        "default-step",
+        "repeater",
+        "repeat-step",
+        "parallel-parent",
+        "parallel-step",
+    ]
 
 
 @pytest.fixture
@@ -255,3 +318,33 @@ def test_db_query_dml_includes_schema_ref(_patch_heavy_checks):
     assert finding.why == "db.query is SELECT-only, no commit"
     assert finding.hint == "Use db.exec for UPDATE/DELETE/INSERT"
     assert finding.schema_ref == 'get_brick_schema(name="db.exec")'
+
+
+def test_invalid_ref_inside_choose_branch_is_detected(_patch_heavy_checks):
+    pipeline = _pipeline(
+        [
+            _step(
+                "chooser",
+                type="flow.choose",
+                choices=[
+                    {
+                        "when": "{{ input.flag }}",
+                        "steps": [
+                            {
+                                "id": "branch-consumer",
+                                "type": "flow.set",
+                                "params": {"value": "{{ missing.output.value }}"},
+                            }
+                        ],
+                    }
+                ],
+            )
+        ]
+    )
+
+    result = PipelineValidator(lint_rules=[]).validate(pipeline, level="standard")
+
+    finding = next(f for f in result.findings if f.code == "UNKNOWN_STEP_REF")
+    assert finding.step_id == "branch-consumer"
+    assert finding.field == "template_ref"
+    assert "missing" in finding.message

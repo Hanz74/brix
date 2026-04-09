@@ -72,6 +72,50 @@ _DEFAULT_LINT_RULES = [
 ]
 
 
+def _coerce_step(step_data: Any) -> Step | None:
+    """Best-effort conversion of nested step payloads into Step models."""
+    if isinstance(step_data, Step):
+        return step_data
+    if isinstance(step_data, dict):
+        try:
+            return Step.model_validate(step_data)
+        except Exception:
+            return None
+    return None
+
+
+def _collect_all_steps(pipeline: Pipeline) -> list[Step]:
+    """Flatten top-level and nested choose/repeat/parallel steps in traversal order."""
+    collected: list[Step] = []
+
+    def visit(step_data: Any) -> None:
+        step = _coerce_step(step_data)
+        if step is None:
+            return
+
+        collected.append(step)
+
+        for choice in step.choices or []:
+            if not isinstance(choice, dict):
+                continue
+            for nested in choice.get("steps") or []:
+                visit(nested)
+
+        for nested in step.default_steps or []:
+            visit(nested)
+
+        for nested in step.sub_steps or []:
+            visit(nested)
+
+        for nested in step.sequence or []:
+            visit(nested)
+
+    for step in pipeline.steps:
+        visit(step)
+
+    return collected
+
+
 @dataclass(frozen=True)
 class StepAnalysis:
     """Normalized, shape-safe read view over one step for validation."""
@@ -182,7 +226,7 @@ class ValidationContext:
     def from_pipeline(cls, pipeline: Pipeline) -> "ValidationContext":
         analyses = tuple(
             StepAnalysis.from_step(step, index=index)
-            for index, step in enumerate(pipeline.steps)
+            for index, step in enumerate(_collect_all_steps(pipeline))
         )
         return cls(
             pipeline=pipeline,
