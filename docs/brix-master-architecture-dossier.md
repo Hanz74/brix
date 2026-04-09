@@ -9,6 +9,7 @@ Die unverdichtete Vollversion liegt im Dossier-Paket:
 - [01-coverage-matrix.md](/root/docker/brix/docs/brix-master-dossier/01-coverage-matrix.md)
 - [02-domain-model.md](/root/docker/brix/docs/brix-master-dossier/02-domain-model.md)
 - [03-architecture-and-runtime.md](/root/docker/brix/docs/brix-master-dossier/03-architecture-and-runtime.md)
+- [03a-effective-step-spec.md](/root/docker/brix/docs/brix-master-dossier/03a-effective-step-spec.md)
 - [04-brick-ecosystem.md](/root/docker/brix/docs/brix-master-dossier/04-brick-ecosystem.md)
 - [05-knowledge-graph-intent-layer.md](/root/docker/brix/docs/brix-master-dossier/05-knowledge-graph-intent-layer.md)
 - [06-governance-and-metadata-policy.md](/root/docker/brix/docs/brix-master-dossier/06-governance-and-metadata-policy.md)

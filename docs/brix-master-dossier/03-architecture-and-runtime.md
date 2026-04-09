@@ -20,6 +20,9 @@ Brix should have a single canonical internal representation of a step:
 
 Every major system layer should consume the same materialized step view.
 
+The normative specification for this model lives in:
+- [03a-effective-step-spec.md](/root/docker/brix/docs/brix-master-dossier/03a-effective-step-spec.md)
+
 ## Canonical Internal Shapes
 
 ### Raw Step Shape
@@ -132,6 +135,9 @@ Every important surface should use this:
 - step preview tools
 - engine preflight
 - diagnose/repair tools
+
+This materialization capability must produce the `EffectiveStep` defined in:
+- [03a-effective-step-spec.md](/root/docker/brix/docs/brix-master-dossier/03a-effective-step-spec.md)
 
 ## Runtime Error Model
 The runtime must always identify:
