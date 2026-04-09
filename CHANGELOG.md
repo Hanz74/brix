@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.2.3] — 2026-04-09
+
+- fix: restore `buddy-test-pipe` to a valid one-step debug pipeline instead of leaving a zero-step DB artifact
+- fix: clear the final live integrity finding by replacing the empty pipeline with a valid Brick-first baseline step
+- ops: re-verify `mcp__brix__brix__get_tips` and `validate_pipeline` until the live integrity surface is green
+
 ## [11.2.2] — 2026-04-09
 
 - fix: narrow `HELP_LEGACY_TYPE` detection to actual legacy flat step-type declarations in help content
