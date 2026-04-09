@@ -9,6 +9,7 @@ from typing import Any
 
 from brix.loader import PipelineLoader
 from brix.models import Step, StepStatus
+from brix.materialize import materialize_step
 from brix.serialization import json_dumps, sanitize_for_json
 
 _SPECIALIST_STEP_TYPES = {"specialist", "extract.specialist"}
@@ -274,8 +275,13 @@ class _RenderedStep:
     """Wraps a Step with rendered Jinja2 values for the runner."""
 
     def __init__(self, step: Step, rendered: Any, loader: PipelineLoader, jinja_ctx: dict):
+        materialized = materialize_step(step)
         rendered_dict = rendered if isinstance(rendered, dict) else {}
-        rendered_config = rendered_dict.get("_config") if "_config" in rendered_dict else getattr(step, "config", None)
+        rendered_config = (
+            rendered_dict.get("_config")
+            if "_config" in rendered_dict
+            else materialized.effective_config or getattr(step, "config", None)
+        )
         if "_params" in rendered_dict:
             rendered_params = rendered_dict["_params"]
         elif isinstance(rendered, list):
@@ -294,26 +300,32 @@ class _RenderedStep:
         # Copy original step attributes
         self.id = step.id
         self.type = step.type
+        self.effective_type = materialized.effective_type
         self.timeout = step.timeout
         self.shell = step.shell
 
         # Use rendered values where available, fall back to originals
         self.args = rendered_dict.get("_args") or (
-            [loader.render_value(a, jinja_ctx) for a in step.args] if step.args else None
+            [loader.render_value(a, jinja_ctx) for a in materialized.effective_step_fields.get("args", step.args)]
+            if materialized.effective_step_fields.get("args", step.args)
+            else None
         )
         self.command = rendered_dict.get("_command") or (
-            loader.render_value(step.command, jinja_ctx) if step.command else None
+            loader.render_value(materialized.effective_step_fields.get("command", step.command), jinja_ctx)
+            if materialized.effective_step_fields.get("command", step.command)
+            else None
         )
-        self.url = rendered_dict.get("_url") or step.url
-        self.headers = rendered_dict.get("_headers") or step.headers
-        self.body = rendered_dict["_body"] if "_body" in rendered_dict else step.body
-        self.method = step.method
-        self.script = step.script
-        self.server = step.server
-        self.tool = step.tool
+        self.url = rendered_dict.get("_url") or materialized.effective_step_fields.get("url", step.url)
+        self.headers = rendered_dict.get("_headers") or materialized.effective_step_fields.get("headers", step.headers)
+        self.body = rendered_dict["_body"] if "_body" in rendered_dict else materialized.effective_step_fields.get("body", step.body)
+        self.method = materialized.effective_step_fields.get("method", step.method)
+        self.script = materialized.effective_step_fields.get("script", step.script)
+        self.server = materialized.effective_step_fields.get("server", step.server)
+        self.tool = materialized.effective_step_fields.get("tool", step.tool)
         self.config = rendered_config
-        self.pipeline = rendered_dict.get("_pipeline") or step.pipeline
-        self.params = rendered_params if rendered_params not in (None, {}) else _step_config_dict(step)
+        self.pipeline = rendered_dict.get("_pipeline") or materialized.effective_step_fields.get("pipeline", step.pipeline)
+        self.params = rendered_params if rendered_params not in (None, {}) else materialized.effective_params
+        self.materialized_step = materialized
         # set runner: rendered values under _values key, fall back to raw values field
         self.values = rendered_dict.get("_values") or getattr(step, "values", None) or {}
         # set runner: persist flag (T-BRIX-DB-13)

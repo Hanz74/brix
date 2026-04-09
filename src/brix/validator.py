@@ -19,6 +19,7 @@ from brix.models import Pipeline, Step
 from brix.cache import SchemaCache
 from brix.bricks.registry import BrickRegistry
 from brix.engine import LEGACY_ALIASES
+from brix.materialize import MaterializedStep, materialize_step
 from brix.pipeline_store import PipelineStore
 from brix.connections import ConnectionManager
 
@@ -123,31 +124,36 @@ class StepAnalysis:
 
     step: Step
     index: int
+    materialized: MaterializedStep
     effective_type: str
     raw_params: dict[str, Any] | list[Any] | None
     raw_config: Any
 
     @classmethod
     def from_step(cls, step: Step, index: int = -1) -> "StepAnalysis":
+        materialized = materialize_step(step)
         return cls(
             step=step,
             index=index,
-            effective_type=LEGACY_ALIASES.get(step.type, step.type),
-            raw_params=getattr(step, "params", None),
-            raw_config=getattr(step, "config", None),
+            materialized=materialized,
+            effective_type=materialized.effective_type,
+            raw_params=materialized.raw_params,
+            raw_config=materialized.raw_config,
         )
 
     @property
     def normalized_params(self) -> dict[str, Any]:
-        return self.raw_params if isinstance(self.raw_params, dict) else {}
+        params = self.materialized.effective_params
+        return params if isinstance(params, dict) else {}
 
     @property
     def normalized_config(self) -> dict[str, Any]:
-        return self.raw_config if isinstance(self.raw_config, dict) else {}
+        return self.materialized.effective_config
 
     @property
     def params_list(self) -> list[Any]:
-        return self.raw_params if isinstance(self.raw_params, list) else []
+        params = self.materialized.effective_params
+        return params if isinstance(params, list) else []
 
     @property
     def has_params(self) -> bool:
@@ -173,8 +179,6 @@ class StepAnalysis:
     def config_values(self) -> list[Any]:
         if self.normalized_config:
             return list(self.normalized_config.values())
-        if isinstance(self.raw_config, list):
-            return list(self.raw_config)
         return []
 
     def param_items(self) -> list[tuple[Any, Any]]:
@@ -185,8 +189,6 @@ class StepAnalysis:
     def config_items(self) -> list[tuple[Any, Any]]:
         if self.normalized_config:
             return list(self.normalized_config.items())
-        if isinstance(self.raw_config, list):
-            return list(enumerate(self.raw_config))
         return []
 
     def param_keys(self) -> set[Any]:
