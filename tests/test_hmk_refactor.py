@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from brix.db import BrixDB
-from brix.hmk_refactor import rewrite_hmk_save_results_to_persistence_brick
+from brix.hmk_refactor import (
+    rewrite_hmk_mark_processed_to_specialist_brick,
+    rewrite_hmk_save_results_to_persistence_brick,
+)
 from brix.validator import PipelineValidator
 from brix.pipeline_store import PipelineStore
 
@@ -136,3 +139,32 @@ def test_rewrite_hmk_save_results_validates_without_object_type_warning(tmp_path
         and finding.field == "extraction_result"
         for finding in result.findings
     )
+
+
+def test_rewrite_hmk_mark_processed_to_specialist_brick(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    updated = rewrite_hmk_mark_processed_to_specialist_brick(db=db)
+
+    mark_processed = next(step for step in updated["steps"] if step["id"] == "mark_processed")
+    assert mark_processed["type"] == "document.mark_specialist_processed"
+    assert mark_processed["config"] == {
+        "connection": "buddy-db",
+        "document_id": "{{ input.item.id }}",
+        "specialist_name": "hmk_extracted",
+    }
+    assert mark_processed["params"] == mark_processed["config"]
+
+
+def test_rewrite_hmk_mark_processed_is_idempotent(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    rewrite_hmk_mark_processed_to_specialist_brick(db=db)
+    updated = rewrite_hmk_mark_processed_to_specialist_brick(db=db)
+
+    mark_processed = next(step for step in updated["steps"] if step["id"] == "mark_processed")
+    assert mark_processed["type"] == "document.mark_specialist_processed"

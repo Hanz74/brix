@@ -51,3 +51,40 @@ def rewrite_hmk_save_results_to_persistence_brick(
     raw["steps"] = steps
     store.save(raw, name=pipeline_name)
     return store.load_raw(pipeline_name)
+
+
+def rewrite_hmk_mark_processed_to_specialist_brick(
+    *,
+    db: BrixDB | None = None,
+    pipeline_name: str = "buddy-hmk-extract-single",
+) -> dict[str, Any]:
+    """Replace HMK inline specialist state mutation with the reusable document brick."""
+
+    active_db = db if db is not None else BrixDB()
+    store = PipelineStore(db=active_db)
+    raw = store.load_raw(pipeline_name)
+    steps = raw.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError(f"Pipeline '{pipeline_name}' has no step list")
+
+    mark_processed = _step_by_id(steps, "mark_processed")
+    config = mark_processed.get("config")
+    if not isinstance(config, dict):
+        raise ValueError("HMK 'mark_processed' step must carry dict config")
+
+    current_query = str(config.get("query") or "")
+    if mark_processed.get("type") == "document.mark_specialist_processed":
+        return raw
+    if "array_append" not in current_query or "hmk_extracted" not in current_query:
+        raise ValueError("HMK 'mark_processed' no longer matches inline specialist mutation shape")
+
+    mark_processed["type"] = "document.mark_specialist_processed"
+    mark_processed["config"] = {
+        "connection": "buddy-db",
+        "document_id": "{{ input.item.id }}",
+        "specialist_name": "hmk_extracted",
+    }
+    mark_processed["params"] = {}
+    raw["steps"] = steps
+    store.save(raw, name=pipeline_name)
+    return store.load_raw(pipeline_name)
