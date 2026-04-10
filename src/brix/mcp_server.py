@@ -362,6 +362,7 @@ from brix.mcp_handlers.testing import (
 )
 from brix.mcp_handlers.smoke import _handle_smoke_test
 from brix.mcp_handlers.changelog import _handle_changelog
+from brix.mcp_handlers.knowledge import _handle_intent, _handle_decision
 # T-BRIX-DBF-04: DB-First CRUD for tool_schema, help_topic, keyword, type_compat
 from brix.mcp_handlers.dbfirst_crud import (
     _handle_tool_schema,
@@ -778,6 +779,9 @@ _HANDLERS = {
     "brix__type_compat": _handle_type_compat,
     # T-BRIX-CHANGELOG-01: Changelog
     "brix__changelog": _handle_changelog,
+    # T-5.1.1: intent / decision CRUD
+    "brix__intent": _handle_intent,
+    "brix__decision": _handle_decision,
 }
 
 

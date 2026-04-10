@@ -510,6 +510,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_seed_workaround_pattern_catalog_v92",
         "down": "",
     },
+    {
+        "version": 93,
+        "name": "register_intent_decision_tool_schemas",
+        "up": "",
+        "up_fn": "_register_intent_decision_tool_schemas_v93",
+        "down": "",
+    },
 ]
 
 
@@ -972,6 +979,57 @@ def _seed_workaround_pattern_catalog_v92(db: "BrixDB") -> None:
     from brix.workaround_patterns import ensure_default_workaround_patterns
 
     ensure_default_workaround_patterns(db)
+
+
+def _register_intent_decision_tool_schemas_v93(db: "BrixDB") -> None:
+    """Register MCP tool schemas for intent and decision CRUD."""
+    shared_properties = {
+        "action": {
+            "type": "string",
+            "enum": ["add", "get", "list", "update", "delete"],
+            "description": "CRUD action to perform.",
+        },
+        "name": {"type": "string", "description": "Stable entity name for add."},
+        "name_or_id": {"type": "string", "description": "Existing entity name or id for get/update/delete."},
+        "title": {"type": "string", "description": "Human-readable title."},
+        "raw_text": {"type": "string", "description": "Original uncompressed request/problem statement."},
+        "summary": {"type": "string", "description": "Concise summary."},
+        "rationale": {"type": "string", "description": "Decision or intent rationale."},
+        "lifecycle_stage": {
+            "type": "string",
+            "enum": ["draft", "active", "deprecated", "archived", "superseded", "resolved"],
+        },
+        "status": {"type": "string", "description": "Operational status."},
+        "owner": {"type": "string", "description": "Responsible owner or team."},
+        "project": {"type": "string", "description": "Project scope."},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "content": {"type": "object", "description": "Structured metadata payload."},
+        "tag_filter": {"type": "string", "description": "Optional list filter by tag."},
+        "links": {
+            "type": "array",
+            "description": "Optional links to related entities during add.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "relation_type": {"type": "string"},
+                    "target_entity_type": {"type": "string"},
+                    "target_entity_id": {"type": "string"},
+                    "metadata": {"type": "object"},
+                },
+            },
+        },
+    }
+    for tool_name, description in (
+        ("brix__intent", "Intent CRUD over the knowledge layer."),
+        ("brix__decision", "Decision CRUD over the knowledge layer."),
+    ):
+        db.mcp_tool_schemas_upsert(
+            {
+                "name": tool_name,
+                "description": description,
+                "input_schema": {"type": "object", "properties": shared_properties},
+            }
+        )
 
 
 def _register_effective_step_tool_schemas_v86(db: "BrixDB") -> None:
