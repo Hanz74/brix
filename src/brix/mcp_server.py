@@ -364,6 +364,11 @@ from brix.mcp_handlers.smoke import _handle_smoke_test
 from brix.mcp_handlers.changelog import _handle_changelog
 from brix.mcp_handlers.knowledge import _handle_intent, _handle_decision
 from brix.mcp_handlers.component_context import _handle_get_component_context, _handle_get_related_components
+from brix.mcp_handlers.metadata_repair import (
+    _handle_get_missing_metadata,
+    _handle_repair_component_metadata,
+    _handle_record_reuse_decision,
+)
 # T-BRIX-DBF-04: DB-First CRUD for tool_schema, help_topic, keyword, type_compat
 from brix.mcp_handlers.dbfirst_crud import (
     _handle_tool_schema,
@@ -786,6 +791,10 @@ _HANDLERS = {
     # T-5.1.2: component context / relationships
     "brix__get_component_context": _handle_get_component_context,
     "brix__get_related_components": _handle_get_related_components,
+    # T-5.1.3: metadata repair / reuse checks
+    "brix__get_missing_metadata": _handle_get_missing_metadata,
+    "brix__repair_component_metadata": _handle_repair_component_metadata,
+    "brix__record_reuse_decision": _handle_record_reuse_decision,
 }
 
 

@@ -524,6 +524,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_component_context_tool_schemas_v94",
         "down": "",
     },
+    {
+        "version": 95,
+        "name": "register_metadata_repair_tool_schemas",
+        "up": "",
+        "up_fn": "_register_metadata_repair_tool_schemas_v95",
+        "down": "",
+    },
 ]
 
 
@@ -1063,6 +1070,81 @@ def _register_component_context_tool_schemas_v94(db: "BrixDB") -> None:
             "name": "brix__get_related_components",
             "description": "Traverse the component graph and return related nodes and edges.",
             "input_schema": {"type": "object", "properties": related_properties},
+        }
+    )
+
+
+def _register_metadata_repair_tool_schemas_v95(db: "BrixDB") -> None:
+    """Register MCP tool schemas for metadata repair and reuse decision workflows."""
+    entity_properties = {
+        "entity_type": {"type": "string", "description": "Entity type such as pipeline, brick, helper, connection, help_topic, intent, task, decision, workaround, or reuse."},
+        "entity_id": {"type": "string", "description": "Entity name or id."},
+    }
+    repair_properties = {
+        **entity_properties,
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "project": {"type": "string"},
+        "owner": {"type": "string"},
+        "purpose": {"type": "string"},
+        "source_intent_id": {"type": "string"},
+        "lifecycle_stage": {"type": "string"},
+        "status": {"type": "string"},
+        "usage_scope": {"type": "string"},
+        "version_relevance": {"type": "string"},
+        "linked_topic": {"type": "string"},
+        "replacement_plan": {"type": "string"},
+        "expiry_condition": {"type": "string"},
+        "reason_not_a_brick": {"type": "string"},
+        "brick_candidate_ref": {"type": "string"},
+        "input_type": {"type": "string"},
+        "output_type": {"type": "string"},
+        "when_NOT_to_use": {"type": "string"},
+        "examples": {"type": "array", "items": {"type": "object"}},
+        "category": {"type": "string"},
+        "content": {"type": "object"},
+        "raw_text": {"type": "string"},
+        "summary": {"type": "string"},
+        "rationale": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    }
+    db.mcp_tool_schemas_upsert(
+        {
+            "name": "brix__get_missing_metadata",
+            "description": "Inspect one component and return the missing metadata fields plus repair prompts.",
+            "input_schema": {"type": "object", "properties": entity_properties},
+        }
+    )
+    db.mcp_tool_schemas_upsert(
+        {
+            "name": "brix__repair_component_metadata",
+            "description": "Repair missing governance metadata by dispatching to the correct component updater.",
+            "input_schema": {"type": "object", "properties": repair_properties},
+        }
+    )
+    db.mcp_tool_schemas_upsert(
+        {
+            "name": "brix__record_reuse_decision",
+            "description": "Persist a reuse review for an existing pipeline, brick, or helper.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    **entity_properties,
+                    "decision_outcome": {
+                        "type": "string",
+                        "enum": [
+                            "reused_existing_component",
+                            "modified_existing_component",
+                            "new_component_justified",
+                        ],
+                    },
+                    "rationale": {"type": "string"},
+                    "reviewed_components": {"type": "array", "items": {"type": "string"}},
+                    "project": {"type": "string"},
+                    "owner": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+            },
         }
     )
 
