@@ -37,6 +37,7 @@ from brix.reuse_enforcement import (
     extract_reuse_arguments,
     persist_reuse_review,
 )
+from brix.workaround_patterns import assess_workaround_annotation
 
 
 def _bump_version(current: str, bump: str = "patch") -> str:
@@ -243,6 +244,27 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
 
     # Validate
     validation = _validate_pipeline_dict(pipeline_data)
+    workaround_assessment = assess_workaround_annotation(
+        validation.get("findings", []),
+        supplemental_metadata,
+    )
+    if workaround_assessment.blocking:
+        return {
+            "success": False,
+            "error": (
+                "Known workaround patterns require explicit metadata. "
+                f"Missing fields: {list(workaround_assessment.missing_fields)}."
+            ),
+            "workaround_policy": {
+                "patterns": list(workaround_assessment.patterns),
+                "missing_fields": list(workaround_assessment.missing_fields),
+            },
+            "repair_prompts": [
+                "Set owner='team-or-person-responsible'.",
+                "Set replacement_plan='how this workaround will be removed or replaced'.",
+                "Set expiry_condition='review trigger or expiry condition'.",
+            ],
+        }
 
     metadata_assessment = assess_metadata_enforcement(
         "pipeline",
@@ -506,6 +528,29 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
     )
     if metadata_assessment.blocking:
         return blocking_metadata_response(metadata_assessment)
+
+    workaround_validation = _validate_pipeline_dict(raw)
+    workaround_assessment = assess_workaround_annotation(
+        workaround_validation.get("findings", []),
+        {**existing_metadata, **supplemental_metadata},
+    )
+    if workaround_assessment.blocking:
+        return {
+            "success": False,
+            "error": (
+                "Known workaround patterns require explicit metadata before this pipeline can remain active. "
+                f"Missing fields: {list(workaround_assessment.missing_fields)}."
+            ),
+            "workaround_policy": {
+                "patterns": list(workaround_assessment.patterns),
+                "missing_fields": list(workaround_assessment.missing_fields),
+            },
+            "repair_prompts": [
+                "Set owner='team-or-person-responsible'.",
+                "Set replacement_plan='how this workaround will be removed or replaced'.",
+                "Set expiry_condition='review trigger or expiry condition'.",
+            ],
+        }
 
     if changed_fields:
         # Auto-bump version (patch for config changes, unless version was explicitly set)

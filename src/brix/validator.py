@@ -24,7 +24,8 @@ from brix.materialize import MaterializedStep, materialize_step
 from brix.step_field_policy import explicit_runner_specific_fields, get_field_migration_policy
 from brix.pipeline_store import PipelineStore
 from brix.connections import ConnectionManager
-from brix.workaround_patterns import detect_workaround_pattern_matches
+from brix.db import BrixDB
+from brix.workaround_patterns import assess_workaround_annotation, detect_workaround_pattern_matches
 
 
 _STEP_CONFIG_CONFLICT_FIELDS = tuple(
@@ -75,6 +76,15 @@ _DEFAULT_LINT_RULES = [
         "severity": "warning",
     },
 ]
+
+
+def _load_pipeline_entity_metadata(name: str) -> dict[str, Any]:
+    if not name:
+        return {}
+    try:
+        return BrixDB().entity_metadata_get("pipeline", name) or {}
+    except Exception:
+        return {}
 
 
 def _coerce_step(step_data: Any) -> Step | None:
@@ -245,6 +255,7 @@ class ValidationContext:
                 "description": pipeline.description,
                 "policy_level": pipeline.policy_level,
                 "input_keys": tuple(pipeline.input.keys()),
+                "entity_metadata": _load_pipeline_entity_metadata(pipeline.name),
             },
         )
 
@@ -768,6 +779,7 @@ class PipelineValidator:
         self._check_tojson_on_string(ctx, result)
         self._check_db_query_dml(ctx, result)
         self._check_workaround_patterns(ctx, result)
+        self._check_workaround_annotation(ctx, result)
 
     def run_deep_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
         """Run expensive deep validation checks."""
@@ -2326,6 +2338,33 @@ class PipelineValidator:
                 },
             )
             existing_keys.add(finding_key)
+
+    def _check_workaround_annotation(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Require owner/replacement metadata when a workaround pattern is present."""
+        metadata = dict(ctx.pipeline_metadata.get("entity_metadata") or {})
+        assessment = assess_workaround_annotation(result.findings, metadata)
+        if not assessment.blocking:
+            return
+
+        message = (
+            "Pipeline carries known workaround patterns "
+            f"{list(assessment.patterns)} but is missing metadata {list(assessment.missing_fields)}."
+        )
+        kwargs = {
+            "code": "WORKAROUND_ANNOTATION_MISSING",
+            "field": "metadata",
+            "why": "Temporary workaround debt must be explicit, owned, and time-bounded.",
+            "hint": "Set owner, replacement_plan, and expiry_condition via update_pipeline metadata fields.",
+            "suggestion": {
+                "kind": "update_pipeline_metadata",
+                "missing_fields": list(assessment.missing_fields),
+                "patterns": list(assessment.patterns),
+            },
+        }
+        if self._effective_policy_level(ctx.pipeline) in {"strict", "locked"}:
+            result.add_error(message, **kwargs)
+        else:
+            result.add_warning(message, **kwargs)
 
     # ---------------------------------------------------------------------------
     # T-BRIX-VAL-08: Duplicate step IDs across sub-pipelines

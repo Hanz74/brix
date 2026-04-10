@@ -78,6 +78,72 @@ steps:
     assert any(f.step_id == "fetch" for f in workaround)
 
 
+def test_validator_requires_workaround_annotation_metadata(db):
+    ensure_default_workaround_patterns(db)
+    pipeline = PipelineLoader().load_from_string(
+        """
+name: workaround-metadata-missing
+steps:
+  - id: save
+    type: db.query
+    query: "UPDATE documents SET status='done'"
+        """
+    )
+
+    result = PipelineValidator().validate(pipeline)
+
+    finding = next(f for f in result.findings if f.code == "WORKAROUND_ANNOTATION_MISSING")
+    assert "replacement_plan" in finding.message
+    assert finding.suggestion == {
+        "kind": "update_pipeline_metadata",
+        "missing_fields": ["owner", "replacement_plan", "expiry_condition"],
+        "patterns": ["db_query_used_for_dml"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_pipeline_with_workaround_requires_annotation_metadata(db, monkeypatch):
+    import brix.mcp_handlers.pipelines as ph
+    import brix.mcp_server as mcp_server
+
+    tmp_path = db.db_path.parent / "pipelines"
+    tmp_path.mkdir(exist_ok=True)
+    monkeypatch.setattr(ph, "_pipeline_dir", lambda: tmp_path)
+    monkeypatch.setattr(mcp_server, "PIPELINE_DIR", tmp_path)
+
+    blocked = await ph._handle_create_pipeline(
+        {
+            "name": "hmk-workaround-blocked",
+            "steps": [
+                {
+                    "id": "save",
+                    "type": "db.query",
+                    "query": "UPDATE documents SET status='done'",
+                }
+            ],
+        }
+    )
+    assert blocked["success"] is False
+    assert blocked["workaround_policy"]["missing_fields"] == ["owner", "replacement_plan", "expiry_condition"]
+
+    allowed = await ph._handle_create_pipeline(
+        {
+            "name": "hmk-workaround-annotated",
+            "steps": [
+                {
+                    "id": "save",
+                    "type": "db.query",
+                    "query": "UPDATE documents SET status='done'",
+                }
+            ],
+            "owner": "team-brix",
+            "replacement_plan": "replace db.query DML with db.exec after migration completes",
+            "expiry_condition": "remove after HMK persistence brick rollout",
+        }
+    )
+    assert allowed["success"] is True
+
+
 @pytest.mark.asyncio
 async def test_get_tips_includes_workaround_patterns_section(db, monkeypatch):
     import brix.mcp_handlers.help as help_mod
