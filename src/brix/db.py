@@ -1,22 +1,23 @@
-"""Brix central SQLite index — ~/.brix/brix.db
+"""Brix central SQLite database — ~/.brix/brix.db
 
-This module provides the single central database for all Brix metadata:
+This module provides the authoritative database for Brix operational metadata:
 
   - runs        (migrated from history.db — pipeline run records)
-  - pipelines   (index of pipeline YAML files)
-  - helpers     (index of helper registry entries)
-  - pipeline_helpers  (many-to-many: which helpers a pipeline uses)
+  - pipelines   (DB-authored pipeline metadata)
+  - helpers     (DB-authored helper registry entries)
+  - pipeline_helpers  (many-to-many helper usage)
   - object_versions   (content history — prepared for T-BRIX-V5-07)
   - app_log     (application log entries — T-BRIX-V7-08)
 
-Files remain the Source of Truth; the DB is an always-up-to-date index.
+The DB is the source of truth. Files are non-authoritative export, bundle,
+backup, debug, or legacy-import artifacts only.
 Sync happens:
   - On startup via BrixDB.sync_all()
   - Atomically on every create/update/delete via the per-module helpers
 
 Migration:
   - Existing runs from history.db are imported once (idempotent)
-  - registry.yaml helpers are imported once (idempotent)
+  - registry.yaml helpers are imported once as legacy input (idempotent)
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re as _re
 import sqlite3
 from contextlib import nullcontext
 from datetime import datetime, timezone
@@ -32,7 +34,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from brix.config import config as _brix_config
-from brix.serialization import json_dumps, sanitize_for_json
+from brix.serialization import json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -1098,11 +1100,6 @@ _DDL = [
     """,
 ]
 
-# ---------------------------------------------------------------------------
-# Table-name allowlist — derived from _DDL at import time (T-BRIX-SEC-01)
-# ---------------------------------------------------------------------------
-import re as _re
-
 _PIPELINE_STEP_COLUMNS = frozenset(
     _re.findall(r"^\s+([a-z_][a-z0-9_]*)\s+", _PIPELINE_STEP_DDL, flags=_re.MULTILINE)
 )
@@ -1158,7 +1155,7 @@ class BrixDB:
     -----
     db = BrixDB()            # uses ~/.brix/brix.db
     db = BrixDB(path)        # custom path (tests)
-    db.sync_all()            # resync YAML files → DB
+    db.sync_all()            # import legacy files into DB-owned state
     """
 
     def __init__(self, db_path: Optional[Path] = None) -> None:
@@ -1527,7 +1524,7 @@ class BrixDB:
         # Build timeline: estimate wall-clock times from cumulative durations
         # starting at run_started_at.
         try:
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timedelta
             base_dt = datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
         except Exception:
             base_dt = None
@@ -1944,10 +1941,11 @@ class BrixDB:
         self,
         pipeline_dirs: Optional[list[Path]] = None,
     ) -> int:
-        """Scan YAML pipeline files and upsert metadata into the pipelines table.
+        """Import legacy pipeline YAML files into the DB.
 
-        Also resolves helper references in each pipeline and updates
-        the pipeline_helpers join table.
+        File inputs are non-authoritative import sources. Existing DB rows keep
+        their identity, and live authoring paths must not depend on this scan.
+        Helper references are resolved for imported pipeline metadata.
 
         Returns the number of pipelines upserted.
         """
@@ -2154,7 +2152,7 @@ class BrixDB:
         registry_path: Optional[Path] = None,
         pipeline_dirs: Optional[list[Path]] = None,
     ) -> dict[str, int]:
-        """Full sync: migrate legacy data + scan current YAML files.
+        """Full sync: migrate legacy data and import file mirrors.
 
         Returns a summary dict with counts of imported/upserted items.
         """

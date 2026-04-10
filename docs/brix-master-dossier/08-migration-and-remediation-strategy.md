@@ -11,6 +11,9 @@ Create one materialized effective step model and move all major surfaces onto it
 ### Track B: DB Truth Hardening
 Reduce file mirrors to export and bundle roles. Move all authoring and repair assumptions toward DB-first behavior.
 
+Normative boundary:
+- [03b-file-mirror-policy.md](/root/docker/brix/docs/brix-master-dossier/03b-file-mirror-policy.md)
+
 ### Track C: Helper-to-Brick Migration
 Identify helper families and pipeline-level special logic that should become reusable bricks.
 
@@ -33,6 +36,9 @@ Do not leave helpers or patterns “temporarily” unclassified.
 
 ### Rule 4
 Do not add new MCP features without aligning them with DB truth and governance rules.
+
+### Rule 5
+Do not let a file mirror suppress a DB integrity issue. A mirror may be migration input, but live repair must update DB-owned state.
 
 ## Existing Debt Classes
 - helper overuse

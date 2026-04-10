@@ -1,4 +1,8 @@
-"""YAML pipeline loader with Jinja2 template support."""
+"""Legacy YAML import/render loader with Jinja2 template support.
+
+DB rows are the authoritative pipeline source. This loader remains for
+compatibility, tests, and import/export flows that need to parse YAML artifacts.
+"""
 
 import ast
 import base64
@@ -13,6 +17,7 @@ from jinja2.nativetypes import NativeCodeGenerator, native_concat
 from jinja2.sandbox import SandboxedEnvironment
 
 from brix.context import now as utcnow
+from brix.models import Pipeline, Step
 
 
 class SandboxedNativeEnvironment(SandboxedEnvironment):
@@ -25,8 +30,6 @@ class SandboxedNativeEnvironment(SandboxedEnvironment):
 
     code_generator_class = NativeCodeGenerator
     concat = staticmethod(native_concat)  # type: ignore[assignment]
-
-from brix.models import Pipeline, Step
 
 # Sentinel for _resolve_pure_expression to distinguish "not resolved" from None
 _SENTINEL = object()
@@ -49,7 +52,7 @@ def register_brix_jinja_globals(env: SandboxedEnvironment) -> SandboxedEnvironme
 
 
 class PipelineLoader:
-    """Loads pipeline YAML files and renders Jinja2 templates."""
+    """Loads non-authoritative YAML artifacts and renders Jinja2 templates."""
 
     def __init__(self) -> None:
         # SandboxedEnvironment prevents arbitrary code execution (D-13).

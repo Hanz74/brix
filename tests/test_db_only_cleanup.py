@@ -79,10 +79,15 @@ async def test_pipeline_crud_does_not_create_yaml_files(tmp_path, monkeypatch, d
 
 
 def test_startup_sync_works_without_pipeline_disk_scan(monkeypatch, db):
-    db.upsert_pipeline(
+    pipeline_id = db.upsert_pipeline(
         name="startup-cleanup",
         path="/virtual/startup-cleanup.yaml",
-        yaml_content="""
+    )
+    with db._connect() as conn:
+        conn.execute(
+            "UPDATE pipeline SET yaml_content=? WHERE id=?",
+            (
+                """
 name: startup-cleanup
 steps:
   - id: migrated
@@ -90,7 +95,9 @@ steps:
     values:
       ok: true
 """.strip(),
-    )
+                pipeline_id,
+            ),
+        )
 
     def _boom():
         raise AssertionError("pipeline disk scan should not run")

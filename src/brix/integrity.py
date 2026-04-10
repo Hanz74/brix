@@ -28,7 +28,8 @@ _HELP_LEGACY_STEP_TYPE_PATTERN = re.compile(
     + r")(?=[\"'])"
 )
 
-# Pipeline search paths mirrored from seed.py
+# Pipeline search paths for legacy import diagnostics. File mirrors are not
+# authoritative authoring state.
 _PIPELINE_SEARCH_PATHS = [
     Path.home() / ".brix" / "pipelines",
     Path("/app/pipelines"),
@@ -36,7 +37,7 @@ _PIPELINE_SEARCH_PATHS = [
 
 
 def _collect_yaml_files() -> dict[str, Path]:
-    """Return {pipeline_name: Path} for all YAML files on disk."""
+    """Return {pipeline_name: Path} for legacy YAML import candidates."""
     found: dict[str, Path] = {}
     for search_dir in _PIPELINE_SEARCH_PATHS:
         if not search_dir.exists():
@@ -145,7 +146,8 @@ def _check_pipelines_without_steps(
 
     yaml_content is no longer the source of truth.  Pipelines that have zero
     step rows are flagged with code "NO_STEP_ROWS" — they may have been created
-    without steps or failed to migrate from YAML.
+    without steps or failed to migrate from a legacy file import. The fix is a
+    DB authoring/migration action, not reading a file mirror as truth.
     """
     pipelines_without_steps: list[str] = []
 
@@ -265,7 +267,6 @@ def _check_orphaned_deprecated_usage(
     failed = []
     for entry in orphaned:
         try:
-            import sqlite3
             with db._connect() as conn:  # type: ignore[attr-defined]
                 conn.execute(
                     "DELETE FROM deprecated_usage WHERE pipeline_name=? AND step_id=?",

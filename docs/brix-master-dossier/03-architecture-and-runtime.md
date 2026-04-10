@@ -23,6 +23,9 @@ Every major system layer should consume the same materialized step view.
 The normative specification for this model lives in:
 - [03a-effective-step-spec.md](/root/docker/brix/docs/brix-master-dossier/03a-effective-step-spec.md)
 
+The normative file mirror boundary lives in:
+- [03b-file-mirror-policy.md](/root/docker/brix/docs/brix-master-dossier/03b-file-mirror-policy.md)
+
 ## Canonical Internal Shapes
 
 ### Raw Step Shape
@@ -183,6 +186,10 @@ Move semantic authority toward brick schemas and materialized step state.
 
 ### Directive 3
 Treat file mirrors as export products, not authoring truth.
+
+This directive is binding. File mirrors may be export, backup, bundle, debug,
+or legacy-import artifacts. They must not be used as primary persistence, live
+repair targets, or a reason to hide missing DB authoring state.
 
 ### Directive 4
 Make all non-trivial merge logic observable through MCP inspection.

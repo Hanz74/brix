@@ -87,12 +87,14 @@ Examples:
 - prefer bricks over helpers
 - prefer DB truth over file mirrors
 - treat workaround patterns as debt
+- treat files as export, backup, bundle, debug, or legacy-import artifacts only
 
 ### Must Not Do
 - invent pipeline-local business logic when a reusable component is appropriate
 - introduce new helpers without justification
 - leave missing ownership or purpose metadata unresolved
 - trust legacy help text over current registry/runtime truth
+- repair live pipeline state by editing YAML mirrors directly
 
 ## Human and LLM Collaboration
 The system should support a guided conversation:

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-import yaml
 
 from brix.db import BrixDB
 from brix.migrations import run_pending_migrations
@@ -33,52 +32,44 @@ def test_empty_db_is_ok(db):
 
 
 # ---------------------------------------------------------------------------
-# 2. Pipeline without yaml_content AND no disk file → reported as issue
+# 2. Pipeline without normalized step rows → reported as DB issue
 # ---------------------------------------------------------------------------
 
-def test_pipeline_without_yaml_content_reported(tmp_path, db):
-    # Insert a pipeline with no yaml_content
-    db.upsert_pipeline(name="no-yaml-pipe", path="/tmp/no-yaml-pipe.yaml")
+def test_pipeline_without_step_rows_reported(db):
+    db.upsert_pipeline(name="no-step-rows-pipe", path="/tmp/no-step-rows-pipe.yaml")
 
     result = run_integrity_checks(db)
 
-    # Should have PIPELINE_NO_YAML issue
     codes = [i["code"] for i in result["issues"]]
-    assert "PIPELINE_NO_YAML" in codes
-    # ok=False because there's an unresolvable missing yaml
+    assert "NO_STEP_ROWS" in codes
+    assert "PIPELINE_NO_YAML" not in codes
     assert result["ok"] is False
 
 
 # ---------------------------------------------------------------------------
-# 3. Pipeline without yaml_content but disk file exists → auto-fix
+# 3. File mirror does not suppress missing DB step rows
 # ---------------------------------------------------------------------------
 
-def test_pipeline_without_yaml_content_autofix(tmp_path, monkeypatch, db):
+def test_pipeline_file_mirror_does_not_autofix_db_truth(tmp_path, monkeypatch, db):
     import brix.integrity as int_mod
 
-    # Create YAML on disk
     yaml_dir = tmp_path / "pipelines"
     yaml_dir.mkdir()
-    pipe_file = yaml_dir / "myfix-pipe.yaml"
+    pipe_file = yaml_dir / "mirror-only-pipe.yaml"
     pipe_file.write_text(
-        "name: myfix-pipe\nsteps:\n  - id: s1\n    type: script.python\n    script: pass\n",
+        "name: mirror-only-pipe\nsteps:\n  - id: s1\n    type: script.python\n    script: pass\n",
         encoding="utf-8",
     )
 
-    # Monkeypatch search paths to point to our tmp dir
     monkeypatch.setattr(int_mod, "_PIPELINE_SEARCH_PATHS", [yaml_dir])
-
-    # Insert pipeline without yaml_content
-    db.upsert_pipeline(name="myfix-pipe", path=str(pipe_file))
+    db.upsert_pipeline(name="mirror-only-pipe", path=str(pipe_file))
 
     result = run_integrity_checks(db)
 
-    # Should have been auto-fixed
-    assert any("myfix-pipe" in f for f in result["auto_fixed"]), result
-    # And yaml_content should now exist in DB
-    content = db.get_pipeline_yaml_content("myfix-pipe")
-    assert content is not None
-    assert "myfix-pipe" in content
+    codes = [i["code"] for i in result["issues"]]
+    assert "NO_STEP_ROWS" in codes
+    assert not any("mirror-only-pipe" in f for f in result["auto_fixed"]), result
+    assert db.get_pipeline_yaml_content("mirror-only-pipe") is None
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +134,15 @@ def test_orphaned_deprecated_usage_auto_deleted(db):
 # ---------------------------------------------------------------------------
 
 def test_non_orphaned_deprecated_usage_kept(db):
-    db.upsert_pipeline(
+    pipeline_id = db.upsert_pipeline(
         name="real-pipeline",
         path="/tmp/real.yaml",
         yaml_content="name: real-pipeline\nsteps:\n  - id: s1\n    type: script.python\n    script: pass\n",
+    )
+    db.upsert_step(
+        pipeline_id=pipeline_id,
+        step_dict={"id": "s1", "type": "script.python", "script": "pass"},
+        step_order=0,
     )
     db.record_deprecated_usage(
         pipeline_name="real-pipeline",
@@ -165,7 +161,7 @@ def test_non_orphaned_deprecated_usage_kept(db):
 
 
 # ---------------------------------------------------------------------------
-# 8. Unknown helper ref in pipeline YAML → issue reported
+# 8. Unknown helper ref in DB step row → issue reported
 # ---------------------------------------------------------------------------
 
 def test_unknown_helper_ref_reported(db):
@@ -178,17 +174,14 @@ def test_unknown_helper_ref_reported(db):
         input_schema={},
         output_schema={},
     )
-    # Add pipeline referencing an unknown helper
-    db.upsert_pipeline(
+    pipeline_id = db.upsert_pipeline(
         name="bad-helper-pipe",
         path="/tmp/bad-helper.yaml",
-        yaml_content=(
-            "name: bad-helper-pipe\n"
-            "steps:\n"
-            "  - id: s1\n"
-            "    type: script.python\n"
-            "    helper: nonexistent-helper\n"
-        ),
+    )
+    db.upsert_step(
+        pipeline_id=pipeline_id,
+        step_dict={"id": "s1", "type": "script.python", "helper": "nonexistent-helper"},
+        step_order=0,
     )
 
     result = run_integrity_checks(db)
@@ -210,17 +203,15 @@ def test_known_helper_ref_no_issue(db):
         input_schema={},
         output_schema={},
     )
-    db.upsert_pipeline(
+    pipeline_id = db.upsert_pipeline(
         name="good-helper-pipe",
         path="/tmp/good.yaml",
-        yaml_content=(
-            "name: good-helper-pipe\n"
-            "steps:\n"
-            "  - id: s1\n"
-            "    type: script.python\n"
-            "    helper: my-helper\n"
-        ),
         project="myproject",
+    )
+    db.upsert_step(
+        pipeline_id=pipeline_id,
+        step_dict={"id": "s1", "type": "script.python", "helper": "my-helper"},
+        step_order=0,
     )
 
     result = run_integrity_checks(db)
