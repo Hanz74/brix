@@ -1172,6 +1172,59 @@ SYSTEM_SOURCE_FETCH = BrickSchema(
     category="system",
 )
 
+SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT = BrickSchema(
+    name="document.persist_extraction_result",
+    type="document_persist_extraction_result",
+    description="Persist a structured extraction result, document type, file metadata, and optional specialist marker to a document row.",
+    when_to_use="Use after extraction to save the canonical extraction payload and document metadata without inline SQL.",
+    when_NOT_to_use="Do not use for arbitrary table writes or non-document records; use db.exec or db.upsert for generic persistence.",
+    runner="document_persist_extraction_result",
+    system=True,
+    namespace="document",
+    category="system",
+    config_schema={
+        "connection": BrickParam(type="string", description="Named connection or DSN", required=True),
+        "document_id": BrickParam(type="string", description="Primary-key value of the document row", required=True),
+        "extraction_result": BrickParam(type="object", description="Structured extraction result payload", required=True),
+        "content_hash": BrickParam(type="string", description="Optional content hash to persist"),
+        "file_path": BrickParam(type="string", description="Optional local file path to persist"),
+        "specialist_name": BrickParam(type="string", description="Optional specialist marker to append"),
+        "table": BrickParam(type="string", description="Document table name", default="documents"),
+        "id_field": BrickParam(type="string", description="Primary-key column name", default="id"),
+        "raw_field": BrickParam(type="string", description="Structured extraction payload column", default="raw_structured"),
+        "doc_type_field": BrickParam(type="string", description="Document type column", default="doc_type"),
+        "content_hash_field": BrickParam(type="string", description="Content-hash column", default="content_hash"),
+        "file_path_field": BrickParam(type="string", description="File-path column", default="file_path"),
+        "specialists_field": BrickParam(type="string", description="Specialist-state column", default="extraction_specialists"),
+    },
+    input_type="none",
+    output_type="db_mutation_result",
+    output_description='{"affected_rows": N, "success": true, "applied_fields": ["raw_structured", "..."]}',
+)
+
+SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED = BrickSchema(
+    name="document.mark_specialist_processed",
+    type="document_mark_specialist_processed",
+    description="Append a specialist marker to a document row exactly once without inline SQL.",
+    when_to_use="Use when a document-processing step should mark its specialist state in a reusable, idempotent way.",
+    when_NOT_to_use="Do not use for non-document status updates or generic list mutations; this brick is specific to document specialist tracking.",
+    runner="document_mark_specialist_processed",
+    system=True,
+    namespace="document",
+    category="system",
+    config_schema={
+        "connection": BrickParam(type="string", description="Named connection or DSN", required=True),
+        "document_id": BrickParam(type="string", description="Primary-key value of the document row", required=True),
+        "specialist_name": BrickParam(type="string", description="Specialist marker to append", required=True),
+        "table": BrickParam(type="string", description="Document table name", default="documents"),
+        "id_field": BrickParam(type="string", description="Primary-key column name", default="id"),
+        "specialists_field": BrickParam(type="string", description="Specialist-state column", default="extraction_specialists"),
+    },
+    input_type="none",
+    output_type="db_mutation_result",
+    output_description='{"affected_rows": N, "success": true, "specialist_added": true}',
+)
+
 SYSTEM_FLOW_SWITCH = BrickSchema(
     name="flow.switch",
     type="switch",
@@ -1524,6 +1577,8 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_LLM_BATCH,
     SYSTEM_MARKITDOWN_CONVERT,
     SYSTEM_SOURCE_FETCH,
+    SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT,
+    SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED,
     SYSTEM_FLOW_SWITCH,
     SYSTEM_FLOW_MERGE,
     SYSTEM_FLOW_ERROR_HANDLER,

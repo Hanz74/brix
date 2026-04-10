@@ -475,7 +475,57 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_helper_governance_columns_v87",
         "down": "",
     },
+    {
+        "version": 88,
+        "name": "register_document_persistence_bricks",
+        "up": "",
+        "up_fn": "_register_document_persistence_bricks_v88",
+        "down": "",
+    },
 ]
+
+
+def _brick_to_record(brick) -> dict:
+    config_schema_dict: dict[str, dict] = {}
+    for param_name, param in (brick.config_schema or {}).items():
+        config_schema_dict[param_name] = {
+            "type": param.type,
+            "description": param.description,
+            "default": param.default,
+            "required": param.required,
+            "enum": param.enum,
+        }
+
+    return {
+        "name": brick.name,
+        "runner": brick.runner or brick.type,
+        "namespace": brick.namespace or "",
+        "category": brick.category or "",
+        "description": brick.description or "",
+        "when_to_use": brick.when_to_use or "",
+        "when_NOT_to_use": brick.when_NOT_to_use or "",
+        "aliases": list(brick.aliases or []),
+        "input_type": brick.input_type or "*",
+        "output_type": brick.output_type or "*",
+        "config_schema": config_schema_dict,
+        "examples": list(brick.examples or []),
+        "related_connector": brick.related_connector or "",
+        "system": bool(getattr(brick, "system", False)),
+    }
+
+
+def _register_document_persistence_bricks_v88(db: "BrixDB") -> None:
+    """Register document persistence system bricks for existing installations."""
+    from brix.bricks.builtins import (
+        SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED,
+        SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT,
+    )
+
+    for brick in (
+        SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT,
+        SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED,
+    ):
+        db.brick_definitions_upsert(_brick_to_record(brick))
 
 
 def _add_helper_governance_columns_v87(db: "BrixDB") -> None:
