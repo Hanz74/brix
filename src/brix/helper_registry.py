@@ -34,6 +34,9 @@ class HelperEntry:
     updated_at: Optional[str] = None
     id: Optional[str] = None  # stable UUID
     imports: list[str] = field(default_factory=list)
+    project: str = ""
+    tags: list[str] = field(default_factory=list)
+    group_name: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -53,6 +56,9 @@ class HelperEntry:
             updated_at=data.get("updated_at"),
             id=data.get("id"),
             imports=data.get("imports", []),
+            project=data.get("project", ""),
+            tags=data.get("tags", []),
+            group_name=data.get("group_name", ""),
         )
 
 
@@ -78,7 +84,46 @@ class HelperRegistry:
             updated_at=row.get("updated_at"),
             id=row.get("id"),
             imports=row.get("imports", []),
+            project=row.get("project", ""),
+            tags=row.get("tags", []),
+            group_name=row.get("group_name", ""),
         )
+
+    def _load(self) -> dict[str, dict]:
+        """Return helpers as a legacy registry-shaped mapping from the DB.
+
+        Kept for compatibility with older internal callers and tests. This does
+        not read registry.yaml; DB remains the source of truth.
+        """
+        return {entry.name: entry.to_dict() for entry in self.list_all()}
+
+    def _save(self, data: dict[str, dict]) -> None:
+        """Persist a legacy registry-shaped mapping into the DB.
+
+        Kept as a DB-backed compatibility adapter. It intentionally does not
+        write registry.yaml.
+        """
+        for name, raw in data.items():
+            entry = HelperEntry.from_dict({**raw, "name": raw.get("name") or name})
+            if entry.id:
+                existing = self._db.get_helper(entry.id)
+                if existing and existing.get("name") != entry.name:
+                    self._db.delete_helper(existing["name"])
+            self._db.upsert_helper(
+                name=entry.name,
+                script_path=entry.script,
+                description=entry.description,
+                requirements=entry.requirements,
+                input_schema=entry.input_schema,
+                output_schema=entry.output_schema,
+                helper_id=entry.id,
+                code=entry.code,
+                content_hash=entry.content_hash,
+                imports=entry.imports,
+                project=entry.project,
+                tags=entry.tags,
+                group_name=entry.group_name,
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -202,6 +247,9 @@ class HelperRegistry:
             "updated_at": db_row.get("updated_at"),
             "id": db_row.get("id"),
             "imports": db_row.get("imports", []),
+            "project": db_row.get("project", ""),
+            "tags": db_row.get("tags", []),
+            "group_name": db_row.get("group_name", ""),
         }
 
         allowed = {

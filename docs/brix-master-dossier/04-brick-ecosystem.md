@@ -132,7 +132,7 @@ Examples:
 ## Helper-to-Brick Migration Strategy
 
 ### Step 1
-Inventory helpers and cluster by purpose.
+Inventory helpers and cluster by purpose. The executable model is `src/brix/helper_inventory.py`; the operating policy is documented in [04c-helper-inventory-and-clustering.md](/root/docker/brix/docs/brix-master-dossier/04c-helper-inventory-and-clustering.md).
 
 ### Step 2
 Identify repeated helper families across projects.

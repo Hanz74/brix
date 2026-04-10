@@ -3198,6 +3198,10 @@ class BrixDB:
         row["output_schema"] = json.loads(row.get("output_schema_json") or "{}")
         row["content_hash"] = row.get("content_hash") or ""
         row["imports"] = json.loads(row.get("imports_json") or "[]")
+        try:
+            row["tags"] = json.loads(row.get("tags") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            row["tags"] = []
         return row
 
     def get_pipeline_yaml_content(self, name: str) -> Optional[str]:

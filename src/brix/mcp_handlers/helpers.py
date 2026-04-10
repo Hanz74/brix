@@ -232,6 +232,7 @@ async def _handle_register_helper(arguments: dict) -> dict:
 
 async def _handle_list_helpers(arguments: dict) -> dict:
     """List all registered helpers, with optional project/tags/group filter."""
+    include_inventory = bool(arguments.get("include_inventory", False))
     # T-BRIX-ORG-01: project/tags/group filter
     filter_project = arguments.get("project") or None
     filter_tags = arguments.get("tags") or None
@@ -260,7 +261,7 @@ async def _handle_list_helpers(arguments: dict) -> dict:
             ]
         except Exception:
             helpers = []
-        return {
+        result = {
             "success": True,
             "helpers": helpers,
             "count": len(helpers),
@@ -270,15 +271,45 @@ async def _handle_list_helpers(arguments: dict) -> dict:
                 "group": filter_group,
             },
         }
+        if include_inventory:
+            try:
+                from brix.helper_inventory import build_helper_inventory, filter_helper_inventory
+
+                inventory_model = build_helper_inventory(_org_db)
+                inventory = filter_helper_inventory(
+                    inventory_model,
+                    {helper["name"] for helper in helpers},
+                ).as_dict()
+                by_name = {item["name"]: item for item in inventory["helpers"]}
+                for helper in helpers:
+                    helper["inventory"] = by_name.get(helper["name"], {})
+                result["inventory_summary"] = inventory["summary"]
+                result["clusters"] = inventory["clusters"]
+            except Exception:
+                result["inventory_warning"] = "Helper inventory classification could not be loaded."
+        return result
 
     registry = HelperRegistry()
     entries = registry.list_all()
     helpers_list = [_make_helper_dict(e) for e in entries]
+    if include_inventory:
+        try:
+            from brix.helper_inventory import build_helper_inventory
+
+            inventory = build_helper_inventory().as_dict()
+            by_name = {item["name"]: item for item in inventory["helpers"]}
+            for helper in helpers_list:
+                helper["inventory"] = by_name.get(helper["name"], {})
+        except Exception:
+            inventory = {"summary": {}, "clusters": []}
     result_h: dict = {
         "success": True,
         "helpers": helpers_list,
         "count": len(helpers_list),
     }
+    if include_inventory:
+        result_h["inventory_summary"] = inventory["summary"]
+        result_h["clusters"] = inventory["clusters"]
     # Hint if any helpers lack a project
     no_project_count = sum(1 for h in helpers_list if not h.get("project"))
     if no_project_count > 0:
@@ -568,6 +599,12 @@ async def _handle_rename_helper(arguments: dict) -> dict:
         input_schema=old_raw.get("input_schema", {}),
         output_schema=old_raw.get("output_schema", {}),
         helper_id=old_raw.get("id"),
+        code=old_raw.get("code", ""),
+        content_hash=old_raw.get("content_hash", ""),
+        imports=old_raw.get("imports", []),
+        project=old_raw.get("project", ""),
+        tags=old_raw.get("tags", []),
+        group_name=old_raw.get("group_name", ""),
     )
 
     # Warn if pipelines reference the old helper name

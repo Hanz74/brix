@@ -18,6 +18,9 @@ _HELPER_STORAGE_NOTE = (
     "Der `code`-Wert in der DB ist die Source of Truth.\n"
     "Das Feld `script` ist legacy Metadaten und zeigt nicht verlaesslich an, ob Code existiert.\n"
     "`get_helper` zeigt deshalb `has_code`, `code_length`, `code_preview` und `source='db'`.\n"
+    "`create_helper` schreibt Inline-Code direkt in die DB und registriert den Helper.\n"
+    "`register_helper` ist nur fuer externe, bereits vorhandene Script-Pfade gedacht.\n"
+    "SDK-Nutzung sollte Helper ebenfalls ueber die DB-backed Registry erstellen oder aktualisieren.\n"
     "Nutze `legacy_script_path` nur fuer Alt-Kontext oder Migrationen."
 )
 
@@ -70,7 +73,7 @@ def _recent_and_custom_bricks(all_bricks: list) -> list[str]:
             desc = (b.get("description", "") if isinstance(b, dict) else getattr(b, "description", ""))[:60]
             name = b.get("name", "") if isinstance(b, dict) else b.name
             lines.append(f"  - {name} [{ns}] — {desc}")
-        lines.append(f"  Nutze diese BEVOR du einen neuen Helper schreibst!")
+        lines.append("  Nutze diese BEVOR du einen neuen Helper schreibst!")
         lines.append("")
 
     # Recently added (last 7 days) — check created_at if available
@@ -342,8 +345,30 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "  Helpers sind DB-only. Der DB-`code` ist die Source of Truth.",
         "  Das alte `script`-Feld ist legacy Metadaten und kein verlaesslicher Code-Indikator.",
         "  `get_helper` zeigt `has_code`, `code_length`, `code_preview` und `source='db'`.",
+        "  `list_helpers(include_inventory=true)` zeigt Helper-Familien, Brick-Kandidaten und fehlende Metadaten.",
         "",
     ]
+    try:
+        from brix.helper_inventory import build_helper_inventory
+
+        inventory = build_helper_inventory()
+        summary = inventory.summary
+        if summary.get("total", 0) > 0:
+            helper_tip_lines.extend(
+                [
+                    "## HELPER-INVENTAR",
+                    (
+                        f"  Total: {summary.get('total', 0)}, "
+                        f"Brick-Kandidaten: {summary.get('brick_candidate', 0)}, "
+                        f"Legacy-Review: {summary.get('legacy_review', 0)}, "
+                        f"Metadata offen: {summary.get('metadata_required', 0)}"
+                    ),
+                    "  Nutze `list_helpers(include_inventory=true)` bevor du neue Helper erstellst.",
+                    "",
+                ]
+            )
+    except Exception:
+        pass
 
     tips = [
         *integrity_alert_lines,
