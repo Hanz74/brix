@@ -1091,7 +1091,7 @@ class PipelineValidator:
 
     def _resolve_step_schema(self, step) -> dict | None:
         """Resolve JSON schema for a step via BrickRegistry first, then runner schema."""
-        registry = BrickRegistry()
+        registry = BrickRegistry(db=BrixDB())
         analysis = step if isinstance(step, StepAnalysis) else self._validation_ctx.for_step(step)
         step_type = getattr(analysis.step, "type", "") or ""
         effective_type = analysis.effective_type
@@ -1354,7 +1354,7 @@ class PipelineValidator:
         if policy_level != "locked":
             return
 
-        registry = BrickRegistry()
+        registry = BrickRegistry(db=BrixDB())
         for analysis in ctx.steps:
             step = analysis.step
             effective_type = analysis.effective_type
@@ -1695,7 +1695,7 @@ class PipelineValidator:
         }
         step_output_types: dict[str, str] = {}
         try:
-            registry = BrickRegistry()
+            registry = BrickRegistry(db=BrixDB())
         except Exception:
             registry = None
 
@@ -2010,7 +2010,7 @@ class PipelineValidator:
         # Build a map of step_id → output_type from brick registry
         string_output_steps: set[str] = set()
         try:
-            registry = BrickRegistry()
+            registry = BrickRegistry(db=BrixDB())
             for analysis in ctx.steps:
                 step = analysis.step
                 effective_type = analysis.effective_type

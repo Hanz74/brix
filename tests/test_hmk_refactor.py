@@ -4,6 +4,7 @@ from brix.db import BrixDB
 from brix.hmk_refactor import (
     promote_hmk_to_document_persistence_bricks,
     standardize_hmk_extract_flow,
+    standardize_hmk_download_flow,
     rewrite_hmk_mark_processed_to_specialist_brick,
     rewrite_hmk_save_results_to_persistence_brick,
 )
@@ -227,3 +228,51 @@ def test_standardize_hmk_extract_flow_is_idempotent(tmp_path):
     extract = next(step for step in updated["steps"] if step["id"] == "extract")
     assert prepare["type"] == "document.prepare_extractable_payload"
     assert extract["type"] == "extract.document_with_daigestr"
+
+
+def test_standardize_hmk_download_flow(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    updated = standardize_hmk_download_flow(db=db)
+
+    download_save = next(step for step in updated["steps"] if step["id"] == "download_save")
+    assert download_save["type"] == "source.download_to_file"
+    assert download_save["config"] == {
+        "url": "{{ get_download_url.output['@microsoft.graph.downloadUrl'] | default('') }}",
+        "filename": "{{ input.item.file_name | default('') }}",
+    }
+    assert download_save["params"] == download_save["config"]
+    assert download_save.get("helper") is None
+
+
+def test_standardize_hmk_download_flow_is_idempotent(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    standardize_hmk_download_flow(db=db)
+    updated = standardize_hmk_download_flow(db=db)
+
+    download_save = next(step for step in updated["steps"] if step["id"] == "download_save")
+    assert download_save["type"] == "source.download_to_file"
+
+
+def test_fully_standardized_hmk_has_no_non_info_findings_on_standardized_steps(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    standardize_hmk_download_flow(db=db)
+    standardize_hmk_extract_flow(db=db)
+    promote_hmk_to_document_persistence_bricks(db=db)
+
+    pipeline = store.load("buddy-hmk-extract-single")
+    result = PipelineValidator().validate(pipeline)
+
+    assert not any(
+        finding.step_id in {"download_save", "prepare_extractable", "extract"}
+        and finding.severity != "info"
+        for finding in result.findings
+    )

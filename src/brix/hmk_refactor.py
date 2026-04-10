@@ -164,3 +164,37 @@ def standardize_hmk_extract_flow(
     raw["steps"] = steps
     store.save(raw, name=pipeline_name)
     return store.load_raw(pipeline_name)
+
+
+def standardize_hmk_download_flow(
+    *,
+    db: BrixDB | None = None,
+    pipeline_name: str = "buddy-hmk-extract-single",
+) -> dict[str, Any]:
+    """Replace HMK helper-based download staging with the standard source brick."""
+
+    active_db = db if db is not None else BrixDB()
+    store = PipelineStore(db=active_db)
+    raw = store.load_raw(pipeline_name)
+    steps = raw.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError(f"Pipeline '{pipeline_name}' has no step list")
+
+    download_step = _step_by_id(steps, "download_save")
+    if download_step.get("type") == "source.download_to_file":
+        return raw
+
+    helper_name = str(download_step.get("helper") or "")
+    if helper_name != "att_onedrive_save":
+        raise ValueError("HMK 'download_save' no longer matches helper-based download staging shape")
+
+    download_step["type"] = "source.download_to_file"
+    download_step.pop("helper", None)
+    download_step["config"] = {
+        "url": "{{ get_download_url.output['@microsoft.graph.downloadUrl'] | default('') }}",
+        "filename": "{{ input.item.file_name | default('') }}",
+    }
+    download_step["params"] = {}
+    raw["steps"] = steps
+    store.save(raw, name=pipeline_name)
+    return store.load_raw(pipeline_name)
