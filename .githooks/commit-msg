@@ -1,0 +1,42 @@
+#!/bin/bash
+# Adjust version bump and create a DB changelog row before commit finalization.
+
+PYPROJECT="pyproject.toml"
+INIT="src/brix/__init__.py"
+MSG_FILE="$1"
+
+if [ ! -f "$PYPROJECT" ] || [ ! -f "$MSG_FILE" ]; then
+    exit 0
+fi
+
+MSG=$(cat "$MSG_FILE")
+TITLE=$(head -1 "$MSG_FILE")
+CURRENT=$(grep '^version = ' "$PYPROJECT" | sed 's/version = "\(.*\)"/\1/')
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+if echo "$TITLE" | grep -qE "^(feat|fix|refactor|perf)(\([^)]*\))?!:"; then
+    NEW_VERSION="$((MAJOR + 1)).0.0"
+elif echo "$MSG" | grep -q "BREAKING CHANGE:"; then
+    NEW_VERSION="$((MAJOR + 1)).0.0"
+elif echo "$TITLE" | grep -qE "^(feat|Feature|T-BRIX-V[0-9]+-[0-9]+:)"; then
+    NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+else
+    PYTHONPATH=src python3 -c "
+from brix.git_version_bump import _write_changelog_entry
+_write_changelog_entry('''$TITLE''', '$CURRENT')
+" 2>/dev/null || true
+    exit 0
+fi
+
+sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" "$PYPROJECT"
+if [ -f "$INIT" ]; then
+    sed -i "s/__version__ = \"$CURRENT\"/__version__ = \"$NEW_VERSION\"/" "$INIT"
+fi
+
+git add "$PYPROJECT" "$INIT" 2>/dev/null
+echo "Adjusted version: $CURRENT -> $NEW_VERSION (conventional commit)"
+
+PYTHONPATH=src python3 -c "
+from brix.git_version_bump import _write_changelog_entry
+_write_changelog_entry('''$TITLE''', '$NEW_VERSION')
+" 2>/dev/null || true

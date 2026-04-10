@@ -1,0 +1,25 @@
+#!/bin/bash
+# Auto-bump patch version before commit-msg can adjust conventional bumps.
+
+PYPROJECT="pyproject.toml"
+INIT="src/brix/__init__.py"
+
+if [ ! -f "$PYPROJECT" ]; then
+    exit 0
+fi
+
+CURRENT=$(grep '^version = ' "$PYPROJECT" | sed 's/version = "\(.*\)"/\1/')
+if [ -z "$CURRENT" ]; then
+    exit 0
+fi
+
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+
+sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" "$PYPROJECT"
+if [ -f "$INIT" ]; then
+    sed -i "s/__version__ = \"$CURRENT\"/__version__ = \"$NEW_VERSION\"/" "$INIT"
+fi
+
+git add "$PYPROJECT" "$INIT" 2>/dev/null
+echo "Auto-bumped version: $CURRENT -> $NEW_VERSION"

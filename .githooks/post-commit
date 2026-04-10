@@ -1,0 +1,8 @@
+#!/bin/bash
+# Finalize DB changelog commit_sha after Git has created the commit.
+
+if [ ! -f "pyproject.toml" ]; then
+    exit 0
+fi
+
+PYTHONPATH=src python3 -m brix.git_version_bump --finalize-changelog 2>/dev/null || true

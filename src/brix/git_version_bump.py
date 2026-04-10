@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 PYPROJECT_PATH = Path("pyproject.toml")
 INIT_PATH = Path("src/brix/__init__.py")
@@ -107,72 +109,135 @@ def apply_commit_bump(
     return (bump, old_version, new_version)
 
 
+def changelog_fields_from_message(message: str) -> dict[str, str | None] | None:
+    """Return DB changelog fields derived from a commit message."""
+    subject = message.strip().splitlines()[0].strip() if message.strip() else ""
+    if not subject:
+        return None
+
+    cc_re = re.compile(
+        r"^(feat|fix|refactor|docs|chore|perf)(\([^)]*\))?(!)?\s*:\s*(.+)$",
+        re.IGNORECASE,
+    )
+    m = cc_re.match(subject)
+    entry_type = "fix"
+    title = subject
+    if m:
+        prefix = m.group(1).lower()
+        bang = m.group(3)
+        title = m.group(4).strip()
+        if bang:
+            entry_type = "breaking"
+        else:
+            type_map = {
+                "feat": "feature",
+                "fix": "fix",
+                "refactor": "refactor",
+                "docs": "docs",
+                "chore": "refactor",
+                "perf": "fix",
+            }
+            entry_type = type_map.get(prefix, "fix")
+    elif re.match(r"^T-BRIX-", subject):
+        entry_type = "feature"
+
+    task_match = re.search(r"(T-BRIX-\S+)", subject)
+    return {
+        "type": entry_type,
+        "title": title,
+        "task_id": task_match.group(1) if task_match else None,
+    }
+
+
 def _write_changelog_entry(message: str, version: str) -> None:
-    """Write a changelog entry to the DB for the current commit."""
+    """Write a changelog entry during commit-msg without a final commit SHA."""
     try:
-        import subprocess
         from brix.db import BrixDB
 
-        subject = message.strip().splitlines()[0].strip() if message.strip() else ""
-        if not subject:
+        fields = changelog_fields_from_message(message)
+        if fields is None:
             return
-
-        # Get commit SHA (may not exist yet during commit-msg hook)
-        sha = ""
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0:
-                sha = result.stdout.strip()
-        except Exception:
-            pass
-
-        # Classify type from conventional commit prefix
-        cc_re = re.compile(
-            r"^(feat|fix|refactor|docs|chore|perf)(\([^)]*\))?(!)?\s*:\s*(.+)$",
-            re.IGNORECASE,
-        )
-        m = cc_re.match(subject)
-        entry_type = "fix"
-        title = subject
-        if m:
-            prefix = m.group(1).lower()
-            bang = m.group(3)
-            title = m.group(4).strip()
-            if bang:
-                entry_type = "breaking"
-            else:
-                type_map = {
-                    "feat": "feature", "fix": "fix", "refactor": "refactor",
-                    "docs": "docs", "chore": "refactor", "perf": "fix",
-                }
-                entry_type = type_map.get(prefix, "fix")
-        else:
-            # Check for ticket prefix → feature
-            if re.match(r"^T-BRIX-", subject):
-                entry_type = "feature"
-
-        # Extract task_id if present
-        task_match = re.search(r"(T-BRIX-\S+)", subject)
-        task_id = task_match.group(1) if task_match else None
 
         db = BrixDB()
         db.add_changelog_entry(
             version=version,
-            type=entry_type,
-            title=title,
-            commit_sha=sha or None,
-            task_id=task_id,
+            type=fields["type"] or "fix",
+            title=fields["title"] or "",
+            commit_sha=None,
+            task_id=fields["task_id"],
         )
     except Exception:
         # Never fail the commit due to changelog
         pass
 
 
+def finalize_changelog_commit_sha(
+    message: str | None = None,
+    version: str | None = None,
+    commit_sha: str | None = None,
+    *,
+    db: Any | None = None,
+) -> bool:
+    """Update the matching changelog row after Git has created the commit."""
+    try:
+        from brix.db import BrixDB
+
+        if message is None:
+            result = subprocess.run(
+                ["git", "log", "-1", "--pretty=%B"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return False
+            message = result.stdout
+        fields = changelog_fields_from_message(message)
+        if fields is None:
+            return False
+
+        if version is None:
+            version = read_pyproject_version()
+        if not version:
+            return False
+
+        if commit_sha is None:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return False
+            commit_sha = result.stdout.strip()
+        if not commit_sha:
+            return False
+
+        db = db or BrixDB()
+        title = fields["title"]
+        with db._connect() as conn:  # type: ignore[attr-defined]
+            cursor = conn.execute(
+                """UPDATE changelog_entry
+                   SET commit_sha=?
+                   WHERE id = (
+                       SELECT id FROM changelog_entry
+                       WHERE version=? AND title=?
+                       ORDER BY timestamp DESC
+                       LIMIT 1
+                   )""",
+                (commit_sha, version, title),
+            )
+            return cursor.rowcount > 0
+    except Exception:
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "--finalize-changelog":
+        finalize_changelog_commit_sha()
+        return 0
     if not args:
         return 0
 
