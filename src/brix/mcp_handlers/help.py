@@ -235,6 +235,208 @@ def _load_registry_content() -> list[str]:
     return lines
 
 
+def _build_authoring_guidance() -> tuple[list[str], dict]:
+    """Build actionable metadata/reuse guidance for get_tips."""
+    try:
+        from brix.connections import ConnectionManager
+        from brix.db import BrixDB
+        from brix.helper_inventory import build_helper_inventory
+        from brix.metadata_enforcement import assess_metadata_enforcement
+
+        db = BrixDB()
+        metadata_gaps: list[dict] = []
+
+        def collect(entity_type: str, entity_name: str, base_data: dict, metadata: dict | None = None) -> None:
+            assessment = assess_metadata_enforcement(
+                entity_type,
+                base_data=base_data,
+                existing_metadata=metadata or {},
+                operation="update",
+            )
+            if not assessment.violations:
+                return
+            severities = {violation.severity for violation in assessment.violations}
+            if "error" in severities:
+                highest = "error"
+            elif "warning" in severities:
+                highest = "warning"
+            else:
+                highest = "info"
+            metadata_gaps.append(
+                {
+                    "entity_type": entity_type,
+                    "entity_id": entity_name,
+                    "missing_fields": [violation.field for violation in assessment.violations],
+                    "highest_severity": highest,
+                    "repair_prompts": list(assessment.repair_prompts),
+                }
+            )
+
+        for pipeline in db.list_pipelines():
+            collect(
+                "pipeline",
+                str(pipeline.get("name") or ""),
+                {
+                    "project": pipeline.get("project", ""),
+                    "description": pipeline.get("description", ""),
+                },
+                db.entity_metadata_get("pipeline", str(pipeline.get("name") or "")) or {},
+            )
+
+        for brick in db.brick_definitions_list():
+            collect(
+                "brick",
+                str(brick.get("name") or ""),
+                {
+                    "description": brick.get("description", ""),
+                    "input_type": brick.get("input_type", ""),
+                    "output_type": brick.get("output_type", ""),
+                    "when_NOT_to_use": brick.get("when_NOT_to_use", ""),
+                    "examples": brick.get("examples", []),
+                    "project": brick.get("project", ""),
+                },
+                db.entity_metadata_get("brick", str(brick.get("name") or "")) or {},
+            )
+
+        for helper in db.list_helpers():
+            collect(
+                "helper",
+                str(helper.get("name") or ""),
+                {
+                    "description": helper.get("description", ""),
+                    "project": helper.get("project", ""),
+                    "reason_not_a_brick": helper.get("reason_not_a_brick", ""),
+                    "brick_candidate_ref": helper.get("brick_candidate_ref", ""),
+                    "governance_status": helper.get("governance_status", ""),
+                },
+                db.entity_metadata_get("helper", str(helper.get("name") or "")) or {},
+            )
+
+        for connection in ConnectionManager(db).list():
+            collect(
+                "connection",
+                str(connection.get("name") or ""),
+                {
+                    "description": connection.get("description", ""),
+                    "project": connection.get("project", ""),
+                },
+                db.entity_metadata_get("connection", str(connection.get("name") or "")) or {},
+            )
+
+        for topic in db.help_topics_list():
+            collect(
+                "help_topic",
+                str(topic.get("name") or ""),
+                {"title": topic.get("title", "")},
+                db.entity_metadata_get("help_topic", str(topic.get("name") or "")) or {},
+            )
+
+        for entry in db.knowledge_entity_list():
+            if entry.get("entity_type") not in {"intent", "task", "decision", "workaround", "reuse"}:
+                continue
+            collect(
+                str(entry.get("entity_type") or ""),
+                str(entry.get("name") or entry.get("id") or ""),
+                {
+                    "title": entry.get("title", ""),
+                    "project": entry.get("project", ""),
+                    "owner": entry.get("owner", ""),
+                    "rationale": entry.get("rationale", ""),
+                    "lifecycle_stage": entry.get("lifecycle_stage", ""),
+                    "status": entry.get("status", ""),
+                },
+                db.entity_metadata_get(str(entry.get("entity_type") or ""), str(entry.get("name") or "")) or {},
+            )
+
+        severity_rank = {"error": 0, "warning": 1, "info": 2}
+        entity_rank = {
+            "pipeline": 0,
+            "helper": 1,
+            "brick": 2,
+            "connection": 3,
+            "help_topic": 4,
+            "intent": 5,
+            "decision": 6,
+            "task": 7,
+            "workaround": 8,
+            "reuse": 9,
+        }
+        metadata_gaps.sort(
+            key=lambda item: (
+                severity_rank.get(item["highest_severity"], 3),
+                entity_rank.get(item["entity_type"], 99),
+                -len(item["missing_fields"]),
+                item["entity_id"],
+            )
+        )
+
+        inventory = build_helper_inventory(db)
+        reuse_candidates = [
+            {
+                "helper": item.name,
+                "family": item.family,
+                "migration_candidacy": item.migration_candidacy,
+                "signals": list(item.signals),
+                "used_by_pipelines": list(item.used_by_pipelines),
+            }
+            for item in inventory.items
+            if item.strategic_category == "brick_candidate"
+        ]
+        reuse_candidates.sort(key=lambda item: (-len(item["used_by_pipelines"]), item["helper"]))
+
+        lines: list[str] = []
+        if metadata_gaps or reuse_candidates:
+            lines.extend(
+                [
+                    "## AUTHORING GUIDANCE",
+                    "  Nutze `brix__get_missing_metadata`, `brix__repair_component_metadata` und `brix__record_reuse_decision` bevor du neue Komponenten baust oder aktivierst.",
+                    "",
+                ]
+            )
+        if metadata_gaps:
+            lines.append("### METADATA GAPS")
+            for item in metadata_gaps[:5]:
+                lines.append(
+                    f"  - {item['entity_type']}:{item['entity_id']} "
+                    f"[{item['highest_severity']}] fehlt: {', '.join(item['missing_fields'])}"
+                )
+                lines.append(
+                    f"    get_missing_metadata(entity_type='{item['entity_type']}', entity_id='{item['entity_id']}')"
+                )
+                lines.append(
+                    f"    repair_component_metadata(entity_type='{item['entity_type']}', entity_id='{item['entity_id']}', ...)"
+                )
+            lines.append("")
+        if reuse_candidates:
+            lines.append("### REUSE / BRICK CANDIDATES")
+            for item in reuse_candidates[:5]:
+                used_by = ", ".join(item["used_by_pipelines"]) if item["used_by_pipelines"] else "noch in keiner DB-Pipeline"
+                lines.append(
+                    f"  - helper:{item['helper']} Familie={item['family']} candidacy={item['migration_candidacy']} usage={used_by}"
+                )
+                lines.append(
+                    "    Prüfe Brick-Promotion oder dokumentiere die Entscheidung mit "
+                    "`record_reuse_decision(entity_type='helper', entity_id='...', decision_outcome='...')`."
+                )
+            lines.append("")
+
+        return (
+            lines,
+            {
+                "metadata_gaps": metadata_gaps[:10],
+                "reuse_candidates": reuse_candidates[:10],
+                "tool_recommendations": [
+                    "brix__get_missing_metadata",
+                    "brix__repair_component_metadata",
+                    "brix__record_reuse_decision",
+                ],
+            },
+        )
+    except Exception as exc:
+        logger.debug("Could not build authoring guidance: %s", exc)
+        return [], {"metadata_gaps": [], "reuse_candidates": [], "tool_recommendations": []}
+
+
 async def _handle_get_tips(arguments: dict) -> dict:
     """Return usage tips and best practices for Brix."""
     # Gather brick categories
@@ -366,6 +568,7 @@ async def _handle_get_tips(arguments: dict) -> dict:
 
     # T-BRIX-TIPS-02: Load registry content (lessons, error patterns, best practices)
     registry_lines = _load_registry_content()
+    guidance_lines, guidance = _build_authoring_guidance()
 
     helper_tip_lines = [
         "## HELPERS (v8.0.0+)",
@@ -402,6 +605,7 @@ async def _handle_get_tips(arguments: dict) -> dict:
         *integrity_alert_lines,
         *legacy_alert_lines,
         *project_overview_lines,
+        *guidance_lines,
         "=== Brix Quick Reference ===",
         "",
         *db_tip_lines,
@@ -426,6 +630,7 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "brick_count": len(all_bricks),
         "pipeline_count": len(pipeline_names),
         "categories": list(categories.keys()),
+        "guidance": guidance,
     }
 
 
