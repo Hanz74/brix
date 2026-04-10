@@ -25,6 +25,7 @@ from brix.step_field_policy import explicit_runner_specific_fields, get_field_mi
 from brix.pipeline_store import PipelineStore
 from brix.connections import ConnectionManager
 from brix.db import BrixDB
+from brix.integrity import _normalize_dynamic_values_for_schema
 from brix.workaround_patterns import assess_workaround_annotation, detect_workaround_pattern_matches
 
 
@@ -1128,6 +1129,7 @@ class PipelineValidator:
             if not schema:
                 continue
             instance = self._step_to_validation_config(step)
+            instance = _normalize_dynamic_values_for_schema(instance, schema)
             schema_ref = self._step_schema_ref(analysis)
             try:
                 jsonschema.validate(instance=instance, schema=schema)
