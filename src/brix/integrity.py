@@ -115,6 +115,11 @@ def run_integrity_checks(db: "BrixDB") -> dict:
         logger.warning("integrity: check_pipeline_legacy_types failed: %s", exc)
 
     try:
+        _check_semantic_parity(db, issues)
+    except Exception as exc:
+        logger.warning("integrity: check_semantic_parity failed: %s", exc)
+
+    try:
         org_issues = _check_entity_org_metadata(db)
         issues.extend(org_issues)
     except Exception as exc:
@@ -477,6 +482,124 @@ def _check_pipeline_legacy_types(
             ),
             "severity": "warning",
             "steps": findings,
+        })
+
+
+def _check_semantic_parity(
+    db: "BrixDB",
+    issues: list[dict],
+) -> None:
+    """Detect drift between persisted DB rows, materialized steps, and brick schemas."""
+    import sqlite3
+
+    from jsonschema import ValidationError, validate
+
+    from brix.bricks.registry import BrickRegistry
+    from brix.db import _STEP_BOOL_COLUMNS, _STEP_COLUMN_TO_FIELD, _STEP_JSON_COLUMNS, _STEP_STRUCTURAL_COLUMNS, _json_loads
+    from brix.materialize import materialize_step
+    from brix.models import Step
+
+    def _raw_step_from_row(row: dict) -> dict:
+        step: dict[str, object] = {}
+        for key, value in row.items():
+            if key == "id" or key in _STEP_STRUCTURAL_COLUMNS:
+                continue
+            if key in _STEP_JSON_COLUMNS and key.endswith("_json"):
+                field = key[:-5]
+            else:
+                field = _STEP_COLUMN_TO_FIELD.get(key, key)
+            if key in _STEP_JSON_COLUMNS:
+                step[field] = _json_loads(value)
+            elif key in _STEP_BOOL_COLUMNS:
+                step[field] = None if value is None else bool(value)
+            else:
+                step[field] = value
+        return step
+
+    registry = BrickRegistry(db=db)
+    raw_effective_drift: list[str] = []
+    schema_mismatches: list[str] = []
+
+    with db._connect() as conn:  # type: ignore[attr-defined]
+        conn.row_factory = sqlite3.Row
+        pipeline_rows = conn.execute("SELECT id, name FROM pipeline ORDER BY name").fetchall()
+
+        for pipeline_row in pipeline_rows:
+            pipeline_id = pipeline_row["id"]
+            pipeline_name = pipeline_row["name"]
+            step_rows = [
+                _raw_step_from_row(dict(row))
+                for row in conn.execute(
+                    "SELECT * FROM pipeline_step WHERE pipeline_id=? ORDER BY position ASC",
+                    (pipeline_id,),
+                ).fetchall()
+            ]
+
+            for raw_step in step_rows:
+                try:
+                    step = Step.model_validate(raw_step)
+                except Exception as exc:
+                    schema_mismatches.append(
+                        f"{pipeline_name}/{raw_step.get('id', '?')}:step-model:{exc.__class__.__name__}"
+                    )
+                    continue
+
+                materialized = materialize_step(step, raw_step=raw_step)
+                step_ref = f"{pipeline_name}/{step.id}:{materialized.effective_type}"
+
+                if materialized.policy_flags.get("uses_legacy_alias"):
+                    raw_effective_drift.append(f"{step_ref}:legacy_alias:{materialized.raw_type}")
+                for field, meta in materialized.promoted_fields.items():
+                    raw_top_level = meta.get("raw_top_level")
+                    effective_value = meta.get("effective_value")
+                    if raw_top_level is not None and raw_top_level != effective_value:
+                        raw_effective_drift.append(f"{step_ref}:config_precedence:{field}")
+
+                brick = registry.get(materialized.effective_type)
+                if brick is None:
+                    continue
+                schema = brick.to_json_schema()
+                if not schema.get("properties") and not schema.get("required"):
+                    continue
+
+                instance: dict[str, object] = {}
+                instance.update(materialized.effective_config)
+                if isinstance(materialized.effective_params, dict):
+                    instance.update(materialized.effective_params)
+                instance.update(materialized.effective_step_fields)
+
+                try:
+                    validate(instance=instance, schema=schema)
+                except ValidationError as exc:
+                    field = ".".join(str(part) for part in exc.path) or (
+                        str(exc.validator_value[0])
+                        if exc.validator == "required" and isinstance(exc.validator_value, list) and exc.validator_value
+                        else "<value>"
+                    )
+                    schema_mismatches.append(f"{step_ref}:{field}:{exc.validator}")
+
+    if raw_effective_drift:
+        issues.append({
+            "code": "SEMANTIC_RAW_EFFECTIVE_DRIFT",
+            "message": (
+                f"{len(raw_effective_drift)} step semantic drift finding(s) between raw and effective shape: "
+                + ", ".join(raw_effective_drift[:5])
+                + ("..." if len(raw_effective_drift) > 5 else "")
+            ),
+            "severity": "warning",
+            "steps": raw_effective_drift,
+        })
+
+    if schema_mismatches:
+        issues.append({
+            "code": "SEMANTIC_SCHEMA_MISMATCH",
+            "message": (
+                f"{len(schema_mismatches)} step(s) do not match current brick schema after materialization: "
+                + ", ".join(schema_mismatches[:5])
+                + ("..." if len(schema_mismatches) > 5 else "")
+            ),
+            "severity": "warning",
+            "steps": schema_mismatches,
         })
 
 

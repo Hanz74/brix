@@ -60,6 +60,79 @@ def test_integrity_detects_help_and_pipeline_legacy_types(tmp_path, db):
     assert pipeline_issue["severity"] == "warning"
     assert "legacy-pipeline/s1:python" in pipeline_issue["steps"]
 
+    semantic_issue = next(issue for issue in result["issues"] if issue["code"] == "SEMANTIC_RAW_EFFECTIVE_DRIFT")
+    assert semantic_issue["severity"] == "warning"
+    assert "legacy-pipeline/s1:script.python:legacy_alias:python" in semantic_issue["steps"]
+
+
+def test_integrity_detects_raw_effective_config_precedence_drift(tmp_path, db):
+    """Config-vs-top-level conflicts are visible as semantic parity drift."""
+    store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path], db=db)
+    store.save(
+        {
+            "name": "config-drift-pipeline",
+            "project": "utility",
+            "tags": ["one-shot"],
+            "steps": [
+                {
+                    "id": "fetch",
+                    "type": "http.request",
+                    "url": "https://top-level.example",
+                    "config": {
+                        "url": "https://config.example",
+                    },
+                }
+            ],
+        }
+    )
+
+    result = run_integrity_checks(db)
+
+    semantic_issue = next(issue for issue in result["issues"] if issue["code"] == "SEMANTIC_RAW_EFFECTIVE_DRIFT")
+    assert "config-drift-pipeline/fetch:http.request:config_precedence:url" in semantic_issue["steps"]
+
+
+def test_integrity_detects_materialized_step_schema_mismatch(tmp_path, db):
+    """Brick schema is checked against the materialized effective step shape."""
+    db.brick_definitions_upsert({
+        "name": "custom.required",
+        "runner": "python",
+        "namespace": "custom",
+        "category": "custom",
+        "description": "Requires a field",
+        "when_to_use": "testing schema drift",
+        "when_NOT_to_use": "",
+        "aliases": [],
+        "input_type": "*",
+        "output_type": "*",
+        "config_schema": {
+            "required_field": {
+                "type": "string",
+                "description": "Required test field",
+                "required": True,
+            }
+        },
+        "examples": [],
+        "related_connector": "",
+        "system": False,
+    })
+
+    store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path], db=db)
+    store.save(
+        {
+            "name": "schema-drift-pipeline",
+            "project": "utility",
+            "tags": ["one-shot"],
+            "steps": [{"id": "custom", "type": "custom.required", "config": {}}],
+        }
+    )
+
+    result = run_integrity_checks(db)
+
+    schema_issue = next(issue for issue in result["issues"] if issue["code"] == "SEMANTIC_SCHEMA_MISMATCH")
+    assert schema_issue["severity"] == "warning"
+    assert "schema-drift-pipeline/custom:custom.required:required_field:required" in schema_issue["steps"]
+
 
 @pytest.mark.asyncio
 async def test_get_tips_surfaces_help_legacy_type_integrity_issue(tmp_path, db, monkeypatch):
