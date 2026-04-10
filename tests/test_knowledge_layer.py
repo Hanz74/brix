@@ -219,3 +219,133 @@ def test_knowledge_links_validate_references(db):
             "pipeline",
             "does-not-exist",
         )
+
+
+def test_knowledge_query_and_integrity_report(db):
+    intent = db.knowledge_entity_add(
+        "intent",
+        "hmk-query-intent",
+        "Investigate HMK extraction failures",
+        summary="Find prior cases and linked components for HMK.",
+        project="buddy",
+        tags=["hmk", "diagnostics"],
+    )
+    decision = db.knowledge_entity_add(
+        "decision",
+        "hmk-query-decision",
+        "Use linked knowledge during diagnosis",
+        project="buddy",
+    )
+    db.upsert_pipeline(
+        name="buddy-hmk-diagnose",
+        path="/tmp/buddy-hmk-diagnose.yaml",
+        project="buddy",
+        tags=["diagnostics"],
+    )
+    db.knowledge_link_add(
+        "intent",
+        intent["id"],
+        "created_for",
+        "pipeline",
+        "buddy-hmk-diagnose",
+    )
+    db.knowledge_link_add(
+        "decision",
+        decision["id"],
+        "documents",
+        "intent",
+        intent["id"],
+    )
+
+    result = db.knowledge_query(query="HMK", project="buddy")
+    assert {entry["name"] for entry in result["knowledge_entities"]} == {
+        "hmk-query-decision",
+        "hmk-query-intent",
+    }
+    assert result["related_knowledge"] == []
+    assert {entry["name"] for entry in result["component_entities"]} == {"buddy-hmk-diagnose"}
+    assert result["integrity_issues"] == []
+
+    with db._connect() as conn:
+        conn.execute("DELETE FROM pipeline WHERE name=?", ("buddy-hmk-diagnose",))
+    issues = db.knowledge_link_integrity_report()
+    assert len(issues) == 1
+    assert issues[0]["relation_type"] == "created_for"
+    assert issues[0]["target_entity_type"] == "pipeline"
+    assert issues[0]["missing_target"] is True
+
+
+def test_knowledge_query_scopes_integrity_and_supports_findings(db):
+    intent = db.knowledge_entity_add(
+        "intent",
+        "hmk-findings-intent",
+        "Trace HMK findings",
+        project="buddy",
+    )
+    db.knowledge_entity_add(
+        "intent",
+        "foreign-intent",
+        "Unrelated project intent",
+        project="utility",
+    )
+    db.upsert_pipeline(
+        name="buddy-hmk-findings",
+        path="/tmp/buddy-hmk-findings.yaml",
+        project="buddy",
+        tags=["diagnostics"],
+    )
+    with db._connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO run (
+                run_id, pipeline, success, started_at, finished_at, duration,
+                input_data, steps_data, result_summary, triggered_by, environment_json, project
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "run-hmk-findings-001",
+                "buddy-hmk-findings",
+                0,
+                "2026-04-10T00:00:00+00:00",
+                "2026-04-10T00:01:00+00:00",
+                60.0,
+                "{}",
+                json.dumps(
+                    {
+                        "extract": {
+                            "status": "error",
+                            "error_message": "HMK parse failure",
+                        }
+                    }
+                ),
+                "",
+                "cli",
+                "{}",
+                "buddy",
+            ),
+        )
+    valid_link = db.knowledge_link_add(
+        "intent",
+        intent["id"],
+        "failed_at",
+        "finding",
+        "run-hmk-findings-001:extract",
+    )
+    broken_link = db.knowledge_link_add(
+        "intent",
+        "foreign-intent",
+        "created_for",
+        "pipeline",
+        "buddy-hmk-findings",
+    )
+    with db._connect() as conn:
+        conn.execute("DELETE FROM pipeline WHERE name=?", ("buddy-hmk-findings",))
+
+    result = db.knowledge_query(entity_types=["finding"], query="parse", project="buddy")
+    assert {entry["id"] for entry in result["component_entities"]} == {"run-hmk-findings-001:extract"}
+    assert result["integrity_issues"] == []
+    assert any(link["id"] == valid_link["id"] for link in result["links"])
+    assert all(issue["link_id"] != broken_link["id"] for issue in result["integrity_issues"])
+
+    default_result = db.knowledge_query(query="parse", project="buddy")
+    assert {entry["id"] for entry in default_result["component_entities"]} == {"run-hmk-findings-001:extract"}

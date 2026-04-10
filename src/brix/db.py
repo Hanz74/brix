@@ -4574,6 +4574,138 @@ class BrixDB:
             "related": related,
         }
 
+    def knowledge_link_integrity_report(self) -> list[dict]:
+        """Return broken knowledge links whose endpoints no longer resolve."""
+        issues: list[dict] = []
+        for link in self.knowledge_link_list():
+            source_ok = self._knowledge_link_entity_exists(
+                link["source_entity_type"], link["source_entity_id"]
+            )
+            target_ok = self._knowledge_link_entity_exists(
+                link["target_entity_type"], link["target_entity_id"]
+            )
+            if source_ok and target_ok:
+                continue
+            issues.append(
+                {
+                    "link_id": link["id"],
+                    "relation_type": link["relation_type"],
+                    "source_entity_type": link["source_entity_type"],
+                    "source_entity_id": link["source_entity_id"],
+                    "target_entity_type": link["target_entity_type"],
+                    "target_entity_id": link["target_entity_id"],
+                    "missing_source": not source_ok,
+                    "missing_target": not target_ok,
+                }
+            )
+        return issues
+
+    def knowledge_query(
+        self,
+        *,
+        query: Optional[str] = None,
+        entity_types: Optional[list[str]] = None,
+        relation_types: Optional[list[str]] = None,
+        project: Optional[str] = None,
+    ) -> dict:
+        """Query knowledge and linked product entities together."""
+        requested_types = {
+            _validate_knowledge_link_entity_type(entity_type)
+            for entity_type in (entity_types or [])
+        }
+        requested_knowledge_types = requested_types & KNOWLEDGE_ENTITY_TYPES
+        requested_product_types = requested_types - KNOWLEDGE_ENTITY_TYPES
+        query_lower = (query or "").strip().lower()
+
+        knowledge_entities = self.knowledge_entity_list(project=project)
+        if requested_knowledge_types:
+            knowledge_entities = [
+                entry
+                for entry in knowledge_entities
+                if entry["entity_type"] in requested_knowledge_types
+            ]
+        if query_lower:
+            knowledge_entities = [
+                entry
+                for entry in knowledge_entities
+                if query_lower in self._knowledge_entity_search_text(entry)
+            ]
+
+        component_matches = self._knowledge_query_component_matches(
+            query=query_lower or None,
+            entity_types=sorted(requested_product_types) if requested_product_types else None,
+            project=project,
+        )
+
+        links: list[dict] = []
+        related_components: list[dict] = []
+        related_knowledge: list[dict] = []
+
+        seen_link_ids: set[str] = set()
+        seen_component_keys: set[tuple[str, str]] = set()
+        seen_knowledge_ids: set[str] = {entry["id"] for entry in knowledge_entities}
+
+        for entity in knowledge_entities:
+            context = self.knowledge_context(entity["entity_type"], entity["id"])
+            for link in context["links"]:
+                if relation_types and link["relation_type"] not in relation_types:
+                    continue
+                if link["id"] not in seen_link_ids:
+                    seen_link_ids.add(link["id"])
+                    links.append(link)
+            for item in context["related"]:
+                if relation_types and item["relation_type"] not in relation_types:
+                    continue
+                if item["entity_type"] in KNOWLEDGE_ENTITY_TYPES:
+                    knowledge = item["entity"]
+                    if knowledge and knowledge["id"] not in seen_knowledge_ids:
+                        seen_knowledge_ids.add(knowledge["id"])
+                        related_knowledge.append(knowledge)
+                else:
+                    key = (item["entity_type"], item["entity_id"])
+                    if key not in seen_component_keys and item["entity"] is not None:
+                        seen_component_keys.add(key)
+                        related_components.append(item["entity"])
+
+        for component in component_matches:
+            component_type = component["entity_type"]
+            component_id = component.get("id") or component.get("run_id") or component.get("name")
+            if not component_id:
+                continue
+            context = self.knowledge_context(component_type, str(component_id))
+            key = (component_type, context["entity_id"])
+            if key not in seen_component_keys and context["entity"] is not None:
+                seen_component_keys.add(key)
+                related_components.append(context["entity"])
+            for link in context["links"]:
+                if relation_types and link["relation_type"] not in relation_types:
+                    continue
+                if link["id"] not in seen_link_ids:
+                    seen_link_ids.add(link["id"])
+                    links.append(link)
+            for item in context["related"]:
+                if relation_types and item["relation_type"] not in relation_types:
+                    continue
+                if item["entity_type"] in KNOWLEDGE_ENTITY_TYPES:
+                    knowledge = item["entity"]
+                    if knowledge and knowledge["id"] not in seen_knowledge_ids:
+                        seen_knowledge_ids.add(knowledge["id"])
+                        related_knowledge.append(knowledge)
+
+        return {
+            "query": query or "",
+            "project": project or "",
+            "knowledge_entities": knowledge_entities,
+            "related_knowledge": related_knowledge,
+            "component_entities": related_components,
+            "links": links,
+            "integrity_issues": [
+                issue
+                for issue in self.knowledge_link_integrity_report()
+                if issue["link_id"] in seen_link_ids
+            ],
+        }
+
     def _knowledge_link_entity_exists(self, entity_type: str, entity_id: str) -> bool:
         return self._knowledge_link_entity_canonical_id(entity_type, entity_id) is not None
 
@@ -4699,6 +4831,7 @@ class BrixDB:
                     if data is not None:
                         return {
                             "entity_type": entity_type,
+                            "id": f"{run_id}:{step_id}",
                             "run_id": run_id,
                             "step_id": step_id,
                             "data": data,
@@ -4713,6 +4846,121 @@ class BrixDB:
                     result["entity_type"] = entity_type
                     return result
         return None
+
+    def _knowledge_query_component_matches(
+        self,
+        *,
+        query: Optional[str],
+        entity_types: Optional[list[str]],
+        project: Optional[str],
+    ) -> list[dict]:
+        candidate_types = entity_types or ["pipeline", "helper", "brick", "run", "finding", "changelog"]
+        matches: list[dict] = []
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            for entity_type in candidate_types:
+                if entity_type == "pipeline":
+                    rows = conn.execute(
+                        "SELECT id, name, description, project, tags, group_name FROM pipeline ORDER BY name"
+                    ).fetchall()
+                    for row in rows:
+                        item = dict(row)
+                        if self._knowledge_component_matches_query(item, query, project):
+                            raw_tags = item.get("tags")
+                            if isinstance(raw_tags, str):
+                                try:
+                                    item["tags"] = json.loads(raw_tags)
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            item["entity_type"] = entity_type
+                            matches.append(item)
+                elif entity_type == "helper":
+                    rows = conn.execute("SELECT * FROM helper ORDER BY name").fetchall()
+                    for row in rows:
+                        item = self._helper_row_to_dict(dict(row))
+                        if self._knowledge_component_matches_query(item, query, project):
+                            item["entity_type"] = entity_type
+                            matches.append(item)
+                elif entity_type == "brick":
+                    rows = conn.execute("SELECT * FROM brick_definition ORDER BY name").fetchall()
+                    for row in rows:
+                        item = self._brick_row_enrich_org(dict(row))
+                        if self._knowledge_component_matches_query(item, query, project):
+                            item["entity_type"] = entity_type
+                            matches.append(item)
+                elif entity_type == "run":
+                    rows = conn.execute(
+                        "SELECT run_id, pipeline, success, project, started_at, finished_at FROM run ORDER BY started_at DESC"
+                    ).fetchall()
+                    for row in rows:
+                        item = dict(row)
+                        if self._knowledge_component_matches_query(item, query, project):
+                            item["entity_type"] = entity_type
+                            matches.append(item)
+                elif entity_type == "changelog":
+                    rows = conn.execute(
+                        "SELECT id, version, type, title, description, task_id, commit_sha FROM changelog_entry ORDER BY timestamp DESC"
+                    ).fetchall()
+                    for row in rows:
+                        item = dict(row)
+                        if self._knowledge_component_matches_query(item, query, project):
+                            item["entity_type"] = entity_type
+                            matches.append(item)
+                elif entity_type == "finding":
+                    rows = conn.execute(
+                        "SELECT run_id, pipeline, project, steps_data FROM run WHERE steps_data IS NOT NULL ORDER BY started_at DESC"
+                    ).fetchall()
+                    for row in rows:
+                        item = dict(row)
+                        try:
+                            steps = json.loads(item.get("steps_data") or "{}")
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                        for step_id, step_data in steps.items():
+                            finding = {
+                                "id": f"{item['run_id']}:{step_id}",
+                                "run_id": item["run_id"],
+                                "pipeline": item.get("pipeline", ""),
+                                "project": item.get("project", ""),
+                                "step_id": step_id,
+                                "status": step_data.get("status", ""),
+                                "error_message": step_data.get("error_message") or step_data.get("errors") or "",
+                            }
+                            if self._knowledge_component_matches_query(finding, query, project):
+                                finding["entity_type"] = entity_type
+                                matches.append(finding)
+        return matches
+
+    @staticmethod
+    def _knowledge_component_matches_query(
+        item: dict,
+        query: Optional[str],
+        project: Optional[str],
+    ) -> bool:
+        if project and item.get("project") not in (project, None, ""):
+            return False
+        if not query:
+            return True
+        haystack = " ".join(
+            str(value)
+            for key, value in item.items()
+            if key not in {"id", "run_id"} and value is not None
+        ).lower()
+        return query in haystack
+
+    @staticmethod
+    def _knowledge_entity_search_text(entry: dict) -> str:
+        return " ".join(
+            [
+                entry.get("name", ""),
+                entry.get("title", ""),
+                entry.get("raw_text", ""),
+                entry.get("summary", ""),
+                entry.get("rationale", ""),
+                " ".join(entry.get("tags", [])),
+                json.dumps(entry.get("content", {}), sort_keys=True),
+            ]
+        ).lower()
 
     @staticmethod
     def _knowledge_entity_row_to_dict(row: dict) -> dict:
