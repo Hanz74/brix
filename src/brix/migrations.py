@@ -468,7 +468,99 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_effective_step_tool_schemas_v86",
         "down": "",
     },
+    {
+        "version": 87,
+        "name": "add_helper_governance_columns",
+        "up": "",
+        "up_fn": "_add_helper_governance_columns_v87",
+        "down": "",
+    },
 ]
+
+
+def _add_helper_governance_columns_v87(db: "BrixDB") -> None:
+    """Add helper governance metadata columns."""
+    columns = (
+        ("reason_not_a_brick", "TEXT DEFAULT ''"),
+        ("brick_candidate_ref", "TEXT DEFAULT ''"),
+        ("governance_status", "TEXT DEFAULT 'draft'"),
+    )
+    with db._connect() as conn:
+        for column, ddl in columns:
+            if not db._column_exists(conn, "helper", column):
+                conn.execute(f"ALTER TABLE helper ADD COLUMN {column} {ddl}")
+    _patch_helper_governance_tool_schemas_v87(db)
+
+
+def _patch_helper_governance_tool_schemas_v87(db: "BrixDB") -> None:
+    """Patch helper MCP tool schemas with governance fields."""
+    import json as _json
+
+    governance_fields = {
+        "reason_not_a_brick": {
+            "type": "string",
+            "description": "Explain why this helper is still a helper and not yet a reusable brick.",
+        },
+        "brick_candidate_ref": {
+            "type": "string",
+            "description": "Reference to an existing brick candidate or reuse-review decision for this helper.",
+        },
+    }
+    org_fields = {
+        "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung (z. B. 'buddy', 'cody', 'utility').",
+        },
+        "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Tags for categorization and governance.",
+        },
+        "group": {
+            "type": "string",
+            "description": "Optional organizational group name.",
+        },
+    }
+
+    tool_fields = {
+        "brix__create_helper": {**governance_fields},
+        "brix__register_helper": {**org_fields, **governance_fields},
+        "brix__update_helper": {
+            "group": org_fields["group"],
+            **governance_fields,
+        },
+    }
+
+    with db._connect() as conn:
+        for tool_name, extra_fields in tool_fields.items():
+            row = conn.execute(
+                "SELECT input_schema FROM mcp_tool_schema WHERE name = ?",
+                (tool_name,),
+            ).fetchone()
+            if not row:
+                logger.warning("migration v87: tool '%s' not found in DB, skipping", tool_name)
+                continue
+
+            raw = row[0]
+            try:
+                schema = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+            except Exception:
+                logger.warning("migration v87: invalid input_schema for tool '%s'", tool_name)
+                continue
+
+            properties = schema.setdefault("properties", {})
+            changed = False
+            for field_name, field_schema in extra_fields.items():
+                if properties.get(field_name) == field_schema:
+                    continue
+                properties[field_name] = field_schema
+                changed = True
+
+            if changed:
+                conn.execute(
+                    "UPDATE mcp_tool_schema SET input_schema = ? WHERE name = ?",
+                    (_json.dumps(schema), tool_name),
+                )
 
 
 def _add_imports_to_helper_schemas_v81(db: "BrixDB") -> None:
@@ -1935,7 +2027,7 @@ def _backfill_pipeline_helpers(db: "BrixDB") -> None:
                 "SELECT id, name, yaml_content FROM pipelines WHERE yaml_content IS NOT NULL AND yaml_content != ''"
             ).fetchall()
         for row in rows:
-            pipeline_id, pipeline_name, yaml_content = row[0], row[1], row[2]
+            pipeline_id, _pipeline_name, yaml_content = row[0], row[1], row[2]
             try:
                 raw = _yaml.safe_load(yaml_content) or {}
             except Exception:

@@ -37,6 +37,9 @@ class HelperEntry:
     project: str = ""
     tags: list[str] = field(default_factory=list)
     group_name: str = ""
+    reason_not_a_brick: str = ""
+    brick_candidate_ref: str = ""
+    governance_status: str = "draft"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -59,6 +62,9 @@ class HelperEntry:
             project=data.get("project", ""),
             tags=data.get("tags", []),
             group_name=data.get("group_name", ""),
+            reason_not_a_brick=data.get("reason_not_a_brick", ""),
+            brick_candidate_ref=data.get("brick_candidate_ref", ""),
+            governance_status=data.get("governance_status", "draft"),
         )
 
 
@@ -87,6 +93,9 @@ class HelperRegistry:
             project=row.get("project", ""),
             tags=row.get("tags", []),
             group_name=row.get("group_name", ""),
+            reason_not_a_brick=row.get("reason_not_a_brick", ""),
+            brick_candidate_ref=row.get("brick_candidate_ref", ""),
+            governance_status=row.get("governance_status", "draft"),
         )
 
     def _load(self) -> dict[str, dict]:
@@ -123,6 +132,9 @@ class HelperRegistry:
                 project=entry.project,
                 tags=entry.tags,
                 group_name=entry.group_name,
+                reason_not_a_brick=entry.reason_not_a_brick,
+                brick_candidate_ref=entry.brick_candidate_ref,
+                governance_status=entry.governance_status,
             )
 
     # ------------------------------------------------------------------
@@ -139,6 +151,12 @@ class HelperRegistry:
         output_schema: Optional[dict] = None,
         code: str = "",
         imports: Optional[list[str]] = None,
+        project: str = "",
+        tags: Optional[list[str]] = None,
+        group_name: str = "",
+        reason_not_a_brick: str = "",
+        brick_candidate_ref: str = "",
+        governance_status: str = "draft",
     ) -> HelperEntry:
         """Register or replace a helper entry.
         """
@@ -172,6 +190,12 @@ class HelperRegistry:
             updated_at=now,
             id=stable_id,
             imports=imports or [],
+            project=project,
+            tags=tags or [],
+            group_name=group_name,
+            reason_not_a_brick=reason_not_a_brick,
+            brick_candidate_ref=brick_candidate_ref,
+            governance_status=governance_status,
         )
 
         # Write to DB
@@ -186,6 +210,12 @@ class HelperRegistry:
             code=code,
             content_hash=content_hash,
             imports=imports or [],
+            project=project,
+            tags=tags or [],
+            group_name=group_name,
+            reason_not_a_brick=reason_not_a_brick,
+            brick_candidate_ref=brick_candidate_ref,
+            governance_status=governance_status,
         )
         return entry
 
@@ -250,6 +280,9 @@ class HelperRegistry:
             "project": db_row.get("project", ""),
             "tags": db_row.get("tags", []),
             "group_name": db_row.get("group_name", ""),
+            "reason_not_a_brick": db_row.get("reason_not_a_brick", ""),
+            "brick_candidate_ref": db_row.get("brick_candidate_ref", ""),
+            "governance_status": db_row.get("governance_status", "draft"),
         }
 
         allowed = {
@@ -263,6 +296,9 @@ class HelperRegistry:
             "project",
             "tags",
             "group_name",
+            "reason_not_a_brick",
+            "brick_candidate_ref",
+            "governance_status",
         }
         for key, value in fields.items():
             if key in allowed:
@@ -288,6 +324,9 @@ class HelperRegistry:
             project=fields.get("project"),
             tags=fields.get("tags"),
             group_name=fields.get("group_name"),
+            reason_not_a_brick=fields.get("reason_not_a_brick"),
+            brick_candidate_ref=fields.get("brick_candidate_ref"),
+            governance_status=fields.get("governance_status"),
         )
         return updated_entry
 

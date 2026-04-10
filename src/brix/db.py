@@ -534,7 +534,10 @@ _DDL = [
         project          TEXT DEFAULT '',
         tags             TEXT DEFAULT '[]',
         group_name       TEXT DEFAULT '',
-        imports_json     TEXT DEFAULT '[]'
+        imports_json     TEXT DEFAULT '[]',
+        reason_not_a_brick TEXT DEFAULT '',
+        brick_candidate_ref TEXT DEFAULT '',
+        governance_status TEXT DEFAULT 'draft'
     )
     """,
     """
@@ -3022,6 +3025,9 @@ class BrixDB:
         tags: Optional[list] = None,
         group_name: Optional[str] = None,
         imports: Optional[list[str]] = None,
+        reason_not_a_brick: Optional[str] = None,
+        brick_candidate_ref: Optional[str] = None,
+        governance_status: Optional[str] = None,
     ) -> str:
         """Insert or update a helper index entry. Returns the helper id."""
         now = _now_iso()
@@ -3094,6 +3100,16 @@ class BrixDB:
                 cols.append("imports_json")
                 vals.append(json.dumps(imports))
                 updates.append("imports_json=excluded.imports_json")
+
+            for column, value in (
+                ("reason_not_a_brick", reason_not_a_brick),
+                ("brick_candidate_ref", brick_candidate_ref),
+                ("governance_status", governance_status),
+            ):
+                if self._column_exists(conn, "helper", column) and value is not None:
+                    cols.append(column)
+                    vals.append(value)
+                    updates.append(f"{column}=excluded.{column}")
 
             placeholders = ",".join("?" * len(cols))
             col_str = ",".join(cols)
@@ -3198,6 +3214,9 @@ class BrixDB:
         row["output_schema"] = json.loads(row.get("output_schema_json") or "{}")
         row["content_hash"] = row.get("content_hash") or ""
         row["imports"] = json.loads(row.get("imports_json") or "[]")
+        row["reason_not_a_brick"] = row.get("reason_not_a_brick") or ""
+        row["brick_candidate_ref"] = row.get("brick_candidate_ref") or ""
+        row["governance_status"] = row.get("governance_status") or "draft"
         try:
             row["tags"] = json.loads(row.get("tags") or "[]")
         except (json.JSONDecodeError, TypeError):

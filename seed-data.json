@@ -3451,6 +3451,14 @@
               "type": "string"
             },
             "description": "Tags (PFLICHT). Bekannte: intake, extraction, conversion, batch, monitoring, one-shot."
+          },
+          "reason_not_a_brick": {
+            "type": "string",
+            "description": "Explain why this helper remains a helper and is not yet a reusable brick."
+          },
+          "brick_candidate_ref": {
+            "type": "string",
+            "description": "Reference to a recorded brick candidate or reuse-review decision for this helper."
           }
         },
         "required": [
@@ -5089,6 +5097,29 @@
             "type": "object",
             "description": "JSON Schema describing the helper's output structure."
           },
+          "project": {
+            "type": "string",
+            "description": "Projekt-Zuordnung (z. B. 'buddy', 'cody', 'utility')."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags for categorization and governance."
+          },
+          "group": {
+            "type": "string",
+            "description": "Optional organizational group name."
+          },
+          "reason_not_a_brick": {
+            "type": "string",
+            "description": "Explain why this helper remains a helper and is not yet a reusable brick."
+          },
+          "brick_candidate_ref": {
+            "type": "string",
+            "description": "Reference to a recorded brick candidate or reuse-review decision for this helper."
+          },
           "source": {
             "type": "object",
             "description": "Optional caller identity — expected on every MCP call. Fields: session (pipeline/session name), model (LLM model id), agent (agent name). Used for audit logging. Example: {\"session\": \"buddy-session\", \"model\": \"opus\", \"agent\": \"agent-alpha\"}",
@@ -6293,6 +6324,18 @@
               "type": "string"
             },
             "description": "Tags aktualisieren."
+          },
+          "group": {
+            "type": "string",
+            "description": "Group aktualisieren."
+          },
+          "reason_not_a_brick": {
+            "type": "string",
+            "description": "Update the helper's explicit justification for not yet being a brick."
+          },
+          "brick_candidate_ref": {
+            "type": "string",
+            "description": "Update the helper's brick-candidate or reuse-review reference."
           }
         },
         "required": [

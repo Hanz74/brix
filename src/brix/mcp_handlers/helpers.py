@@ -16,6 +16,7 @@ from brix.mcp_handlers._shared import (
     _now_iso_helper,
 )
 from brix.helper_registry import HelperRegistry
+from brix.helper_governance import assess_helper_governance, governance_warnings
 
 
 _HELPER_CACHE_DIR = Path("/tmp/brix-helpers")
@@ -124,25 +125,37 @@ async def _handle_create_helper(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
-    if org_project is not None or org_tags is not None or org_group is not None:
-        try:
-            from brix.db import BrixDB as _BrixDB
-            _org_db = _BrixDB()
-            _org_db.upsert_helper(
-                name=name,
-                script_path="",
-                description=description,
-                requirements=arguments.get("requirements") or [],
-                input_schema=arguments.get("input_schema"),
-                output_schema=arguments.get("output_schema"),
-                code=code,
-                content_hash=content_hash,
-                project=org_project,
-                tags=org_tags,
-                group_name=org_group,
-            )
-        except Exception:
-            pass  # Non-fatal
+    governance_input = {
+        "description": description,
+        "input_schema": arguments.get("input_schema"),
+        "output_schema": arguments.get("output_schema"),
+        "project": org_project,
+        "tags": org_tags,
+        "reason_not_a_brick": arguments.get("reason_not_a_brick", ""),
+        "brick_candidate_ref": arguments.get("brick_candidate_ref", ""),
+    }
+    governance = assess_helper_governance(governance_input)
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _org_db = _BrixDB()
+        _org_db.upsert_helper(
+            name=name,
+            script_path="",
+            description=description,
+            requirements=arguments.get("requirements") or [],
+            input_schema=arguments.get("input_schema"),
+            output_schema=arguments.get("output_schema"),
+            code=code,
+            content_hash=content_hash,
+            project=org_project,
+            tags=org_tags,
+            group_name=org_group,
+            reason_not_a_brick=governance.reason_not_a_brick,
+            brick_candidate_ref=governance.brick_candidate_ref,
+            governance_status=governance.status,
+        )
+    except Exception:
+        pass  # Non-fatal
 
     _audit_db.write_audit_entry(
         tool="brix__create_helper",
@@ -162,6 +175,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
         warnings.append(
             "HINT: 'tags' helfen bei der Kategorisierung (z.B. tags=['email', 'import'])."
         )
+    warnings.extend(governance_warnings(governance))
 
     result: dict = {
         "success": True,
@@ -171,6 +185,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
     result["content_hash"] = content_hash
     if org_project is not None:
         result["project"] = org_project
+    result["governance"] = governance.as_dict()
     if warnings:
         result["warnings"] = warnings
     return result
@@ -189,6 +204,18 @@ async def _handle_register_helper(arguments: dict) -> dict:
     if not script:
         return {"success": False, "error": "Parameter 'script' is required"}
 
+    governance = assess_helper_governance(
+        {
+            "description": arguments.get("description", ""),
+            "input_schema": arguments.get("input_schema") or {},
+            "output_schema": arguments.get("output_schema") or {},
+            "project": arguments.get("project") or None,
+            "tags": arguments.get("tags") or None,
+            "reason_not_a_brick": arguments.get("reason_not_a_brick", ""),
+            "brick_candidate_ref": arguments.get("brick_candidate_ref", ""),
+        }
+    )
+
     entry = registry.register(
         name=name,
         script=script,
@@ -201,33 +228,40 @@ async def _handle_register_helper(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
-    if org_project is not None or org_tags is not None or org_group is not None:
-        try:
-            from brix.db import BrixDB as _BrixDB
-            _org_db = _BrixDB()
-            _org_db.upsert_helper(
-                name=name,
-                script_path=script,
-                description=arguments.get("description", ""),
-                requirements=arguments.get("requirements") or [],
-                input_schema=arguments.get("input_schema") or {},
-                output_schema=arguments.get("output_schema") or {},
-                project=org_project,
-                tags=org_tags,
-                group_name=org_group,
-            )
-        except Exception:
-            pass  # Non-fatal: org-fields not saved but helper is registered
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _org_db = _BrixDB()
+        _org_db.upsert_helper(
+            name=name,
+            script_path=script,
+            description=arguments.get("description", ""),
+            requirements=arguments.get("requirements") or [],
+            input_schema=arguments.get("input_schema") or {},
+            output_schema=arguments.get("output_schema") or {},
+            project=org_project,
+            tags=org_tags,
+            group_name=org_group,
+            reason_not_a_brick=governance.reason_not_a_brick,
+            brick_candidate_ref=governance.brick_candidate_ref,
+            governance_status=governance.status,
+        )
+    except Exception:
+        pass  # Non-fatal: governance metadata not saved but helper is registered
     _audit_db.write_audit_entry(
         tool="brix__register_helper",
         source=source,
         arguments_summary=_source_summary(source, helper=name),
     )
-    return {
+    warnings = governance_warnings(governance)
+    result = {
         "success": True,
         "action": "registered",
         "helper": _make_helper_dict(entry),
+        "governance": governance.as_dict(),
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 async def _handle_list_helpers(arguments: dict) -> dict:
@@ -257,6 +291,9 @@ async def _handle_list_helpers(arguments: dict) -> dict:
                     "project": h.get("project", ""),
                     "tags": h.get("tags", []),
                     "group": h.get("group_name", ""),
+                    "reason_not_a_brick": h.get("reason_not_a_brick", ""),
+                    "brick_candidate_ref": h.get("brick_candidate_ref", ""),
+                    "governance_status": h.get("governance_status", "draft"),
                 }
                 for h in db_rows
             ]
@@ -426,7 +463,10 @@ async def _handle_update_helper(arguments: dict) -> dict:
 
     # Update path
     update_fields: dict = {}
-    for field_name in ("description", "requirements", "input_schema", "output_schema", "code", "imports"):
+    for field_name in (
+        "description", "requirements", "input_schema", "output_schema", "code", "imports",
+        "reason_not_a_brick", "brick_candidate_ref",
+    ):
         if field_name in arguments:
             update_fields[field_name] = arguments[field_name]
 
@@ -434,12 +474,21 @@ async def _handle_update_helper(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
+    has_governance_update = (
+        "reason_not_a_brick" in arguments
+        or "brick_candidate_ref" in arguments
+        or "description" in arguments
+        or "input_schema" in arguments
+        or "output_schema" in arguments
+        or org_project is not None
+        or org_tags is not None
+    )
     has_org_update = (org_project is not None or org_tags is not None or org_group is not None)
 
     if not update_fields and not has_org_update:
         return {
             "success": False,
-            "error": "No fields to update. Provide at least one of: code, script, description, requirements, input_schema, output_schema, project, tags, group",
+            "error": "No fields to update. Provide at least one of: code, script, description, requirements, input_schema, output_schema, project, tags, group, reason_not_a_brick, brick_candidate_ref",
         }
 
     entry = None
@@ -451,12 +500,38 @@ async def _handle_update_helper(arguments: dict) -> dict:
 
     # Update project/tags/group_name in DB
     # T-BRIX-BUG-02: Read existing DB row to preserve fields not being updated
-    if has_org_update:
+    if has_org_update or has_governance_update:
         try:
             from brix.db import BrixDB as _BrixDB
             _org_db = _BrixDB()
             existing_reg = registry.get(name)
             existing_db = _org_db.get_helper(name) if existing_reg else None
+            governance = assess_helper_governance(
+                {
+                    "description": update_fields.get(
+                        "description",
+                        existing_db.get("description", "") if existing_db else "",
+                    ),
+                    "input_schema": update_fields.get(
+                        "input_schema",
+                        existing_db.get("input_schema") if existing_db else {},
+                    ),
+                    "output_schema": update_fields.get(
+                        "output_schema",
+                        existing_db.get("output_schema") if existing_db else {},
+                    ),
+                    "project": org_project if org_project is not None else existing_db.get("project", "") if existing_db else "",
+                    "tags": org_tags if org_tags is not None else existing_db.get("tags", []) if existing_db else [],
+                    "reason_not_a_brick": update_fields.get(
+                        "reason_not_a_brick",
+                        existing_db.get("reason_not_a_brick", "") if existing_db else "",
+                    ),
+                    "brick_candidate_ref": update_fields.get(
+                        "brick_candidate_ref",
+                        existing_db.get("brick_candidate_ref", "") if existing_db else "",
+                    ),
+                }
+            )
             _org_db.upsert_helper(
                 name=name,
                 script_path=(existing_db.get("script_path") if existing_db else "") or "",
@@ -476,7 +551,11 @@ async def _handle_update_helper(arguments: dict) -> dict:
                 project=org_project,
                 tags=org_tags,
                 group_name=org_group,
+                reason_not_a_brick=governance.reason_not_a_brick,
+                brick_candidate_ref=governance.brick_candidate_ref,
+                governance_status=governance.status,
             )
+            update_warnings.extend(governance_warnings(governance))
         except Exception:
             pass  # Non-fatal
 
@@ -494,6 +573,10 @@ async def _handle_update_helper(arguments: dict) -> dict:
         updated_fields_list.append("tags")
     if org_group is not None:
         updated_fields_list.append("group")
+    if "reason_not_a_brick" in update_fields:
+        updated_fields_list.append("reason_not_a_brick")
+    if "brick_candidate_ref" in update_fields:
+        updated_fields_list.append("brick_candidate_ref")
 
     _audit_db.write_audit_entry(
         tool="brix__update_helper",

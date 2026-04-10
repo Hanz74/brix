@@ -2,26 +2,9 @@
 from __future__ import annotations
 
 import uuid as _uuid_mod
-import json as _json
 from pathlib import Path
 
 import yaml
-
-
-def _bump_version(current: str, bump: str = "patch") -> str:
-    """Bump a semver string. bump='patch'|'minor'|'major'."""
-    try:
-        parts = current.split(".")
-        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
-    except (IndexError, ValueError):
-        return "1.0.1"
-    if bump == "major":
-        return f"{major + 1}.0.0"
-    elif bump == "minor":
-        return f"{major}.{minor + 1}.0"
-    else:
-        return f"{major}.{minor}.{patch + 1}"
-
 from brix.mcp_handlers._shared import (
     _audit_db,
     _registry,
@@ -42,6 +25,20 @@ from brix.history import RunHistory
 from brix.config import config
 from brix.engine import LEGACY_ALIASES
 
+
+def _bump_version(current: str, bump: str = "patch") -> str:
+    """Bump a semver string. bump='patch'|'minor'|'major'."""
+    try:
+        parts = current.split(".")
+        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+    except (IndexError, ValueError):
+        return "1.0.1"
+    if bump == "major":
+        return f"{major + 1}.0.0"
+    elif bump == "minor":
+        return f"{major}.{minor + 1}.0"
+    else:
+        return f"{major}.{minor}.{patch + 1}"
 
 def _resolve_brick_def(step: dict):
     """Resolve a BrickSchema for a given step dict, or None if not found.
@@ -802,7 +799,6 @@ async def _handle_get_versions(arguments: dict) -> dict:
 def _get_current_content_str(obj_type: str, name: str) -> str:
     """Return the current live content of a pipeline or helper as a string."""
     from brix.helper_registry import HelperRegistry
-    import json
 
     if obj_type == "pipeline":
         try:
@@ -913,6 +909,12 @@ async def _handle_rollback(arguments: dict) -> dict:
                 requirements=meta.get("requirements", []),
                 input_schema=meta.get("input_schema", {}),
                 output_schema=meta.get("output_schema", {}),
+                project=meta.get("project", ""),
+                tags=meta.get("tags", []),
+                group_name=meta.get("group_name", ""),
+                reason_not_a_brick=meta.get("reason_not_a_brick", ""),
+                brick_candidate_ref=meta.get("brick_candidate_ref", ""),
+                governance_status=meta.get("governance_status", "draft"),
             )
         else:
             registry.update(
@@ -922,6 +924,12 @@ async def _handle_rollback(arguments: dict) -> dict:
                 requirements=meta.get("requirements", existing.requirements),
                 input_schema=meta.get("input_schema", existing.input_schema),
                 output_schema=meta.get("output_schema", existing.output_schema),
+                project=meta.get("project", existing.project),
+                tags=meta.get("tags", existing.tags),
+                group_name=meta.get("group_name", existing.group_name),
+                reason_not_a_brick=meta.get("reason_not_a_brick", existing.reason_not_a_brick),
+                brick_candidate_ref=meta.get("brick_candidate_ref", existing.brick_candidate_ref),
+                governance_status=meta.get("governance_status", existing.governance_status),
             )
         return {
             "success": True,

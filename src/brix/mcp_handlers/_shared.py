@@ -6,7 +6,6 @@ imports and ensure all handlers use the same singletons.
 """
 from __future__ import annotations
 
-import json
 import asyncio
 from pathlib import Path
 
@@ -17,11 +16,7 @@ from brix.db import BrixDB
 from brix.helper_registry import HelperRegistry
 from brix.loader import PipelineLoader
 from brix.validator import PipelineValidator
-from brix.history import RunHistory
-from brix.engine import PipelineEngine
-from brix.mcp_pool import McpConnectionPool
 from brix.pipeline_store import PipelineStore
-from brix.credential_store import CredentialStore, CredentialNotFoundError, CREDENTIAL_TYPES
 from brix.config import config
 
 # Shared singletons.
@@ -85,7 +80,6 @@ _background_runs: dict[str, "asyncio.Task[None]"] = {}
 
 # Schema-consultation tracking — maps source_key → {brick_name: timestamp}
 # Used by T-BRIX-V8-09 to warn when add_step is called without prior get_brick_schema
-import time as _time_mod
 _schema_consultations: dict[str, dict[str, float]] = {}
 # TTL in seconds for schema consultation entries
 _SCHEMA_CONSULTATION_TTL_SECONDS: int = config.SCHEMA_CONSULTATION_TTL_SECONDS
@@ -311,16 +305,25 @@ def _make_helper_dict(entry) -> dict:
                 d["tags"] = raw_tags if isinstance(raw_tags, list) else []
             d["group"] = db_row.get("group_name", "") or ""
             d["imports"] = db_row.get("imports", []) or []
+            d["reason_not_a_brick"] = db_row.get("reason_not_a_brick", "") or ""
+            d["brick_candidate_ref"] = db_row.get("brick_candidate_ref", "") or ""
+            d["governance_status"] = db_row.get("governance_status", "draft") or "draft"
         else:
             d["project"] = ""
             d["tags"] = []
             d["group"] = ""
             d["imports"] = []
+            d["reason_not_a_brick"] = ""
+            d["brick_candidate_ref"] = ""
+            d["governance_status"] = "draft"
     except Exception:
         d["project"] = ""
         d["tags"] = []
         d["group"] = ""
         d["imports"] = []
+        d["reason_not_a_brick"] = ""
+        d["brick_candidate_ref"] = ""
+        d["governance_status"] = "draft"
     return d
 
 

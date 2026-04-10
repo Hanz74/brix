@@ -943,6 +943,27 @@ class PipelineValidator:
             return
 
         result.add_check(f"Step '{step.id}': Helper '{step.helper}' found in registry")
+        try:
+            from brix.helper_governance import assess_helper_governance
+
+            governance = assess_helper_governance(entry.to_dict())
+            if not governance.is_complete:
+                result.add_warning(
+                    f"Step '{step.id}': helper '{step.helper}' governance is incomplete "
+                    f"(status={governance.status}) (T-2.2.3)",
+                    hint="Update helper metadata with project, tags, schemas, and reason_not_a_brick or brick_candidate_ref.",
+                    code="HELPER_GOVERNANCE_INCOMPLETE",
+                    step_id=step.id,
+                    field="helper",
+                    why="Helpers must be explicit brick exceptions or migration candidates.",
+                    suggestion={
+                        "kind": "update_helper",
+                        "missing_metadata": list(governance.missing_metadata),
+                        "missing_justification": governance.missing_justification,
+                    },
+                )
+        except Exception:
+            pass
 
         # Schema validation — warn on params not declared in input_schema
         input_schema = entry.input_schema or {}

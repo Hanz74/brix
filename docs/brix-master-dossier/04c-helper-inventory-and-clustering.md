@@ -57,3 +57,14 @@ Each candidate includes evidence, confidence, signals, and a suggested brick nam
 
 ## Boundary to Later Tasks
 This task classifies helpers and detects repeated logic as brick-candidate pressure. Mandatory helper justification and enforcement belongs to `T-2.2.3`.
+
+## Helper Governance
+New helpers must not enter the system as silent product design. Helper creation and update flows therefore evaluate governance metadata:
+
+- complete description
+- input and output schemas
+- project
+- tags
+- either `reason_not_a_brick` or `brick_candidate_ref`
+
+Helpers that do not meet this bar remain `draft` and emit governance warnings. The validator also warns when a pipeline references a helper with incomplete governance metadata. This keeps existing legacy helpers usable while making new helper debt visible and actionable.
