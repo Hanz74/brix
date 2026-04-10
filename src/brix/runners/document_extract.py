@@ -15,7 +15,7 @@ from brix.serialization import sanitize_for_json
 
 
 def _daigestr_base_url() -> str:
-    return os.environ.get("BRIX_DAIGESTR_URL", "http://daigestr:8080")
+    return os.environ.get("BRIX_DAIGESTR_URL") or os.environ.get("BRIX_MARKITDOWN_URL", "http://markitdown-mcp:8081")
 
 
 def _normalize_payload(step: Any, context: Any) -> dict[str, Any]:
@@ -124,16 +124,18 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
 
         request_payload = {
             "content": base64_content,
+            "base64": base64_content,
             "filename": payload.get("filename") or path.name,
             "language": payload.get("language") or "de",
             "mime_type": payload.get("mime_type") or "",
             "metadata": payload.get("metadata") or {},
+            "auto_extract": True,
         }
         if payload.get("template"):
             request_payload["template"] = payload["template"]
 
         base_url = _daigestr_base_url().rstrip("/")
-        endpoint = str(payload.get("endpoint") or "/v1/extract")
+        endpoint = str(payload.get("endpoint") or "/v1/convert")
         if not endpoint.startswith("/"):
             endpoint = f"/{endpoint}"
         url = f"{base_url}{endpoint}"

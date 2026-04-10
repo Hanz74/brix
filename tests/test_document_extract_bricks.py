@@ -65,6 +65,10 @@ def test_extract_document_with_daigestr_normalizes_response(monkeypatch, tmp_pat
             return False
 
         async def post(self, url, json, headers):
+            assert url.endswith("/v1/convert")
+            assert json["auto_extract"] is True
+            assert json["base64"]
+            assert json["content"]
             return FakeResponse()
 
     monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
@@ -139,6 +143,8 @@ def test_extract_document_with_daigestr_prefers_step_params(monkeypatch, tmp_pat
             return False
 
         async def post(self, url, json, headers):
+            assert url.endswith("/v1/convert")
+            assert json["auto_extract"] is True
             assert json["filename"] == "params.pdf"
             return FakeResponse()
 
@@ -163,6 +169,53 @@ def test_extract_document_with_daigestr_prefers_step_params(monkeypatch, tmp_pat
     assert data["normalized"]["vendor_name"] == "Params Vendor"
     assert data["document_type"] == "invoice"
     assert data["quality_score"] == 0.77
+
+
+def test_extract_document_with_daigestr_prefers_explicit_base_url_and_endpoint(monkeypatch, tmp_path):
+    file_path = tmp_path / "override.pdf"
+    file_path.write_bytes(b"pdf-content")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"normalized": {"vendor_name": "Override"}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+    monkeypatch.setenv("BRIX_DAIGESTR_URL", "http://daigestr:9999")
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={
+            "file_bytes_path": str(file_path),
+            "endpoint": "/v1/extract",
+        },
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    assert captured["url"] == "http://daigestr:9999/v1/extract"
+    assert captured["json"]["auto_extract"] is True
 
 
 def test_document_extract_bricks_are_registered_in_builtins():
