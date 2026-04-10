@@ -81,6 +81,7 @@ But it still carries systemic debt:
 - [03a-effective-step-spec.md](/root/docker/brix/docs/brix-master-dossier/03a-effective-step-spec.md)
 - [03b-file-mirror-policy.md](/root/docker/brix/docs/brix-master-dossier/03b-file-mirror-policy.md)
 - [04-brick-ecosystem.md](/root/docker/brix/docs/brix-master-dossier/04-brick-ecosystem.md)
+- [04a-standard-brick-contracts.md](/root/docker/brix/docs/brix-master-dossier/04a-standard-brick-contracts.md)
 - [05-knowledge-graph-intent-layer.md](/root/docker/brix/docs/brix-master-dossier/05-knowledge-graph-intent-layer.md)
 - [06-governance-and-metadata-policy.md](/root/docker/brix/docs/brix-master-dossier/06-governance-and-metadata-policy.md)
 - [07-mcp-surface-and-crud-spec.md](/root/docker/brix/docs/brix-master-dossier/07-mcp-surface-and-crud-spec.md)

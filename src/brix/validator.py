@@ -17,6 +17,7 @@ import yaml
 
 from brix.models import Pipeline, Step
 from brix.cache import SchemaCache
+from brix.bricks.contracts import is_dict_like_contract, is_list_like_contract
 from brix.bricks.registry import BrickRegistry
 from brix.engine import LEGACY_ALIASES
 from brix.materialize import MaterializedStep, materialize_step
@@ -1680,6 +1681,8 @@ class PipelineValidator:
         norm = self._normalise_output_type(output_type)
         if not norm or norm in {"any", "*"}:
             return True
+        if is_list_like_contract(norm):
+            return True
         if norm.startswith("list[") or norm == "list":
             return True
         return False
@@ -1688,13 +1691,17 @@ class PipelineValidator:
         norm = self._normalise_output_type(output_type)
         if not norm or norm in {"any", "*"}:
             return True
+        if is_dict_like_contract(norm):
+            return True
         return norm in {"dict", "object", "json"}
 
     def _is_single_dict_type(self, output_type: str) -> bool:
-        return self._normalise_output_type(output_type) in {"dict", "object", "json"}
+        norm = self._normalise_output_type(output_type)
+        return norm in {"dict", "object", "json"} or is_dict_like_contract(norm)
 
     def _is_list_of_dict_type(self, output_type: str) -> bool:
-        return self._normalise_output_type(output_type) == "list[dict]"
+        norm = self._normalise_output_type(output_type)
+        return norm == "list[dict]" or is_list_like_contract(norm)
 
     def _iter_step_output_type_compatibility_issues(self, ctx: ValidationContext) -> list[dict[str, str]]:
         """Collect output type mismatches for step-to-step references."""

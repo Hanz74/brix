@@ -8,6 +8,9 @@ T-BRIX-DB-06: TYPE_COMPATIBILITY is seeded into DB and read from there at runtim
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
+
+from brix.bricks.contracts import STANDARD_CONTRACT_COMPATIBILITY
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,11 @@ TYPE_COMPATIBILITY: dict[str, list[str]] = {
         "object (source, destination, operation, success)", "object", "dict"
     ],
 }
+for _output_type, _compatible_inputs in STANDARD_CONTRACT_COMPATIBILITY.items():
+    TYPE_COMPATIBILITY.setdefault(_output_type, [])
+    for _compatible_input in _compatible_inputs:
+        if _compatible_input not in TYPE_COMPATIBILITY[_output_type]:
+            TYPE_COMPATIBILITY[_output_type].append(_compatible_input)
 
 # ---------------------------------------------------------------------------
 # Converter suggestions
@@ -87,15 +95,20 @@ _CONVERTER_SUGGESTIONS: list[tuple[str, str, str]] = [
 
 
 def _get_type_compatibility() -> dict[str, list[str]]:
-    """Return type compatibility table — from DB if available, else from code."""
+    """Return type compatibility table with built-in defaults plus DB additions."""
+    compatibility = deepcopy(TYPE_COMPATIBILITY)
     try:
         from brix.db import BrixDB
         db = BrixDB()
         if db.type_compatibility_count() > 0:
-            return db.type_compatibility_as_dict()
+            for output_type, compatible_inputs in db.type_compatibility_as_dict().items():
+                compatibility.setdefault(output_type, [])
+                for compatible_input in compatible_inputs:
+                    if compatible_input not in compatibility[output_type]:
+                        compatibility[output_type].append(compatible_input)
     except Exception as e:
         logger.debug("Could not load type_compatibility from DB: %s", e)
-    return TYPE_COMPATIBILITY
+    return compatibility
 
 
 def _normalise(type_str: str) -> str:

@@ -51,10 +51,10 @@ Reusable end-to-end patterns:
 - load file and prepare extractable payload
 - perform daigestr extraction with standard contracts
 
-## Missing Standard Contracts
-Bricks should interoperate through standard domain contracts, not ad hoc object shapes.
+## Standard Contracts
+Bricks should interoperate through standard domain contracts, not ad hoc object shapes. The canonical catalog is defined in code at `src/brix/bricks/contracts.py` and documented in [04a-standard-brick-contracts.md](/root/docker/brix/docs/brix-master-dossier/04a-standard-brick-contracts.md).
 
-### Candidate Output Contracts
+### Initial Contract Set
 - `file_blob`
 - `remote_download_result`
 - `document_extract_input`
