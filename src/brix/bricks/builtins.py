@@ -1172,6 +1172,51 @@ SYSTEM_SOURCE_FETCH = BrickSchema(
     category="system",
 )
 
+SYSTEM_SOURCE_DOWNLOAD_TO_FILE = BrickSchema(
+    name="source.download_to_file",
+    type="source_download_to_file",
+    description="Download a remote URL to a managed local file and emit the standard remote_download_result contract.",
+    when_to_use="Use when a source or MCP step yields a download URL and the pipeline should stage the file locally without helper code.",
+    when_NOT_to_use="Do not use when the payload is already available as base64 or text; use source.persist_download_payload instead.",
+    runner="source_download_to_file",
+    system=True,
+    namespace="source",
+    category="system",
+    config_schema={
+        "url": BrickParam(type="string", description="Remote file URL", required=True),
+        "filename": BrickParam(type="string", description="Optional target filename override"),
+        "output_dir": BrickParam(type="string", description="Target directory for the downloaded file"),
+        "headers": BrickParam(type="object", description="Optional HTTP headers"),
+        "timeout_seconds": BrickParam(type="integer", description="Optional request timeout override"),
+    },
+    input_type="none",
+    output_type="remote_download_result",
+    output_description='{"file_bytes_path": "...", "content_hash": "...", "mime_type": "...", "extractable": true}',
+)
+
+SYSTEM_SOURCE_PERSIST_DOWNLOAD_PAYLOAD = BrickSchema(
+    name="source.persist_download_payload",
+    type="source_persist_download_payload",
+    description="Persist a fetched payload (base64 or text) to a managed local file and emit the standard remote_download_result contract.",
+    when_to_use="Use when an MCP/tool step already produced the file payload and the pipeline should normalize it into the reusable download contract.",
+    when_NOT_to_use="Do not use for direct remote HTTP downloads; use source.download_to_file when only a URL is available.",
+    runner="source_persist_download_payload",
+    system=True,
+    namespace="source",
+    category="system",
+    config_schema={
+        "filename": BrickParam(type="string", description="Target filename", required=True),
+        "output_dir": BrickParam(type="string", description="Target directory for the persisted file"),
+        "base64": BrickParam(type="string", description="Base64-encoded payload to persist"),
+        "text": BrickParam(type="string", description="Plain-text payload to persist"),
+        "source_url": BrickParam(type="string", description="Optional original source URL"),
+        "mime_type": BrickParam(type="string", description="Optional MIME type override"),
+    },
+    input_type="none",
+    output_type="remote_download_result",
+    output_description='{"file_bytes_path": "...", "content_hash": "...", "mime_type": "...", "extractable": true}',
+)
+
 SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT = BrickSchema(
     name="document.persist_extraction_result",
     type="document_persist_extraction_result",
@@ -1577,6 +1622,8 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_LLM_BATCH,
     SYSTEM_MARKITDOWN_CONVERT,
     SYSTEM_SOURCE_FETCH,
+    SYSTEM_SOURCE_DOWNLOAD_TO_FILE,
+    SYSTEM_SOURCE_PERSIST_DOWNLOAD_PAYLOAD,
     SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT,
     SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED,
     SYSTEM_FLOW_SWITCH,
