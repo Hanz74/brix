@@ -503,6 +503,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_add_reuse_review_fields_to_creation_schemas_v91",
         "down": "",
     },
+    {
+        "version": 92,
+        "name": "seed_workaround_pattern_catalog",
+        "up": "",
+        "up_fn": "_seed_workaround_pattern_catalog_v92",
+        "down": "",
+    },
 ]
 
 
@@ -958,6 +965,13 @@ def _add_reuse_review_fields_to_creation_schemas_v91(db: "BrixDB") -> None:
                     "input_schema": schema,
                 }
             )
+
+
+def _seed_workaround_pattern_catalog_v92(db: "BrixDB") -> None:
+    """Seed default workaround patterns into the registry."""
+    from brix.workaround_patterns import ensure_default_workaround_patterns
+
+    ensure_default_workaround_patterns(db)
 
 
 def _register_effective_step_tool_schemas_v86(db: "BrixDB") -> None:

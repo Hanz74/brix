@@ -203,6 +203,33 @@ def _load_registry_content() -> list[str]:
                         lines.append(f"  {cl}" if cl.strip() else "")
                 lines.append("")
 
+        # --- Workaround Patterns ---
+        patterns = [
+            entry
+            for entry in db.registry_list("patterns")
+            if (
+                "workaround" in entry.get("tags", [])
+                or (
+                    isinstance(entry.get("content"), dict)
+                    and entry["content"].get("kind") == "workaround_pattern"
+                )
+            )
+        ]
+        if patterns:
+            lines.append("## WORKAROUND PATTERNS")
+            for entry in patterns:
+                lines.append(f"### {entry['name']}")
+                if entry.get("description"):
+                    lines.append(f"  {entry['description']}")
+                content = entry.get("content")
+                if isinstance(content, dict):
+                    trigger_codes = content.get("trigger_codes") or []
+                    if trigger_codes:
+                        lines.append(f"  Trigger codes: {', '.join(trigger_codes)}")
+                    if content.get("repair_hint"):
+                        lines.append(f"  Repair hint: {content['repair_hint']}")
+                lines.append("")
+
     except Exception as e:
         logger.debug("Could not load registry content: %s", e)
     return lines

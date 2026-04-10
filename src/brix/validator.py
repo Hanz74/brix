@@ -24,6 +24,7 @@ from brix.materialize import MaterializedStep, materialize_step
 from brix.step_field_policy import explicit_runner_specific_fields, get_field_migration_policy
 from brix.pipeline_store import PipelineStore
 from brix.connections import ConnectionManager
+from brix.workaround_patterns import detect_workaround_pattern_matches
 
 
 _STEP_CONFIG_CONFLICT_FIELDS = tuple(
@@ -766,6 +767,7 @@ class PipelineValidator:
         self._check_deprecated_step_types(ctx, result)
         self._check_tojson_on_string(ctx, result)
         self._check_db_query_dml(ctx, result)
+        self._check_workaround_patterns(ctx, result)
 
     def run_deep_checks(self, ctx: ValidationContext, result: ValidationResult) -> None:
         """Run expensive deep validation checks."""
@@ -2288,6 +2290,42 @@ class PipelineValidator:
                     result.add_error(message, **common_kwargs)
                 else:
                     result.add_warning(message, **common_kwargs)
+
+    def _check_workaround_patterns(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Surface known workaround patterns derived from validator findings."""
+        del ctx  # pattern matching uses the accumulated findings
+        existing_keys = {
+            (finding.code, finding.step_id, finding.field, finding.message)
+            for finding in result.findings
+        }
+        for match in detect_workaround_pattern_matches(result.findings):
+            target = f"Step '{match.step_id}': " if match.step_id else ""
+            message = (
+                f"{target}matches known workaround pattern '{match.pattern.name}' — "
+                f"{match.pattern.description}"
+            )
+            finding_key = ("KNOWN_WORKAROUND_PATTERN", match.step_id, match.field, message)
+            if finding_key in existing_keys:
+                continue
+            severity = match.finding_severity
+            if severity not in {"error", "warning", "info"}:
+                severity = match.pattern.severity
+            result.add_finding(
+                code="KNOWN_WORKAROUND_PATTERN",
+                severity=severity,
+                category="lint",
+                message=message,
+                step_id=match.step_id,
+                field=match.field,
+                why=match.pattern.rationale or "Known workaround patterns must remain visible to validator and gatekeeper surfaces.",
+                hint=match.pattern.repair_hint,
+                suggestion={
+                    "kind": "review_workaround_pattern",
+                    "pattern": match.pattern.name,
+                    "source_finding": match.finding_code,
+                },
+            )
+            existing_keys.add(finding_key)
 
     # ---------------------------------------------------------------------------
     # T-BRIX-VAL-08: Duplicate step IDs across sub-pipelines
