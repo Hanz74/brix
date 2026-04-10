@@ -101,3 +101,66 @@ def promote_hmk_to_document_persistence_bricks(
     rewrite_hmk_save_results_to_persistence_brick(db=active_db, pipeline_name=pipeline_name)
     rewrite_hmk_mark_processed_to_specialist_brick(db=active_db, pipeline_name=pipeline_name)
     return PipelineStore(db=active_db).load_raw(pipeline_name)
+
+
+def standardize_hmk_extract_flow(
+    *,
+    db: BrixDB | None = None,
+    pipeline_name: str = "buddy-hmk-extract-single",
+) -> dict[str, Any]:
+    """Replace HMK ad hoc extract preparation and Daigestr sub-pipeline glue with standard bricks."""
+
+    active_db = db if db is not None else BrixDB()
+    store = PipelineStore(db=active_db)
+    raw = store.load_raw(pipeline_name)
+    steps = raw.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError(f"Pipeline '{pipeline_name}' has no step list")
+
+    extract_step = _step_by_id(steps, "extract")
+    if extract_step.get("type") == "extract.document_with_daigestr":
+        try:
+            prepare_step = _step_by_id(steps, "prepare_extractable")
+        except ValueError:
+            prepare_step = _step_by_id(steps, "read_file_b64")
+    else:
+        prepare_step = _step_by_id(steps, "read_file_b64")
+
+    if prepare_step.get("type") == "document.prepare_extractable_payload" and extract_step.get("type") == "extract.document_with_daigestr":
+        return raw
+
+    prepare_step["id"] = "prepare_extractable"
+    prepare_step["type"] = "document.prepare_extractable_payload"
+    prepare_step["config"] = {
+        "file_bytes_path": "{{ download_save.output.file_bytes_path }}",
+        "mime_type": "{{ get_download_url.output.file.mimeType | default('') }}",
+        "filename": "{{ input.item.file_name | default('') }}",
+        "language": "{{ input.language | default('de') }}",
+        "include_base64": True,
+        "metadata": {
+            "source": "{{ input.item.source | default('') }}",
+            "source_id": "{{ input.item.source_id | default('') }}",
+            "document_id": "{{ input.item.id }}",
+            "extension": "{{ input.item.extension | default('') }}",
+            "doc_date": "{{ input.item.doc_date | default('') }}",
+        },
+    }
+    prepare_step["params"] = {}
+    prepare_step["when"] = "{{ download_save.output.extractable | default(false) }}"
+
+    extract_step["type"] = "extract.document_with_daigestr"
+    extract_step.pop("pipeline", None)
+    extract_step["config"] = {
+        "file_bytes_path": "{{ prepare_extractable.output.file_bytes_path }}",
+        "base64": "{{ prepare_extractable.output.base64 }}",
+        "filename": "{{ prepare_extractable.output.filename }}",
+        "language": "{{ prepare_extractable.output.language | default('de') }}",
+        "mime_type": "{{ prepare_extractable.output.mime_type | default('') }}",
+        "metadata": "{{ prepare_extractable.output.metadata }}",
+    }
+    extract_step["params"] = {}
+    extract_step["when"] = "{{ prepare_extractable.output is defined }}"
+
+    raw["steps"] = steps
+    store.save(raw, name=pipeline_name)
+    return store.load_raw(pipeline_name)

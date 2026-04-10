@@ -3,6 +3,7 @@ from __future__ import annotations
 from brix.db import BrixDB
 from brix.hmk_refactor import (
     promote_hmk_to_document_persistence_bricks,
+    standardize_hmk_extract_flow,
     rewrite_hmk_mark_processed_to_specialist_brick,
     rewrite_hmk_save_results_to_persistence_brick,
 )
@@ -40,6 +41,13 @@ def _hmk_single_pipeline() -> dict:
                     "params": {"file_name": "{{ input.item.file_name | default('') }}"},
                 },
                 "params": {"file_name": "{{ input.item.file_name | default('') }}"},
+            },
+            {
+                "id": "read_file_b64",
+                "type": "file.read_base64",
+                "config": {"path": "{{ download_save.output.file_bytes_path }}"},
+                "params": {"path": "{{ download_save.output.file_bytes_path }}"},
+                "when": "{{ download_save.output.extractable | default(false) }}",
             },
             {
                 "id": "extract",
@@ -187,3 +195,35 @@ def test_promote_hmk_to_document_persistence_bricks(tmp_path):
         step["type"] == "db.exec" and step["id"] in {"save_results", "mark_processed"}
         for step in updated["steps"]
     )
+
+
+def test_standardize_hmk_extract_flow(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    updated = standardize_hmk_extract_flow(db=db)
+
+    prepare = next(step for step in updated["steps"] if step["id"] == "prepare_extractable")
+    extract = next(step for step in updated["steps"] if step["id"] == "extract")
+
+    assert prepare["type"] == "document.prepare_extractable_payload"
+    assert prepare["config"]["include_base64"] is True
+    assert extract["type"] == "extract.document_with_daigestr"
+    assert extract["config"]["file_bytes_path"] == "{{ prepare_extractable.output.file_bytes_path }}"
+    assert extract["when"] == "{{ prepare_extractable.output is defined }}"
+    assert not any(step["id"] == "read_file_b64" for step in updated["steps"])
+
+
+def test_standardize_hmk_extract_flow_is_idempotent(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    standardize_hmk_extract_flow(db=db)
+    updated = standardize_hmk_extract_flow(db=db)
+
+    prepare = next(step for step in updated["steps"] if step["id"] == "prepare_extractable")
+    extract = next(step for step in updated["steps"] if step["id"] == "extract")
+    assert prepare["type"] == "document.prepare_extractable_payload"
+    assert extract["type"] == "extract.document_with_daigestr"
