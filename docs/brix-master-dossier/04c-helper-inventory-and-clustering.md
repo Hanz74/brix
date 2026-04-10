@@ -42,7 +42,18 @@ Signals include:
 High-value domain helpers become brick candidates. Metadata gaps do not hide the helper; they are surfaced as part of the inventory.
 
 ## MCP Guidance
-`list_helpers(include_inventory=true)` enriches each helper with family, domain, strategic category, migration candidacy, usage count, missing metadata, and signals. `get_tips` summarizes helper inventory so agents see brick-candidate pressure before inventing new helpers.
+`list_helpers(include_inventory=true)` enriches each helper with family, domain, strategic category, migration candidacy, usage count, missing metadata, and signals. `list_helpers(include_reuse_candidates=true)` adds systematic brick-candidate detection for repeated helper usage, repeated SQL patterns, and repeated step sequences. `get_tips` summarizes helper inventory so agents see brick-candidate pressure before inventing new helpers.
+
+## Brick-Candidate Detector
+The detector lives in `src/brix/brick_candidate_detector.py` and reads only DB-backed helpers, pipelines, and `pipeline_step` rows.
+
+It emits three candidate kinds:
+
+- `repeated_helper_usage`: a DB helper is reused across pipelines and belongs to a domain family.
+- `repeated_sql_pattern`: normalized SQL templates repeat across `db.query`, `db.exec`, or `db.upsert` steps.
+- `repeated_step_sequence`: contiguous step-type windows repeat across pipelines.
+
+Each candidate includes evidence, confidence, signals, and a suggested brick name. The detector does not create bricks automatically; it generates structured migration pressure for later governance and implementation decisions.
 
 ## Boundary to Later Tasks
-This task classifies helpers. Repeated SQL and step-sequence detection belongs to `T-2.2.2`. Mandatory helper justification and enforcement belongs to `T-2.2.3`.
+This task classifies helpers and detects repeated logic as brick-candidate pressure. Mandatory helper justification and enforcement belongs to `T-2.2.3`.

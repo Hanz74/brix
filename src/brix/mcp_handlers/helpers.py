@@ -233,6 +233,7 @@ async def _handle_register_helper(arguments: dict) -> dict:
 async def _handle_list_helpers(arguments: dict) -> dict:
     """List all registered helpers, with optional project/tags/group filter."""
     include_inventory = bool(arguments.get("include_inventory", False))
+    include_reuse_candidates = bool(arguments.get("include_reuse_candidates", False))
     # T-BRIX-ORG-01: project/tags/group filter
     filter_project = arguments.get("project") or None
     filter_tags = arguments.get("tags") or None
@@ -287,6 +288,26 @@ async def _handle_list_helpers(arguments: dict) -> dict:
                 result["clusters"] = inventory["clusters"]
             except Exception:
                 result["inventory_warning"] = "Helper inventory classification could not be loaded."
+        if include_reuse_candidates:
+            try:
+                from brix.brick_candidate_detector import detect_brick_candidates, filter_brick_candidate_report
+                from brix.helper_inventory import build_helper_inventory, filter_helper_inventory
+
+                helper_names = {helper["name"] for helper in helpers}
+                scoped_inventory = filter_helper_inventory(build_helper_inventory(_org_db), helper_names)
+                pipeline_names = {
+                    pipeline
+                    for item in scoped_inventory.items
+                    for pipeline in item.used_by_pipelines
+                }
+                result["reuse_candidates"] = filter_brick_candidate_report(
+                    detect_brick_candidates(_org_db),
+                    helper_names=helper_names,
+                    pipeline_names=pipeline_names,
+                ).as_dict()
+                result["reuse_candidate_scope"] = "filtered_helpers"
+            except Exception:
+                result["reuse_candidate_warning"] = "Brick-candidate detection could not be loaded."
         return result
 
     registry = HelperRegistry()
@@ -310,6 +331,13 @@ async def _handle_list_helpers(arguments: dict) -> dict:
     if include_inventory:
         result_h["inventory_summary"] = inventory["summary"]
         result_h["clusters"] = inventory["clusters"]
+    if include_reuse_candidates:
+        try:
+            from brix.brick_candidate_detector import detect_brick_candidates
+
+            result_h["reuse_candidates"] = detect_brick_candidates().as_dict()
+        except Exception:
+            result_h["reuse_candidate_warning"] = "Brick-candidate detection could not be loaded."
     # Hint if any helpers lack a project
     no_project_count = sum(1 for h in helpers_list if not h.get("project"))
     if no_project_count > 0:

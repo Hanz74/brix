@@ -346,6 +346,7 @@ async def _handle_get_tips(arguments: dict) -> dict:
         "  Das alte `script`-Feld ist legacy Metadaten und kein verlaesslicher Code-Indikator.",
         "  `get_helper` zeigt `has_code`, `code_length`, `code_preview` und `source='db'`.",
         "  `list_helpers(include_inventory=true)` zeigt Helper-Familien, Brick-Kandidaten und fehlende Metadaten.",
+        "  `list_helpers(include_reuse_candidates=true)` zeigt wiederholte Helper-, SQL- und Step-Sequenz-Kandidaten.",
         "",
     ]
     try:
