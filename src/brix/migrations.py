@@ -496,6 +496,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_document_extract_bricks_v90",
         "down": "",
     },
+    {
+        "version": 91,
+        "name": "add_reuse_review_fields_to_creation_schemas",
+        "up": "",
+        "up_fn": "_add_reuse_review_fields_to_creation_schemas_v91",
+        "down": "",
+    },
 ]
 
 
@@ -897,6 +904,60 @@ def _add_group_to_brick_schemas_v85(db: "BrixDB") -> None:
                 (_json.dumps(schema), tool_name),
             )
             logger.info("migration v85: added 'group' param to '%s'", tool_name)
+
+
+def _add_reuse_review_fields_to_creation_schemas_v91(db: "BrixDB") -> None:
+    """Patch creation tool schemas with explicit reuse-review fields."""
+    import json as _json
+
+    reuse_fields = {
+        "reuse_decision_outcome": {
+            "type": "string",
+            "enum": [
+                "reused_existing_component",
+                "modified_existing_component",
+                "new_component_justified",
+            ],
+            "description": "Explicit reuse outcome recorded before creating the new component.",
+        },
+        "reuse_rationale": {
+            "type": "string",
+            "description": "Why the chosen reuse outcome is correct for this new component.",
+        },
+        "reuse_reviewed_components": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Compared component references such as 'pipeline:name' or 'brick:name'.",
+        },
+    }
+
+    for tool_name in ("brix__create_pipeline", "brix__create_brick"):
+        row = db.mcp_tool_schemas_get(tool_name)
+        if not row:
+            logger.warning("migration v91: tool '%s' not found in DB, skipping", tool_name)
+            continue
+        raw = row.get("input_schema")
+        try:
+            schema = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except Exception:
+            schema = {}
+
+        props = schema.setdefault("properties", {})
+        changed = False
+        for field_name, field_schema in reuse_fields.items():
+            if props.get(field_name) == field_schema:
+                continue
+            props[field_name] = field_schema
+            changed = True
+
+        if changed:
+            db.mcp_tool_schemas_upsert(
+                {
+                    "name": tool_name,
+                    "description": row.get("description", ""),
+                    "input_schema": schema,
+                }
+            )
 
 
 def _register_effective_step_tool_schemas_v86(db: "BrixDB") -> None:

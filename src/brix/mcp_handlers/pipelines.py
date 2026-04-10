@@ -30,6 +30,13 @@ from brix.metadata_enforcement import (
     blocking_metadata_response,
     extract_supplemental_metadata,
 )
+from brix.reuse_enforcement import (
+    apply_reuse_result,
+    assess_reuse_for_creation,
+    blocking_reuse_response,
+    extract_reuse_arguments,
+    persist_reuse_review,
+)
 
 
 def _bump_version(current: str, bump: str = "patch") -> str:
@@ -58,6 +65,49 @@ def _resolve_brick_def(step: dict):
     if step_type:
         return next((b for b in _registry.list_all() if b.type == step_type), None)
     return None
+
+
+def _local_similar_pipelines(name: str, description: str) -> list[dict]:
+    """Return similar pipelines scoped to the current pipeline directory."""
+    candidates: list[dict] = []
+    from brix.db import BrixDB as _BrixDB
+
+    current_dir = _pipeline_dir().resolve()
+    db = _BrixDB()
+    query = " ".join(part for part in (name, description) if part).strip().lower()
+    query_tokens = {token for token in query.replace("-", " ").split() if len(token) > 2}
+    for info in db.list_pipelines():
+        candidate_name = str(info.get("name") or "")
+        if not candidate_name or candidate_name == name:
+            continue
+        candidate_path = Path(str(info.get("path") or "")).expanduser()
+        try:
+            if candidate_path.resolve().parent != current_dir:
+                continue
+        except Exception:
+            continue
+        store = PipelineStore(pipelines_dir=current_dir, db=db)
+        try:
+            raw = store.load_raw(candidate_name)
+        except Exception:
+            continue
+        candidate_desc = str(raw.get("description", "") or "")
+        candidate_query = " ".join(part for part in (candidate_name, candidate_desc) if part).strip().lower()
+        candidate_tokens = {token for token in candidate_query.replace("-", " ").split() if len(token) > 2}
+        overlap = len(query_tokens & candidate_tokens) / len(query_tokens | candidate_tokens) if query_tokens and candidate_tokens else 0.0
+        if candidate_desc and candidate_desc == description:
+            score = 1.0
+        else:
+            import difflib as _difflib
+
+            score = max(
+                _difflib.SequenceMatcher(None, name.lower(), candidate_name.lower()).ratio(),
+                overlap,
+            )
+        if score < 0.75:
+            continue
+        candidates.append({"entity_type": "pipeline", "entity_id": candidate_name, "reason": f"score={score:.2f}"})
+    return candidates[:5]
 
 
 def _check_step_type_compatibility(steps: list, warnings: list) -> None:
@@ -111,6 +161,7 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
     supplemental_metadata = extract_supplemental_metadata(arguments)
+    reuse_arguments = extract_reuse_arguments(arguments)
 
     # Preserve any explicit step ``config`` so DB-backed persistence stores it
     # in ``config_json`` instead of incorrectly folding it into runtime params.
@@ -202,6 +253,24 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
         incoming_metadata=supplemental_metadata,
         operation="create",
     )
+    reuse_assessment = assess_reuse_for_creation(
+        entity_type="pipeline",
+        entity_name=name,
+        description=" ".join(
+            part
+            for part in (
+                description,
+                str(supplemental_metadata.get("purpose") or ""),
+            )
+            if part
+        ),
+        project=org_project or "",
+        owner=str(supplemental_metadata.get("owner") or ""),
+        similar_components_override=_local_similar_pipelines(name, description),
+        **reuse_arguments,
+    )
+    if reuse_assessment.blocking:
+        return blocking_reuse_response(reuse_assessment)
 
     # Save regardless (agent can fix errors via add_step / validate)
     _save_pipeline_yaml(name, pipeline_data)
@@ -227,6 +296,12 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
             )
         if metadata_assessment.stored_metadata:
             _org_db.entity_metadata_upsert("pipeline", name, **metadata_assessment.stored_metadata)
+        persist_reuse_review(
+            db=_org_db,
+            assessment=reuse_assessment,
+            project=org_project or "",
+            owner=str(supplemental_metadata.get("owner") or ""),
+        )
     except Exception:
         pass  # Non-fatal — org fields are metadata only
 
@@ -264,7 +339,8 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
         result["project"] = org_project
     if pipeline_warnings:
         result["warnings"] = pipeline_warnings
-    return apply_metadata_result(result, metadata_assessment)
+    result = apply_metadata_result(result, metadata_assessment)
+    return apply_reuse_result(result, reuse_assessment)
 
 
 async def _handle_get_pipeline(arguments: dict) -> dict:
@@ -277,6 +353,19 @@ async def _handle_get_pipeline(arguments: dict) -> dict:
         return {"success": False, "error": str(exc)}
 
     steps = data.get("steps", [])
+    credentials = data.get("credentials", {})
+    normalized_credentials: dict = {}
+    if isinstance(credentials, dict):
+        for alias, credential in credentials.items():
+            if (
+                isinstance(credential, dict)
+                and set(credential.keys()) == {"env"}
+                and isinstance(credential.get("env"), str)
+            ):
+                normalized_credentials[alias] = credential["env"]
+            else:
+                normalized_credentials[alias] = credential
+
     result: dict = {
         "name": data.get("name", name),
         "version": data.get("version", "1.0.0"),
@@ -284,7 +373,7 @@ async def _handle_get_pipeline(arguments: dict) -> dict:
         "step_count": len(steps),
         "steps": steps,
         "input": data.get("input", {}),
-        "credentials": data.get("credentials", {}),
+        "credentials": normalized_credentials,
         "output": data.get("output", {}),
         "requirements": data.get("requirements", []),
         "pipeline_path": str(_pipeline_path(name)),

@@ -12,6 +12,13 @@ from brix.metadata_enforcement import (
     blocking_metadata_response,
     extract_supplemental_metadata,
 )
+from brix.reuse_enforcement import (
+    apply_reuse_result,
+    assess_reuse_for_creation,
+    blocking_reuse_response,
+    extract_reuse_arguments,
+    persist_reuse_review,
+)
 
 
 def _get_valid_runners() -> set[str]:
@@ -109,6 +116,7 @@ async def _handle_create_brick(arguments: dict) -> dict:
     group = arguments.get("group", None)
     source = _extract_source(arguments)
     supplemental_metadata = extract_supplemental_metadata(arguments)
+    reuse_arguments = extract_reuse_arguments(arguments)
 
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
@@ -171,10 +179,34 @@ async def _handle_create_brick(arguments: dict) -> dict:
         incoming_metadata=supplemental_metadata,
         operation="create",
     )
+    reuse_assessment = assess_reuse_for_creation(
+        entity_type="brick",
+        entity_name=name,
+        description=" ".join(
+            part
+            for part in (
+                description,
+                when_to_use,
+                str(supplemental_metadata.get("purpose") or ""),
+            )
+            if part
+        ),
+        project="",
+        owner=str(supplemental_metadata.get("owner") or ""),
+        **reuse_arguments,
+    )
+    if reuse_assessment.blocking:
+        return blocking_reuse_response(reuse_assessment)
 
     db.brick_definitions_upsert(record)
     if metadata_assessment.stored_metadata:
         db.entity_metadata_upsert("brick", name, **metadata_assessment.stored_metadata)
+    persist_reuse_review(
+        db=db,
+        assessment=reuse_assessment,
+        project="",
+        owner=str(supplemental_metadata.get("owner") or ""),
+    )
 
     # Refresh registry
     import brix.mcp_handlers._shared as _shared_mod
@@ -217,7 +249,8 @@ async def _handle_create_brick(arguments: dict) -> dict:
         result["tags"] = org_tags
     if warnings:
         result["warnings"] = warnings
-    return apply_metadata_result(result, metadata_assessment)
+    result = apply_metadata_result(result, metadata_assessment)
+    return apply_reuse_result(result, reuse_assessment)
 
 
 async def _handle_update_brick(arguments: dict) -> dict:
