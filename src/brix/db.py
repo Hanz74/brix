@@ -792,6 +792,46 @@ _DDL = [
         group_name  TEXT DEFAULT ''
     )
     """,
+    # E3 / W3.1: Knowledge layer foundation
+    """
+    CREATE TABLE IF NOT EXISTS knowledge_entity (
+        id               TEXT PRIMARY KEY,
+        entity_type      TEXT NOT NULL,
+        name             TEXT NOT NULL UNIQUE,
+        title            TEXT NOT NULL,
+        raw_text         TEXT DEFAULT '',
+        summary          TEXT DEFAULT '',
+        rationale        TEXT DEFAULT '',
+        lifecycle_stage  TEXT NOT NULL DEFAULT 'draft',
+        status           TEXT DEFAULT '',
+        owner            TEXT DEFAULT '',
+        project          TEXT DEFAULT '',
+        tags             TEXT NOT NULL DEFAULT '[]',
+        content_json     TEXT NOT NULL DEFAULT '{}',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS knowledge_link (
+        id                TEXT PRIMARY KEY,
+        source_entity_type TEXT NOT NULL,
+        source_entity_id   TEXT NOT NULL,
+        relation_type      TEXT NOT NULL,
+        target_entity_type TEXT NOT NULL,
+        target_entity_id   TEXT NOT NULL,
+        metadata_json      TEXT NOT NULL DEFAULT '{}',
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        UNIQUE (
+            source_entity_type,
+            source_entity_id,
+            relation_type,
+            target_entity_type,
+            target_entity_id
+        )
+    )
+    """,
     # T-BRIX-DB-05b: Named DB-Connections
     """
     CREATE TABLE IF NOT EXISTS connection (
@@ -1145,6 +1185,70 @@ REGISTRY_TYPES: dict[str, str] = {
     "best_practices": "registry_best_practice",
     "lessons_learned": "registry_lesson_learned",
 }
+
+KNOWLEDGE_ENTITY_TYPES: frozenset[str] = frozenset({
+    "intent",
+    "task",
+    "decision",
+    "workaround",
+    "reuse",
+})
+
+KNOWLEDGE_LINK_ENTITY_TYPES: frozenset[str] = frozenset({
+    "intent",
+    "task",
+    "decision",
+    "workaround",
+    "reuse",
+    "pipeline",
+    "brick",
+    "helper",
+    "run",
+    "finding",
+    "changelog",
+})
+
+KNOWLEDGE_LIFECYCLE_STAGES: tuple[str, ...] = (
+    "draft",
+    "active",
+    "resolved",
+    "superseded",
+    "archived",
+)
+
+_KNOWLEDGE_STAGE_RANK: dict[str, int] = {
+    stage: idx for idx, stage in enumerate(KNOWLEDGE_LIFECYCLE_STAGES)
+}
+
+
+def _validate_knowledge_entity_type(entity_type: str) -> str:
+    normalized = (entity_type or "").strip().lower()
+    if normalized not in KNOWLEDGE_ENTITY_TYPES:
+        valid = ", ".join(sorted(KNOWLEDGE_ENTITY_TYPES))
+        raise ValueError(
+            f"Unknown knowledge entity_type '{entity_type}'. Valid types: {valid}"
+        )
+    return normalized
+
+
+def _validate_knowledge_link_entity_type(entity_type: str) -> str:
+    normalized = (entity_type or "").strip().lower()
+    if normalized not in KNOWLEDGE_LINK_ENTITY_TYPES:
+        valid = ", ".join(sorted(KNOWLEDGE_LINK_ENTITY_TYPES))
+        raise ValueError(
+            f"Unknown knowledge link entity_type '{entity_type}'. Valid types: {valid}"
+        )
+    return normalized
+
+
+def _validate_knowledge_lifecycle_stage(stage: str) -> str:
+    normalized = (stage or "").strip().lower()
+    if normalized not in _KNOWLEDGE_STAGE_RANK:
+        valid = ", ".join(KNOWLEDGE_LIFECYCLE_STAGES)
+        raise ValueError(
+            f"Unknown knowledge lifecycle_stage '{stage}'. Valid stages: {valid}"
+        )
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -4114,6 +4218,523 @@ class BrixDB:
         # T-BRIX-ORG-01: ensure org fields are present
         row.setdefault("project", "")
         row.setdefault("group_name", "")
+        return row
+
+    # ------------------------------------------------------------------
+    # Knowledge Layer (E3 / W3.1)
+    # ------------------------------------------------------------------
+
+    def knowledge_entity_add(
+        self,
+        entity_type: str,
+        name: str,
+        title: str,
+        *,
+        raw_text: str = "",
+        summary: str = "",
+        rationale: str = "",
+        lifecycle_stage: str = "draft",
+        status: str = "",
+        owner: str = "",
+        project: str = "",
+        tags: Optional[list[str]] = None,
+        content: Any = None,
+        entity_id: Optional[str] = None,
+    ) -> dict:
+        """Insert a first-class knowledge entity and return the stored row."""
+        normalized_type = _validate_knowledge_entity_type(entity_type)
+        normalized_stage = _validate_knowledge_lifecycle_stage(lifecycle_stage)
+        if not name.strip():
+            raise ValueError("Knowledge entity name is required")
+        if not title.strip():
+            raise ValueError("Knowledge entity title is required")
+
+        now = _now_iso()
+        eid = entity_id or str(uuid4())
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO knowledge_entity (
+                    id, entity_type, name, title, raw_text, summary, rationale,
+                    lifecycle_stage, status, owner, project, tags, content_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    eid,
+                    normalized_type,
+                    name.strip(),
+                    title.strip(),
+                    raw_text,
+                    summary,
+                    rationale,
+                    normalized_stage,
+                    status,
+                    owner,
+                    project,
+                    json.dumps(tags or []),
+                    json.dumps(content or {}),
+                    now,
+                    now,
+                ),
+            )
+        return self.knowledge_entity_get(eid) or {}
+
+    def knowledge_entity_get(self, name_or_id: str) -> Optional[dict]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM knowledge_entity WHERE name=?",
+                (name_or_id,),
+            ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "SELECT * FROM knowledge_entity WHERE id=?",
+                    (name_or_id,),
+                ).fetchone()
+        if row is None:
+            return None
+        return self._knowledge_entity_row_to_dict(dict(row))
+
+    def knowledge_entity_list(
+        self,
+        *,
+        entity_type: Optional[str] = None,
+        project: Optional[str] = None,
+        lifecycle_stage: Optional[str] = None,
+        tag_filter: Optional[str] = None,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if entity_type is not None:
+            clauses.append("entity_type=?")
+            params.append(_validate_knowledge_entity_type(entity_type))
+        if project is not None:
+            clauses.append("project=?")
+            params.append(project)
+        if lifecycle_stage is not None:
+            clauses.append("lifecycle_stage=?")
+            params.append(_validate_knowledge_lifecycle_stage(lifecycle_stage))
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT * FROM knowledge_entity {where} ORDER BY entity_type, name",
+                params,
+            ).fetchall()
+        out = [self._knowledge_entity_row_to_dict(dict(row)) for row in rows]
+        if tag_filter:
+            out = [row for row in out if tag_filter in row.get("tags", [])]
+        return out
+
+    def knowledge_entity_update(
+        self,
+        name_or_id: str,
+        *,
+        title: Optional[str] = None,
+        raw_text: Optional[str] = None,
+        summary: Optional[str] = None,
+        rationale: Optional[str] = None,
+        lifecycle_stage: Optional[str] = None,
+        status: Optional[str] = None,
+        owner: Optional[str] = None,
+        project: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        content: Any = None,
+    ) -> Optional[dict]:
+        entry = self.knowledge_entity_get(name_or_id)
+        if entry is None:
+            return None
+
+        new_stage = entry["lifecycle_stage"]
+        if lifecycle_stage is not None:
+            candidate_stage = _validate_knowledge_lifecycle_stage(lifecycle_stage)
+            if _KNOWLEDGE_STAGE_RANK[candidate_stage] < _KNOWLEDGE_STAGE_RANK[entry["lifecycle_stage"]]:
+                raise ValueError(
+                    "Knowledge lifecycle_stage cannot move backwards "
+                    f"({entry['lifecycle_stage']} -> {candidate_stage})"
+                )
+            new_stage = candidate_stage
+
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE knowledge_entity
+                   SET title=?,
+                       raw_text=?,
+                       summary=?,
+                       rationale=?,
+                       lifecycle_stage=?,
+                       status=?,
+                       owner=?,
+                       project=?,
+                       tags=?,
+                       content_json=?,
+                       updated_at=?
+                 WHERE id=?
+                """,
+                (
+                    title if title is not None else entry["title"],
+                    raw_text if raw_text is not None else entry["raw_text"],
+                    summary if summary is not None else entry["summary"],
+                    rationale if rationale is not None else entry["rationale"],
+                    new_stage,
+                    status if status is not None else entry["status"],
+                    owner if owner is not None else entry["owner"],
+                    project if project is not None else entry["project"],
+                    json.dumps(tags if tags is not None else entry["tags"]),
+                    json.dumps(content if content is not None else entry["content"]),
+                    now,
+                    entry["id"],
+                ),
+            )
+        return self.knowledge_entity_get(entry["id"])
+
+    def knowledge_entity_delete(self, name_or_id: str) -> bool:
+        entry = self.knowledge_entity_get(name_or_id)
+        if entry is None:
+            return False
+        with self._connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM knowledge_link
+                 WHERE (source_entity_type IN (?, ?, ?, ?, ?) AND source_entity_id=?)
+                    OR (target_entity_type IN (?, ?, ?, ?, ?) AND target_entity_id=?)
+                """,
+                (
+                    *sorted(KNOWLEDGE_ENTITY_TYPES),
+                    entry["id"],
+                    *sorted(KNOWLEDGE_ENTITY_TYPES),
+                    entry["id"],
+                ),
+            )
+            cursor = conn.execute(
+                "DELETE FROM knowledge_entity WHERE id=?",
+                (entry["id"],),
+            )
+            return cursor.rowcount > 0
+
+    def knowledge_link_add(
+        self,
+        source_entity_type: str,
+        source_entity_id: str,
+        relation_type: str,
+        target_entity_type: str,
+        target_entity_id: str,
+        *,
+        metadata: Any = None,
+        link_id: Optional[str] = None,
+    ) -> dict:
+        source_type = _validate_knowledge_link_entity_type(source_entity_type)
+        target_type = _validate_knowledge_link_entity_type(target_entity_type)
+        if not relation_type.strip():
+            raise ValueError("Knowledge link relation_type is required")
+        canonical_source_id = self._knowledge_link_entity_canonical_id(
+            source_type, source_entity_id
+        )
+        canonical_target_id = self._knowledge_link_entity_canonical_id(
+            target_type, target_entity_id
+        )
+        if canonical_source_id is None:
+            raise ValueError(
+                f"Unknown source entity '{source_entity_id}' for type '{source_type}'"
+            )
+        if canonical_target_id is None:
+            raise ValueError(
+                f"Unknown target entity '{target_entity_id}' for type '{target_type}'"
+            )
+
+        now = _now_iso()
+        lid = link_id or str(uuid4())
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO knowledge_link (
+                    id, source_entity_type, source_entity_id, relation_type,
+                    target_entity_type, target_entity_id, metadata_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    lid,
+                    source_type,
+                    canonical_source_id,
+                    relation_type.strip(),
+                    target_type,
+                    canonical_target_id,
+                    json.dumps(metadata or {}),
+                    now,
+                    now,
+                ),
+            )
+        return self.knowledge_link_get(lid) or {}
+
+    def knowledge_link_get(self, link_id: str) -> Optional[dict]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM knowledge_link WHERE id=?",
+                (link_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._knowledge_link_row_to_dict(dict(row))
+
+    def knowledge_link_list(
+        self,
+        *,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        relation_type: Optional[str] = None,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if entity_type is not None:
+            normalized_type = _validate_knowledge_link_entity_type(entity_type)
+            if entity_id is None:
+                clauses.append("(source_entity_type=? OR target_entity_type=?)")
+                params.extend([normalized_type, normalized_type])
+            else:
+                canonical_id = self._knowledge_link_entity_canonical_id(
+                    normalized_type, entity_id
+                )
+                if canonical_id is None:
+                    return []
+                clauses.append(
+                    "((source_entity_type=? AND source_entity_id=?) OR (target_entity_type=? AND target_entity_id=?))"
+                )
+                params.extend([normalized_type, canonical_id, normalized_type, canonical_id])
+        elif entity_id is not None:
+            clauses.append("(source_entity_id=? OR target_entity_id=?)")
+            params.extend([entity_id, entity_id])
+        if relation_type is not None:
+            clauses.append("relation_type=?")
+            params.append(relation_type)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT * FROM knowledge_link {where} ORDER BY relation_type, created_at",
+                params,
+            ).fetchall()
+        return [self._knowledge_link_row_to_dict(dict(row)) for row in rows]
+
+    def knowledge_link_delete(self, link_id: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM knowledge_link WHERE id=?",
+                (link_id,),
+            )
+            return cursor.rowcount > 0
+
+    def knowledge_context(
+        self,
+        entity_type: str,
+        entity_id: str,
+    ) -> dict:
+        normalized_type = _validate_knowledge_link_entity_type(entity_type)
+        canonical_id = self._knowledge_link_entity_canonical_id(normalized_type, entity_id)
+        if canonical_id is None:
+            raise ValueError(
+                f"Unknown entity '{entity_id}' for type '{normalized_type}'"
+            )
+
+        entity = self._resolve_knowledge_link_entity(normalized_type, canonical_id)
+        links = self.knowledge_link_list(entity_type=normalized_type, entity_id=canonical_id)
+        related: list[dict] = []
+        for link in links:
+            if (
+                link["source_entity_type"] == normalized_type
+                and link["source_entity_id"] == canonical_id
+            ):
+                other_type = link["target_entity_type"]
+                other_id = link["target_entity_id"]
+                direction = "outgoing"
+            else:
+                other_type = link["source_entity_type"]
+                other_id = link["source_entity_id"]
+                direction = "incoming"
+            related.append(
+                {
+                    "direction": direction,
+                    "relation_type": link["relation_type"],
+                    "entity_type": other_type,
+                    "entity_id": other_id,
+                    "entity": self._resolve_knowledge_link_entity(other_type, other_id),
+                    "metadata": link["metadata"],
+                    "link_id": link["id"],
+                }
+            )
+        return {
+            "entity_type": normalized_type,
+            "entity_id": canonical_id,
+            "entity": entity,
+            "links": links,
+            "related": related,
+        }
+
+    def _knowledge_link_entity_exists(self, entity_type: str, entity_id: str) -> bool:
+        return self._knowledge_link_entity_canonical_id(entity_type, entity_id) is not None
+
+    def _knowledge_link_entity_canonical_id(
+        self,
+        entity_type: str,
+        entity_id: str,
+    ) -> Optional[str]:
+        normalized_type = _validate_knowledge_link_entity_type(entity_type)
+        if normalized_type in KNOWLEDGE_ENTITY_TYPES:
+            entry = self.knowledge_entity_get(entity_id)
+            return entry["id"] if entry is not None else None
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            if normalized_type == "pipeline":
+                row = conn.execute(
+                    "SELECT id FROM pipeline WHERE id=? OR name=?",
+                    (entity_id, entity_id),
+                ).fetchone()
+                return row["id"] if row is not None else None
+            if normalized_type == "helper":
+                row = conn.execute(
+                    "SELECT id FROM helper WHERE id=? OR name=?",
+                    (entity_id, entity_id),
+                ).fetchone()
+                return row["id"] if row is not None else None
+            if normalized_type == "brick":
+                row = conn.execute(
+                    "SELECT name FROM brick_definition WHERE name=?",
+                    (entity_id,),
+                ).fetchone()
+                return row["name"] if row is not None else None
+            if normalized_type == "run":
+                row = conn.execute(
+                    "SELECT run_id FROM run WHERE run_id=?",
+                    (entity_id,),
+                ).fetchone()
+                return row["run_id"] if row is not None else None
+            if normalized_type == "finding":
+                run_id, _, step_id = entity_id.partition(":")
+                if not run_id or not step_id:
+                    return None
+                row = conn.execute(
+                    "SELECT run_id, steps_data FROM run WHERE run_id=?",
+                    (run_id,),
+                ).fetchone()
+                if row is None or not row["steps_data"]:
+                    return None
+                try:
+                    steps = json.loads(row["steps_data"])
+                except (json.JSONDecodeError, TypeError):
+                    return None
+                return f"{row['run_id']}:{step_id}" if step_id in steps else None
+            if normalized_type == "changelog":
+                row = conn.execute(
+                    "SELECT id FROM changelog_entry WHERE id=?",
+                    (entity_id,),
+                ).fetchone()
+                return row["id"] if row is not None else None
+        return None
+
+    def _resolve_knowledge_link_entity(self, entity_type: str, entity_id: str) -> Optional[dict]:
+        if entity_type in KNOWLEDGE_ENTITY_TYPES:
+            entry = self.knowledge_entity_get(entity_id)
+            if entry is not None:
+                entry["entity_type"] = entity_type
+            return entry
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            if entity_type == "pipeline":
+                row = conn.execute(
+                    "SELECT id, name, project, tags, group_name FROM pipeline WHERE id=? OR name=?",
+                    (entity_id, entity_id),
+                ).fetchone()
+                if row is not None:
+                    result = dict(row)
+                    if isinstance(result.get("tags"), str):
+                        try:
+                            result["tags"] = json.loads(result["tags"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    result["entity_type"] = entity_type
+                    return result
+            if entity_type == "helper":
+                row = conn.execute(
+                    "SELECT * FROM helper WHERE id=? OR name=?",
+                    (entity_id, entity_id),
+                ).fetchone()
+                if row is not None:
+                    result = self._helper_row_to_dict(dict(row))
+                    result["entity_type"] = entity_type
+                    return result
+            if entity_type == "brick":
+                row = conn.execute(
+                    "SELECT * FROM brick_definition WHERE name=?",
+                    (entity_id,),
+                ).fetchone()
+                if row is not None:
+                    result = self._brick_row_enrich_org(dict(row))
+                    result["entity_type"] = entity_type
+                    return result
+            if entity_type == "run":
+                row = conn.execute(
+                    "SELECT run_id, pipeline, success, started_at, finished_at FROM run WHERE run_id=?",
+                    (entity_id,),
+                ).fetchone()
+                if row is not None:
+                    result = dict(row)
+                    result["entity_type"] = entity_type
+                    return result
+            if entity_type == "finding":
+                run_id, _, step_id = entity_id.partition(":")
+                row = conn.execute(
+                    "SELECT steps_data FROM run WHERE run_id=?",
+                    (run_id,),
+                ).fetchone()
+                if row is not None and row[0]:
+                    try:
+                        steps = json.loads(row[0])
+                    except (json.JSONDecodeError, TypeError):
+                        steps = {}
+                    data = steps.get(step_id)
+                    if data is not None:
+                        return {
+                            "entity_type": entity_type,
+                            "run_id": run_id,
+                            "step_id": step_id,
+                            "data": data,
+                        }
+            if entity_type == "changelog":
+                row = conn.execute(
+                    "SELECT * FROM changelog_entry WHERE id=?",
+                    (entity_id,),
+                ).fetchone()
+                if row is not None:
+                    result = dict(row)
+                    result["entity_type"] = entity_type
+                    return result
+        return None
+
+    @staticmethod
+    def _knowledge_entity_row_to_dict(row: dict) -> dict:
+        for col in ("tags", "content_json"):
+            raw = row.get(col)
+            if isinstance(raw, str):
+                try:
+                    row[col] = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        row["content"] = row.pop("content_json", {})
+        return row
+
+    @staticmethod
+    def _knowledge_link_row_to_dict(row: dict) -> dict:
+        raw = row.get("metadata_json")
+        if isinstance(raw, str):
+            try:
+                row["metadata_json"] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        row["metadata"] = row.pop("metadata_json", {})
         return row
 
     # ------------------------------------------------------------------
