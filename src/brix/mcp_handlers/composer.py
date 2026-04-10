@@ -27,10 +27,29 @@ from brix.mcp_handlers._shared import (
 )
 from brix.helper_registry import HelperRegistry
 from brix.pipeline_store import PipelineStore
-from brix.connectors import CONNECTOR_REGISTRY, _get_registry as _get_connector_registry, list_connectors
+from brix.connectors import list_connectors
 from brix.bricks.types import is_compatible, suggest_converter
+from brix.semantic_retrieval import semantic_search
 
 logger = logging.getLogger(__name__)
+
+_SIMILARITY_ENTITY_TYPES: list[str] = [
+    "intent",
+    "task",
+    "decision",
+    "workaround",
+    "reuse",
+    "finding",
+    "changelog",
+]
+
+
+def _similar_cases_for_goal(goal: str) -> list[dict]:
+    try:
+        result = semantic_search(goal, entity_types=_SIMILARITY_ENTITY_TYPES, limit=5)
+    except Exception:
+        return []
+    return result.get("matches", [])
 
 # ---------------------------------------------------------------------------
 # Keyword taxonomies — deutsche + englische Begriffe
@@ -251,12 +270,6 @@ def _keyword_hit_score(text: str, intent: dict) -> float:
     text_lower = text.lower()
     hit_count = 0
     total = 0
-
-    all_keyword_lists = (
-        list(_SOURCE_KEYWORDS.values())
-        + list(_ACTION_KEYWORDS.values())
-        + list(_TARGET_KEYWORDS.values())
-    )
 
     # Collect the flat list of activated keywords from the parsed intent
     active_keywords: list[str] = []
@@ -889,6 +902,7 @@ async def _handle_compose_pipeline(arguments: dict) -> dict:
         "missing": missing,
         "type_checks": type_checks,  # T-BRIX-V8-06: type compatibility between steps
         "next_steps": next_steps,
+        "similar_cases": _similar_cases_for_goal(goal),
     }
     if compositor_mode:
         result["compositor_mode"] = True
@@ -1436,5 +1450,6 @@ async def _handle_plan_pipeline(arguments: dict) -> dict:
             "warnings": warnings,
             "type_chain": type_chain,  # T-BRIX-V8-06: data flow between steps
         },
+        "similar_cases": _similar_cases_for_goal(goal),
         "next_action": "Call compose_pipeline or create_pipeline to build this",
     }

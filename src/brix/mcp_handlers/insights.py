@@ -10,6 +10,32 @@ from brix.mcp_handlers._shared import (
     _pipeline_dir,
 )
 from brix.pipeline_store import PipelineStore
+from brix.semantic_retrieval import semantic_search
+
+
+def _similar_cases_for_diagnosis(
+    *,
+    pipeline_name: str,
+    step_id: str,
+    error_message: str,
+    root_cause: str | None,
+    project: str | None,
+) -> list[dict]:
+    query = " ".join(
+        part
+        for part in [pipeline_name, step_id, error_message, root_cause or ""]
+        if part
+    )
+    try:
+        result = semantic_search(
+            query,
+            entity_types=["finding", "intent", "decision", "workaround", "reuse", "changelog"],
+            project=project or None,
+            limit=5,
+        )
+    except Exception:
+        return []
+    return result.get("matches", [])
 
 
 async def _handle_diagnose_run(arguments: dict) -> dict:
@@ -30,6 +56,8 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             "run_id": run_id,
             "pipeline": run.get("pipeline", ""),
             "diagnoses": [],
+            "similar_cases": [],
+            "total_failed_steps": 0,
             "message": "No step data recorded for this run.",
         }
 
@@ -59,6 +87,7 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             pass
 
     diagnoses = []
+    aggregated_similar_cases: dict[tuple[str, str], dict] = {}
     for step_id, data in steps.items():
         if data.get("status") != "error":
             continue
@@ -68,6 +97,16 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             err_msg = str(err_msg)
 
         hint = _error_hint(step_id, err_msg)
+        root_cause = _root_cause(step_id, err_msg)
+        similar_cases = _similar_cases_for_diagnosis(
+            pipeline_name=pipeline_name,
+            step_id=step_id,
+            error_message=err_msg,
+            root_cause=root_cause,
+            project=run.get("project"),
+        )
+        for match in similar_cases:
+            aggregated_similar_cases[(match["entity_type"], match["entity_id"])] = match
 
         # Determine fix suggestion
         fix_suggestion: "str | None" = None
@@ -94,10 +133,11 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             "step_id": step_id,
             "error": err_msg,
             "phase": _error_phase(step_id, err_msg),
-            "root_cause": _root_cause(step_id, err_msg),
+            "root_cause": root_cause,
             "hint": hint,
             "fix_suggestion": fix_suggestion,
             "pipeline_context": step_ctx,
+            "similar_cases": similar_cases,
         })
 
     return {
@@ -106,6 +146,7 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
         "pipeline": pipeline_name,
         "diagnoses": diagnoses,
         "total_failed_steps": len(diagnoses),
+        "similar_cases": list(aggregated_similar_cases.values()),
     }
 
 
