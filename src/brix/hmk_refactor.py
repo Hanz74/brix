@@ -88,3 +88,16 @@ def rewrite_hmk_mark_processed_to_specialist_brick(
     raw["steps"] = steps
     store.save(raw, name=pipeline_name)
     return store.load_raw(pipeline_name)
+
+
+def promote_hmk_to_document_persistence_bricks(
+    *,
+    db: BrixDB | None = None,
+    pipeline_name: str = "buddy-hmk-extract-single",
+) -> dict[str, Any]:
+    """Ensure HMK uses the reusable document persistence brick family end-to-end."""
+
+    active_db = db if db is not None else BrixDB()
+    rewrite_hmk_save_results_to_persistence_brick(db=active_db, pipeline_name=pipeline_name)
+    rewrite_hmk_mark_processed_to_specialist_brick(db=active_db, pipeline_name=pipeline_name)
+    return PipelineStore(db=active_db).load_raw(pipeline_name)

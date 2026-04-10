@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from brix.db import BrixDB
 from brix.hmk_refactor import (
+    promote_hmk_to_document_persistence_bricks,
     rewrite_hmk_mark_processed_to_specialist_brick,
     rewrite_hmk_save_results_to_persistence_brick,
 )
@@ -168,3 +169,21 @@ def test_rewrite_hmk_mark_processed_is_idempotent(tmp_path):
 
     mark_processed = next(step for step in updated["steps"] if step["id"] == "mark_processed")
     assert mark_processed["type"] == "document.mark_specialist_processed"
+
+
+def test_promote_hmk_to_document_persistence_bricks(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    updated = promote_hmk_to_document_persistence_bricks(db=db)
+
+    save_results = next(step for step in updated["steps"] if step["id"] == "save_results")
+    mark_processed = next(step for step in updated["steps"] if step["id"] == "mark_processed")
+
+    assert save_results["type"] == "document.persist_extraction_result"
+    assert mark_processed["type"] == "document.mark_specialist_processed"
+    assert not any(
+        step["type"] == "db.exec" and step["id"] in {"save_results", "mark_processed"}
+        for step in updated["steps"]
+    )
