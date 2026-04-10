@@ -1270,6 +1270,56 @@ SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED = BrickSchema(
     output_description='{"affected_rows": N, "success": true, "specialist_added": true}',
 )
 
+SYSTEM_DOCUMENT_PREPARE_EXTRACTABLE_PAYLOAD = BrickSchema(
+    name="document.prepare_extractable_payload",
+    type="document_prepare_extractable_payload",
+    description="Normalize file, base64, and metadata inputs into the standard document_extract_input contract.",
+    when_to_use="Use after a staged download when later extraction steps should consume a consistent payload shape instead of ad hoc field wiring.",
+    when_NOT_to_use="Do not use when you already have a stable document_extract_input payload or when you only need file.read_base64 output directly.",
+    runner="document_prepare_extractable_payload",
+    system=True,
+    namespace="document",
+    category="system",
+    config_schema={
+        "file_bytes_path": BrickParam(type="string", description="Absolute path to the local file", required=True),
+        "base64": BrickParam(type="string", description="Optional base64 file content"),
+        "mime_type": BrickParam(type="string", description="Optional MIME type hint"),
+        "filename": BrickParam(type="string", description="Optional filename"),
+        "language": BrickParam(type="string", description="Optional language hint"),
+        "metadata": BrickParam(type="object", description="Optional extra metadata"),
+        "include_base64": BrickParam(type="boolean", description="Read the file and include base64 in the output"),
+        "markdown": BrickParam(type="string", description="Optional pre-rendered markdown"),
+    },
+    input_type="remote_download_result",
+    output_type="document_extract_input",
+    output_description='{"file_bytes_path": "...", "base64": "...", "mime_type": "...", "language": "...", "metadata": {...}}',
+)
+
+SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR = BrickSchema(
+    name="extract.document_with_daigestr",
+    type="extract_document_with_daigestr",
+    description="Execute a Daigestr extraction call against a standard document_extract_input payload and normalize the result.",
+    when_to_use="Use when a staged document should be extracted through the reusable Daigestr contract instead of bespoke subpipeline glue.",
+    when_NOT_to_use="Do not use for simple regex extraction or when markitdown.convert plus another standard brick already covers the task.",
+    runner="extract_document_with_daigestr",
+    system=True,
+    namespace="extract",
+    category="system",
+    config_schema={
+        "file_bytes_path": BrickParam(type="string", description="Absolute path to the local file"),
+        "base64": BrickParam(type="string", description="Optional base64 file content"),
+        "filename": BrickParam(type="string", description="Optional filename"),
+        "language": BrickParam(type="string", description="Optional language hint"),
+        "metadata": BrickParam(type="object", description="Optional extra metadata"),
+        "endpoint": BrickParam(type="string", description="Optional Daigestr endpoint override"),
+        "template": BrickParam(type="string", description="Optional extraction template"),
+        "mime_type": BrickParam(type="string", description="Optional MIME type hint"),
+    },
+    input_type="document_extract_input",
+    output_type="document_extraction_result",
+    output_description='{"normalized": {...}, "document_type": "...", "quality_score": 0.0, "markdown": "..."}',
+)
+
 SYSTEM_FLOW_SWITCH = BrickSchema(
     name="flow.switch",
     type="switch",
@@ -1626,6 +1676,8 @@ SYSTEM_BRICKS: list[BrickSchema] = [
     SYSTEM_SOURCE_PERSIST_DOWNLOAD_PAYLOAD,
     SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT,
     SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED,
+    SYSTEM_DOCUMENT_PREPARE_EXTRACTABLE_PAYLOAD,
+    SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR,
     SYSTEM_FLOW_SWITCH,
     SYSTEM_FLOW_MERGE,
     SYSTEM_FLOW_ERROR_HANDLER,

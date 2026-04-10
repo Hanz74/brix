@@ -489,6 +489,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_source_download_bricks_v89",
         "down": "",
     },
+    {
+        "version": 90,
+        "name": "register_document_extract_bricks",
+        "up": "",
+        "up_fn": "_register_document_extract_bricks_v90",
+        "down": "",
+    },
 ]
 
 
@@ -545,6 +552,20 @@ def _register_source_download_bricks_v89(db: "BrixDB") -> None:
     for brick in (
         SYSTEM_SOURCE_DOWNLOAD_TO_FILE,
         SYSTEM_SOURCE_PERSIST_DOWNLOAD_PAYLOAD,
+    ):
+        db.brick_definitions_upsert(_brick_to_record(brick))
+
+
+def _register_document_extract_bricks_v90(db: "BrixDB") -> None:
+    """Register extract-preparation and Daigestr system bricks for existing installations."""
+    from brix.bricks.builtins import (
+        SYSTEM_DOCUMENT_PREPARE_EXTRACTABLE_PAYLOAD,
+        SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR,
+    )
+
+    for brick in (
+        SYSTEM_DOCUMENT_PREPARE_EXTRACTABLE_PAYLOAD,
+        SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR,
     ):
         db.brick_definitions_upsert(_brick_to_record(brick))
 
