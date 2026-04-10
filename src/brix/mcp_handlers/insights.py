@@ -38,6 +38,66 @@ def _similar_cases_for_diagnosis(
     return result.get("matches", [])
 
 
+def _historical_failures_for_diagnosis(
+    *,
+    history: RunHistory,
+    current_run_id: str,
+    pipeline_name: str,
+    step_id: str,
+    root_cause: str | None,
+    project: str | None,
+) -> list[dict]:
+    """Return prior failed runs with matching step/root-cause evidence."""
+    from brix.history import _root_cause
+
+    matches: list[dict] = []
+    for run in history.search(pipeline=pipeline_name, status="failure", project=project, limit=20):
+        if run.get("run_id") == current_run_id:
+            continue
+        try:
+            steps = json.loads(run.get("steps_data") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for failed_step_id, data in steps.items():
+            if data.get("status") != "error":
+                continue
+            err_msg = data.get("error_message") or data.get("errors") or ""
+            if not isinstance(err_msg, str):
+                err_msg = str(err_msg)
+            prior_root = _root_cause(failed_step_id, err_msg)
+            if failed_step_id != step_id and prior_root != root_cause:
+                continue
+            matches.append(
+                {
+                    "run_id": run.get("run_id"),
+                    "step_id": failed_step_id,
+                    "error": err_msg,
+                    "root_cause": prior_root,
+                    "started_at": run.get("started_at"),
+                    "finished_at": run.get("finished_at"),
+                }
+            )
+            break
+    return matches[:5]
+
+
+def _component_context_for_pipeline(pipeline_name: str, *, db_path=None) -> dict:
+    """Return linked component context for a pipeline when available."""
+    if not pipeline_name:
+        return {}
+    db = BrixDB(db_path=db_path) if db_path is not None else BrixDB()
+    try:
+        context = db.knowledge_context("pipeline", pipeline_name)
+    except Exception:
+        return {}
+    return {
+        "entity_type": context.get("entity_type"),
+        "entity_id": context.get("entity_id"),
+        "related": context.get("related", []),
+        "links": context.get("links", []),
+    }
+
+
 async def _handle_diagnose_run(arguments: dict) -> dict:
     """Diagnose a failed run — structured error analysis with fix suggestions."""
     run_id = arguments.get("run_id", "").strip()
@@ -86,8 +146,10 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
         except (FileNotFoundError, Exception):
             pass
 
+    pipeline_component_context = _component_context_for_pipeline(pipeline_name, db_path=history.db_path)
     diagnoses = []
     aggregated_similar_cases: dict[tuple[str, str], dict] = {}
+    aggregated_prior_cases: dict[tuple[str, str], dict] = {}
     for step_id, data in steps.items():
         if data.get("status") != "error":
             continue
@@ -105,8 +167,18 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             root_cause=root_cause,
             project=run.get("project"),
         )
+        prior_failures = _historical_failures_for_diagnosis(
+            history=history,
+            current_run_id=run_id,
+            pipeline_name=pipeline_name,
+            step_id=step_id,
+            root_cause=root_cause,
+            project=run.get("project"),
+        )
         for match in similar_cases:
             aggregated_similar_cases[(match["entity_type"], match["entity_id"])] = match
+        for match in prior_failures:
+            aggregated_prior_cases[(match["run_id"], match["step_id"])] = match
 
         # Determine fix suggestion
         fix_suggestion: "str | None" = None
@@ -128,6 +200,9 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             )
 
         step_ctx = pipeline_context.get(step_id) or {}
+        linked_components = pipeline_component_context.get("related", [])
+        linked_prior_cases = similar_cases + prior_failures
+        suggested_next_action = fix_suggestion or hint or "Inspect run log, step data, and linked prior cases."
 
         diagnoses.append({
             "step_id": step_id,
@@ -135,10 +210,28 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
             "phase": _error_phase(step_id, err_msg),
             "root_cause": root_cause,
             "hint": hint,
+            "why": hint or root_cause or err_msg,
             "fix_suggestion": fix_suggestion,
+            "suggested_next_action": suggested_next_action,
             "pipeline_context": step_ctx,
             "similar_cases": similar_cases,
+            "historical_failures": prior_failures,
+            "linked_components": linked_components,
+            "linked_prior_cases": linked_prior_cases,
+            "policy_severity": "error",
         })
+
+    repair_plan = [
+        {
+            "step_id": diagnosis["step_id"],
+            "why": diagnosis["why"],
+            "suggested_next_action": diagnosis["suggested_next_action"],
+            "linked_prior_cases": diagnosis["linked_prior_cases"],
+            "linked_components": diagnosis["linked_components"],
+            "policy_severity": diagnosis["policy_severity"],
+        }
+        for diagnosis in diagnoses
+    ]
 
     return {
         "success": True,
@@ -147,6 +240,10 @@ async def _handle_diagnose_run(arguments: dict) -> dict:
         "diagnoses": diagnoses,
         "total_failed_steps": len(diagnoses),
         "similar_cases": list(aggregated_similar_cases.values()),
+        "prior_cases": list(aggregated_prior_cases.values()),
+        "component_context": pipeline_component_context,
+        "repair_plan": repair_plan,
+        "findings": repair_plan,
     }
 
 
