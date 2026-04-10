@@ -8,6 +8,7 @@ from typing import Any
 
 from brix.db import _STEP_CONFIG_TOP_LEVEL_FIELDS, merge_step_config_into_params
 from brix.models import Step
+from brix.step_field_policy import explicit_runner_specific_fields
 
 _RESERVED_RENDER_KEYS: tuple[str, ...] = (
     "_config",
@@ -140,10 +141,12 @@ def materialize_step(step: Step, *, raw_step: dict[str, Any] | None = None) -> M
     defaults = _defaulted_fields(step, raw)
     effective_step_fields = _effective_step_fields(step, normalized)
     dependency_refs = _dependency_refs(step, normalized)
+    explicit_runner_fields = explicit_runner_specific_fields(step)
     policy_flags = {
         "uses_legacy_alias": raw_type != effective_type,
         "has_promoted_fields": bool(promoted),
         "has_defaulted_fields": bool(defaults),
+        "has_runner_specific_top_level_fields": bool(explicit_runner_fields),
         "uses_conditional_refs": bool(step.when or step.foreach or getattr(step, "depends_on", None)),
     }
     provenance = {
@@ -152,6 +155,7 @@ def materialize_step(step: Step, *, raw_step: dict[str, Any] | None = None) -> M
             "merge_step_config_into_params",
             "materialize_step",
         ),
+        "runner_specific_top_level_fields": tuple(explicit_runner_fields),
     }
 
     return MaterializedStep(

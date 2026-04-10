@@ -21,6 +21,7 @@ from brix.bricks.contracts import is_dict_like_contract, is_list_like_contract
 from brix.bricks.registry import BrickRegistry
 from brix.engine import LEGACY_ALIASES
 from brix.materialize import MaterializedStep, materialize_step
+from brix.step_field_policy import explicit_runner_specific_fields, get_field_migration_policy
 from brix.pipeline_store import PipelineStore
 from brix.connections import ConnectionManager
 
@@ -761,6 +762,7 @@ class PipelineValidator:
                 )
 
         self._run_lint_rules(ctx, result)
+        self._check_runner_specific_top_level_fields(ctx, result)
         self._check_deprecated_step_types(ctx, result)
         self._check_tojson_on_string(ctx, result)
         self._check_db_query_dml(ctx, result)
@@ -2177,6 +2179,39 @@ class PipelineValidator:
                 field=issue["context_name"],
                 why="Source output type incompatible with consumer",
             )
+
+    # ---------------------------------------------------------------------------
+    # T-2.1.2: Runner-specific top-level fields are compatibility inputs
+    # ---------------------------------------------------------------------------
+
+    def _check_runner_specific_top_level_fields(self, ctx: ValidationContext, result: ValidationResult) -> None:
+        """Inform when new definitions still use runner-specific top-level fields."""
+        for analysis in ctx.steps:
+            explicit_fields = explicit_runner_specific_fields(analysis.step)
+            if not explicit_fields:
+                continue
+            for field_name in explicit_fields:
+                policy = get_field_migration_policy(field_name)
+                if policy is None:
+                    continue
+                result.add_info(
+                    f"Step '{analysis.step.id}': top-level runner field '{field_name}' is a "
+                    f"compatibility input; prefer '{policy.canonical_home}' for brick-first definitions "
+                    f"(T-2.1.2)",
+                    hint=(
+                        f"Move '{field_name}' under config when creating or updating this step. "
+                        "Keep the top-level form only for historical compatibility."
+                    ),
+                    code="RUNNER_TOP_LEVEL_FIELD_COMPAT",
+                    step_id=analysis.step.id,
+                    field=field_name,
+                    why="Brick schemas should own runner-specific semantics; Step fields remain transitional.",
+                    suggestion={
+                        "kind": "move_to_config",
+                        "from": field_name,
+                        "to": policy.canonical_home,
+                    },
+                )
 
     # ---------------------------------------------------------------------------
     # T-BRIX-VAL-07: db.query used for DML

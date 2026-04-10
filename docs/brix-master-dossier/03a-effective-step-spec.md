@@ -243,6 +243,11 @@ Examples of fields governed by this rule include:
 - `tool`
 - other runner-facing fields historically allowed at top level
 
+The migration policy for these fields is defined in
+[04b-step-field-migration-policy.md](/root/docker/brix/docs/brix-master-dossier/04b-step-field-migration-policy.md).
+The practical rule is strict: new reusable brick semantics must enter through
+brick config schemas, not by adding more global `Step` fields.
+
 ### Params Precedence
 1. raw persisted `params`
 2. `config.params` compatibility merge rules
