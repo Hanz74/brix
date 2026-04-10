@@ -36,6 +36,7 @@ from brix.reuse_enforcement import (
     blocking_reuse_response,
     extract_reuse_arguments,
     persist_reuse_review,
+    _reuse_entity_name,
 )
 from brix.workaround_patterns import assess_workaround_annotation
 
@@ -783,6 +784,8 @@ async def _handle_validate_pipeline(arguments: dict) -> dict:
         return {"success": False, "error": str(exc)}
 
     validation = _validate_pipeline_dict(data, level=level)
+    policy_checks = _build_validate_policy_checks(name, data, validation)
+    _merge_policy_checks_into_validation(validation, policy_checks)
     return {
         "success": True,
         "pipeline_id": name,
@@ -794,6 +797,143 @@ async def _handle_validate_pipeline(arguments: dict) -> dict:
         "errors": validation["errors"],
         "warnings": validation["warnings"],
         "checks": validation["checks"],
+        "policy_checks": policy_checks,
+    }
+
+
+def _build_validate_policy_checks(name: str, data: dict, validation: dict) -> dict:
+    """Build metadata/reuse/workaround policy checks on top of validator output."""
+    from brix.db import BrixDB as _BrixDB
+
+    db = _BrixDB()
+    description = str(data.get("description") or "")
+    metadata = db.entity_metadata_get("pipeline", name) or {}
+    metadata_assessment = assess_metadata_enforcement(
+        "pipeline",
+        base_data={
+            "project": data.get("project") or "",
+            "description": description,
+        },
+        existing_metadata=metadata,
+        operation="update",
+    )
+
+    review_name = _reuse_entity_name("pipeline", name)
+    recorded_review = db.knowledge_entity_get(review_name)
+    reuse_assessment = assess_reuse_for_creation(
+        entity_type="pipeline",
+        entity_name=name,
+        description=" ".join(
+            part for part in (description, str(metadata.get("purpose") or "")) if part
+        ),
+        project=str(data.get("project") or ""),
+        owner=str(metadata.get("owner") or ""),
+        similar_components_override=_local_similar_pipelines(name, description),
+    )
+    workaround_findings = [
+        finding
+        for finding in validation.get("findings", [])
+        if finding.get("code") in {"KNOWN_WORKAROUND_PATTERN", "WORKAROUND_ANNOTATION_MISSING"}
+    ]
+    return {
+        "metadata": {
+            "blocking": bool(metadata_assessment.blocking),
+            "draft_enforced": metadata_assessment.draft_enforced,
+            "missing_fields": [violation.field for violation in metadata_assessment.violations],
+            "repair_prompts": list(metadata_assessment.repair_prompts),
+        },
+        "reuse": {
+            "blocking": reuse_assessment.blocking and recorded_review is None,
+            "recorded_review": recorded_review is not None,
+            "review_entity": recorded_review,
+            "decision_outcome": recorded_review.get("status", "") if recorded_review else "",
+            "similar_components": [dict(item) for item in reuse_assessment.similar_components],
+            "similar_cases": [dict(item) for item in reuse_assessment.similar_cases],
+            "repair_prompts": [] if recorded_review else blocking_reuse_response(reuse_assessment).get("repair_prompts", []),
+        },
+        "workaround": {
+            "count": len(workaround_findings),
+            "blocking": any(finding.get("code") == "WORKAROUND_ANNOTATION_MISSING" for finding in workaround_findings),
+            "codes": [finding.get("code") for finding in workaround_findings],
+        },
+        "contracts": {
+            "schema_findings": len(validation.get("findings_by_category", {}).get("schema", [])),
+            "flow_findings": len(validation.get("findings_by_category", {}).get("flow", [])),
+            "reference_findings": len(validation.get("findings_by_category", {}).get("reference", [])),
+        },
+    }
+
+
+def _merge_policy_checks_into_validation(validation: dict, policy_checks: dict) -> None:
+    """Merge policy checks into the existing validation payload."""
+    findings_by_category = dict(validation.get("findings_by_category") or {})
+    policy_findings: list[dict] = []
+    errors = list(validation.get("errors") or [])
+    warnings = list(validation.get("warnings") or [])
+    next_actions = list(validation.get("next_actions") or [])
+
+    metadata = policy_checks["metadata"]
+    if metadata["missing_fields"]:
+        message = (
+            "Policy metadata gaps: "
+            + ", ".join(metadata["missing_fields"])
+            + ". Use brix__get_missing_metadata and brix__repair_component_metadata."
+        )
+        severity = "error" if metadata["blocking"] else "warning"
+        policy_findings.append(
+            {
+                "code": "POLICY_METADATA_GAPS",
+                "severity": severity,
+                "category": "policy",
+                "message": message,
+            }
+        )
+        if severity == "error":
+            errors.append(message)
+        else:
+            warnings.append(message)
+        next_actions.append(
+            "Run brix__get_missing_metadata(entity_type='pipeline', entity_id='<pipeline>') and then brix__repair_component_metadata(...)."
+        )
+
+    reuse = policy_checks["reuse"]
+    if reuse["blocking"]:
+        message = (
+            "Policy reuse review missing despite similar components. "
+            "Record an explicit decision with brix__record_reuse_decision."
+        )
+        policy_findings.append(
+            {
+                "code": "POLICY_REUSE_REVIEW_REQUIRED",
+                "severity": "error",
+                "category": "policy",
+                "message": message,
+            }
+        )
+        errors.append(message)
+        next_actions.append(
+            "Run brix__record_reuse_decision(entity_type='pipeline', entity_id='<pipeline>', decision_outcome='...', rationale='...')."
+        )
+
+    if policy_checks["workaround"]["blocking"]:
+        next_actions.append(
+            "Complete owner, replacement_plan, and expiry_condition before keeping workaround-bearing pipelines active."
+        )
+
+    if policy_findings:
+        findings_by_category.setdefault("core", [])
+        findings_by_category["core"].extend(policy_findings)
+        validation["valid"] = False if any(item["severity"] == "error" for item in policy_findings) else validation["valid"]
+    validation["findings_by_category"] = findings_by_category
+    validation["policy_findings"] = policy_findings
+    validation["errors"] = errors
+    validation["warnings"] = warnings
+    validation["next_actions"] = list(dict.fromkeys(next_actions))[:3]
+    validation["summary"] = {
+        "errors": len(errors),
+        "warnings": len(warnings),
+        "infos": len(validation.get("infos") or []),
+        "total": len(errors) + len(warnings) + len(validation.get("infos") or []),
     }
 
 
