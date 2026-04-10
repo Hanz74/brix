@@ -75,24 +75,28 @@ def test_load_with_v71_complete_loads_from_step_rows(store, db):
     assert pipeline.steps[0].values == {"source": "db"}
 
 
-def test_load_with_null_migration_status_falls_back_to_yaml_content(store, db):
-    raw = {
-        "name": "legacy-pipeline",
-        "steps": [{"id": "yaml-step", "type": "flow.set", "values": {"source": "yaml"}}],
-    }
-    db.upsert_pipeline(
+def test_load_with_null_migration_status_still_reads_db_rows(store, db):
+    pipeline_id = db.upsert_pipeline(
         name="legacy-pipeline",
         path="/virtual/legacy-pipeline.yaml",
-        yaml_content=yaml.dump(raw, sort_keys=False),
+        yaml_content=yaml.dump({
+            "name": "legacy-pipeline",
+            "steps": [{"id": "yaml-step", "type": "flow.set", "values": {"source": "yaml"}}],
+        }, sort_keys=False),
+    )
+    db.upsert_step(
+        pipeline_id,
+        {"id": "db-step", "type": "flow.set", "values": {"source": "db"}},
+        step_order=0,
     )
 
     pipeline = store.load("legacy-pipeline")
 
-    assert pipeline.steps[0].id == "yaml-step"
-    assert pipeline.steps[0].values == {"source": "yaml"}
+    assert pipeline.steps[0].id == "db-step"
+    assert pipeline.steps[0].values == {"source": "db"}
 
 
-def test_save_writes_step_rows_and_yaml_content_without_disk_file(store, db, tmp_path):
+def test_save_writes_step_rows_without_yaml_content_or_disk_file(store, db, tmp_path):
     path = store.save(PIPELINE_DATA)
     row = db.get_pipeline("db-pipeline")
 
@@ -100,7 +104,7 @@ def test_save_writes_step_rows_and_yaml_content_without_disk_file(store, db, tmp
     assert row["migration_status"] == "v71_complete"
     assert path == tmp_path / "db-pipeline.yaml"
     assert not path.exists()
-    assert "db-pipeline" in (db.get_pipeline_yaml_content("db-pipeline") or "")
+    assert db.get_pipeline_yaml_content("db-pipeline") is None
 
     steps = db.get_steps(row["id"])
     credentials = db.get_pipeline_credentials(row["id"])
@@ -141,7 +145,7 @@ def test_load_raw_with_migrated_pipeline_returns_dict_from_db_rows(store, db):
     assert raw["steps"][0]["values"] == {"source": "db"}
 
 
-def test_brix_step_source_yaml_forces_yaml_content(monkeypatch, store, db):
+def test_brix_step_source_yaml_does_not_override_db_rows(monkeypatch, store, db):
     monkeypatch.setenv("BRIX_STEP_SOURCE", "yaml")
     yaml_only = {
         "name": "rollback-pipeline",
@@ -161,10 +165,11 @@ def test_brix_step_source_yaml_forces_yaml_content(monkeypatch, store, db):
 
     pipeline = store.load("rollback-pipeline")
 
-    assert pipeline.steps[0].id == "yaml-step"
+    assert pipeline.steps[0].id == "db-step"
+    assert pipeline.steps[0].values == {"source": "db"}
 
 
-def test_dual_mode_validates_against_yaml_content(monkeypatch, store, db):
+def test_dual_mode_does_not_validate_against_yaml_content(monkeypatch, store, db):
     monkeypatch.setenv("BRIX_STEP_SOURCE", "dual")
     yaml_only = {
         "name": "dual-pipeline",
@@ -182,8 +187,19 @@ def test_dual_mode_validates_against_yaml_content(monkeypatch, store, db):
     )
     _mark_migrated(db, "dual-pipeline")
 
-    with pytest.raises(ValueError, match="do not match yaml_content"):
-        store.load("dual-pipeline")
+    pipeline = store.load("dual-pipeline")
+
+    assert pipeline.steps[0].id == "db-step"
+    assert pipeline.steps[0].values == {"source": "db"}
+
+
+def test_exists_ignores_filesystem_only_pipeline(tmp_path, store):
+    (tmp_path / "filesystem-only.yaml").write_text(
+        "name: filesystem-only\nsteps:\n  - id: s1\n    type: flow.set\n",
+        encoding="utf-8",
+    )
+
+    assert store.exists("filesystem-only") is False
 
 
 def test_roundtrip_save_then_load_returns_identical_pipeline(store):

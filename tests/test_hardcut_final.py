@@ -1,10 +1,8 @@
 """Hardcut tests for the 7-fix batch (registry cache, seed filtering, system flags, etc.)."""
 import pytest
-from pathlib import Path
 
 from brix.db import BrixDB
 from brix.bricks.registry import BrickRegistry
-from brix.bricks.schema import BrickSchema, BrickParam
 from brix.bricks.builtins import ALL_BUILTINS
 from brix.pipeline_store import PipelineStore
 from brix.helper_registry import HelperRegistry
@@ -124,9 +122,8 @@ class TestImportPipelineContentExcludesTestPipelines:
         assert not _is_test_pipeline("download_attachments")
         assert not _is_test_pipeline("convert_pdf")
 
-    def test_import_pipeline_content_skips_test_pipelines(self, tmp_path, isolated_db):
-        """import_pipeline_content does not import test-named pipelines."""
-        # Create a real and a test pipeline in a temp dir
+    def test_import_pipeline_content_is_db_first_noop(self, tmp_path, isolated_db):
+        """import_pipeline_content does not import file mirrors into live DB state."""
         real_yaml = tmp_path / "buddy_real_pipeline.yaml"
         real_yaml.write_text(
             "name: buddy_real_pipeline\nversion: 1.0.0\nsteps: [{id: s1, type: cli, args: [echo, hi]}]\n"
@@ -145,10 +142,10 @@ class TestImportPipelineContentExcludesTestPipelines:
         finally:
             _seed_mod._PIPELINE_SEARCH_PATHS = original
 
-        assert count == 1  # only real pipeline imported
+        assert count == 0
         pipelines = isolated_db.list_pipelines()
         names = {p["name"] for p in pipelines}
-        assert "buddy_real_pipeline" in names
+        assert "buddy_real_pipeline" not in names
         assert "test_my_pipeline" not in names
 
 
@@ -197,11 +194,16 @@ class TestPipelineStoreDBOnly:
 
     def test_load_reads_from_db(self, store, isolated_db):
         """load() returns pipeline stored only in DB, without any filesystem file."""
-        isolated_db.upsert_pipeline(
+        pipeline_id = isolated_db.upsert_pipeline(
             name="my_db_pipeline",
             path="",
             requirements=[],
             yaml_content=MINIMAL_PIPELINE_YAML,
+        )
+        isolated_db.upsert_step(
+            pipeline_id,
+            {"id": "step1", "type": "cli", "args": ["echo", "hello"]},
+            step_order=0,
         )
         pipeline = store.load("my_db_pipeline")
         assert pipeline.name == "my_db_pipeline"
@@ -214,11 +216,16 @@ class TestPipelineStoreDBOnly:
 
     def test_list_all_returns_db_pipelines(self, store, isolated_db):
         """list_all() returns pipelines from DB."""
-        isolated_db.upsert_pipeline(
+        pipeline_id = isolated_db.upsert_pipeline(
             name="alpha_pipeline",
             path="",
             requirements=[],
             yaml_content=MINIMAL_PIPELINE_YAML.replace("my_db_pipeline", "alpha_pipeline"),
+        )
+        isolated_db.upsert_step(
+            pipeline_id,
+            {"id": "step1", "type": "cli", "args": ["echo", "hello"]},
+            step_order=0,
         )
         results = store.list_all()
         names = {r["name"] for r in results}

@@ -1,4 +1,4 @@
-"""Pipeline persistence: save, load, list, version."""
+"""DB-first pipeline persistence: save, load, list, version."""
 import json
 import logging
 import sqlite3
@@ -37,7 +37,7 @@ class PipelineStore:
         self.pipelines_dir = Path(pipelines_dir) if pipelines_dir is not None else DEFAULT_PIPELINES_DIR
         self.pipelines_dir.mkdir(parents=True, exist_ok=True)
         if search_paths is not None:
-            # Caller provided explicit search_paths — use as-is
+            # Retained for import/export compatibility; load/list/exists are DB-first.
             self.search_paths = [Path(p) for p in search_paths]
         elif pipelines_dir is not None:
             # Custom pipelines_dir: prepend it to the default search paths
@@ -262,18 +262,8 @@ class PipelineStore:
         return self._load_raw_from_db_rows(pipeline_row)
 
     def exists(self, name: str) -> bool:
-        """Check if a pipeline exists in DB or any search path."""
-        # Check DB first
-        if self._db.get_pipeline(name) is not None:
-            return True
-        # Fallback: filesystem
-        for search_dir in self.search_paths:
-            if any(
-                (Path(search_dir) / f"{name}{ext}").exists()
-                for ext in [".yaml", ".yml"]
-            ):
-                return True
-        return False
+        """Return True only when the pipeline exists in DB-owned state."""
+        return self._db.get_pipeline(name) is not None
 
     def list_all(self) -> list[dict]:
         """List all pipelines from DB only.
@@ -306,7 +296,7 @@ class PipelineStore:
         return results
 
     def delete(self, name: str) -> bool:
-        """Delete a pipeline from DB and pipelines_dir. Returns True if deleted."""
+        """Delete a pipeline from DB and remove stale mirror files if present."""
         deleted = False
         # Delete from every configured search path so stale disk files do not
         # outlive the DB row in mixed DB/filesystem deployments.
