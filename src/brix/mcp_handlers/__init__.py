@@ -18,3 +18,4 @@ from brix.mcp_handlers.health import *  # noqa: F401, F403
 from brix.mcp_handlers.backup import *  # noqa: F401, F403
 from brix.mcp_handlers.changelog import *  # noqa: F401, F403
 from brix.mcp_handlers.knowledge import *  # noqa: F401, F403
+from brix.mcp_handlers.component_context import *  # noqa: F401, F403

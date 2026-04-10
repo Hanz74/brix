@@ -517,6 +517,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_intent_decision_tool_schemas_v93",
         "down": "",
     },
+    {
+        "version": 94,
+        "name": "register_component_context_tool_schemas",
+        "up": "",
+        "up_fn": "_register_component_context_tool_schemas_v94",
+        "down": "",
+    },
 ]
 
 
@@ -1030,6 +1037,34 @@ def _register_intent_decision_tool_schemas_v93(db: "BrixDB") -> None:
                 "input_schema": {"type": "object", "properties": shared_properties},
             }
         )
+
+
+def _register_component_context_tool_schemas_v94(db: "BrixDB") -> None:
+    """Register MCP tool schemas for component context and relationship inspection."""
+    shared_properties = {
+        "entity_type": {"type": "string", "description": "Entity type such as pipeline, helper, intent, decision."},
+        "entity_id": {"type": "string", "description": "Entity name or id."},
+        "project": {"type": "string", "description": "Optional project scope."},
+    }
+    db.mcp_tool_schemas_upsert(
+        {
+            "name": "brix__get_component_context",
+            "description": "Return canonical context, links, and related entities for one component.",
+            "input_schema": {"type": "object", "properties": shared_properties},
+        }
+    )
+    related_properties = {
+        **shared_properties,
+        "depth": {"type": "integer", "description": "Traversal depth for the relationship subgraph.", "default": 1},
+        "relation_types": {"type": "array", "items": {"type": "string"}, "description": "Optional relation filter."},
+    }
+    db.mcp_tool_schemas_upsert(
+        {
+            "name": "brix__get_related_components",
+            "description": "Traverse the component graph and return related nodes and edges.",
+            "input_schema": {"type": "object", "properties": related_properties},
+        }
+    )
 
 
 def _register_effective_step_tool_schemas_v86(db: "BrixDB") -> None:

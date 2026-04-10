@@ -363,6 +363,7 @@ from brix.mcp_handlers.testing import (
 from brix.mcp_handlers.smoke import _handle_smoke_test
 from brix.mcp_handlers.changelog import _handle_changelog
 from brix.mcp_handlers.knowledge import _handle_intent, _handle_decision
+from brix.mcp_handlers.component_context import _handle_get_component_context, _handle_get_related_components
 # T-BRIX-DBF-04: DB-First CRUD for tool_schema, help_topic, keyword, type_compat
 from brix.mcp_handlers.dbfirst_crud import (
     _handle_tool_schema,
@@ -782,6 +783,9 @@ _HANDLERS = {
     # T-5.1.1: intent / decision CRUD
     "brix__intent": _handle_intent,
     "brix__decision": _handle_decision,
+    # T-5.1.2: component context / relationships
+    "brix__get_component_context": _handle_get_component_context,
+    "brix__get_related_components": _handle_get_related_components,
 }
 
 
