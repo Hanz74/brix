@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
     from brix.db import BrixDB
 
 logger = logging.getLogger(__name__)
+
+_JINJA_TOKENS = ("{{", "{%", "{#")
 
 _HELP_LEGACY_STEP_TYPES = ("http", "python", "mcp", "filter", "transform", "set", "pipeline")
 _HELP_LEGACY_STEP_TYPE_PATTERN = re.compile(
@@ -136,6 +139,57 @@ def run_integrity_checks(db: "BrixDB") -> dict:
         "issues": issues,
         "auto_fixed": auto_fixed,
     }
+
+
+def _is_dynamic_template(value: object) -> bool:
+    return isinstance(value, str) and any(token in value for token in _JINJA_TOKENS)
+
+
+def _placeholder_for_schema(schema: dict | None, fallback: object) -> object:
+    if not isinstance(schema, dict):
+        return fallback
+    enum_values = schema.get("enum")
+    if isinstance(enum_values, list) and enum_values:
+        return enum_values[0]
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        schema_type = next((item for item in schema_type if item != "null"), schema_type[0] if schema_type else None)
+    if schema_type == "string":
+        return ""
+    if schema_type == "integer":
+        return 0
+    if schema_type == "number":
+        return 0
+    if schema_type == "boolean":
+        return False
+    if schema_type == "array":
+        return []
+    if schema_type == "object":
+        return {}
+    return fallback
+
+
+def _normalize_dynamic_values_for_schema(instance: object, schema: dict | None) -> object:
+    """Replace Jinja-templated dynamic values with schema-compatible placeholders."""
+    if _is_dynamic_template(instance):
+        return _placeholder_for_schema(schema, instance)
+
+    if isinstance(instance, dict):
+        normalized = deepcopy(instance)
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        additional = schema.get("additionalProperties") if isinstance(schema, dict) else None
+        for key, value in list(normalized.items()):
+            child_schema = properties.get(key) if isinstance(properties, dict) else None
+            if child_schema is None and isinstance(additional, dict):
+                child_schema = additional
+            normalized[key] = _normalize_dynamic_values_for_schema(value, child_schema)
+        return normalized
+
+    if isinstance(instance, list):
+        item_schema = schema.get("items") if isinstance(schema, dict) else None
+        return [_normalize_dynamic_values_for_schema(value, item_schema) for value in instance]
+
+    return instance
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +623,8 @@ def _check_semantic_parity(
                 instance.update(materialized.effective_step_fields)
 
                 try:
-                    validate(instance=instance, schema=schema)
+                    normalized_instance = _normalize_dynamic_values_for_schema(instance, schema)
+                    validate(instance=normalized_instance, schema=schema)
                 except ValidationError as exc:
                     field = ".".join(str(part) for part in exc.path) or (
                         str(exc.validator_value[0])

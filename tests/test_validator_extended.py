@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from brix.models import Pipeline, Step
-from brix.validator import PipelineValidator, ValidationResult
+from brix.validator import PipelineValidator
 
 
 def _pipeline(steps, **kwargs):
@@ -261,6 +261,26 @@ class TestVAL06ForeachOnNonList:
 
         val06_warnings = [w for w in result.warnings if "T-BRIX-VAL-06" in w]
         assert len(val06_warnings) == 0
+
+
+class TestD16ConditionalDefault:
+    """D-16: conditional-step references should respect explicit guards."""
+
+    def test_no_warning_when_reference_is_guarded_by_when_defined(self):
+        steps = [
+            _step("read_file_b64", type="file.read_base64", when="{{ download.output.extractable | default(false) }}"),
+            _step(
+                "extract",
+                type="flow.pipeline",
+                params={"base64_data": "{{ read_file_b64.output.base64 }}"},
+                when="{{ read_file_b64.output is defined }}",
+            ),
+        ]
+        v = PipelineValidator()
+        result = v.validate(_pipeline(steps))
+
+        d16_warnings = [w for w in result.warnings if "D-16" in w]
+        assert d16_warnings == []
 
 
 class TestVAL07DbQueryDML:

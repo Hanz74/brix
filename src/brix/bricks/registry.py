@@ -1,4 +1,5 @@
 """Brick registry: built-in bricks + MCP auto-discovery — DB-only (T-BRIX-DBF-02)."""
+import ast
 import json
 import logging
 from typing import Optional
@@ -9,14 +10,34 @@ from brix.cache import SchemaCache
 logger = logging.getLogger(__name__)
 
 
+def _parse_jsonish(value, default):
+    """Best-effort decode for legacy DB payloads that may not be strict JSON."""
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return default
+        try:
+            return json.loads(raw)
+        except Exception:
+            try:
+                return ast.literal_eval(raw)
+            except Exception:
+                return default
+    return default
+
+
 def _row_to_brick(row: dict) -> BrickSchema:
     """Convert a brick_definitions DB row to a BrickSchema instance."""
     # Deserialise config_schema: dict[str, plain dict] → dict[str, BrickParam]
-    raw_schema = row.get("config_schema", "{}")
-    if isinstance(raw_schema, str):
-        raw_schema = json.loads(raw_schema)
+    raw_schema = _parse_jsonish(row.get("config_schema", "{}"), {})
     config_schema: dict[str, BrickParam] = {}
     for param_name, param_def in raw_schema.items():
+        if not isinstance(param_def, dict):
+            param_def = {}
         config_schema[param_name] = BrickParam(
             type=param_def.get("type", "string"),
             description=param_def.get("description", ""),
@@ -25,13 +46,14 @@ def _row_to_brick(row: dict) -> BrickSchema:
             enum=param_def.get("enum"),
         )
 
-    aliases = row.get("aliases", "[]")
-    if isinstance(aliases, str):
-        aliases = json.loads(aliases)
+    aliases = _parse_jsonish(row.get("aliases", "[]"), [])
+    if not isinstance(aliases, list):
+        aliases = [str(aliases)] if aliases else []
+    aliases = [str(alias) for alias in aliases]
 
-    examples = row.get("examples", "[]")
-    if isinstance(examples, str):
-        examples = json.loads(examples)
+    examples = _parse_jsonish(row.get("examples", "[]"), [])
+    if not isinstance(examples, list):
+        examples = [examples] if examples else []
 
     return BrickSchema(
         name=row["name"],

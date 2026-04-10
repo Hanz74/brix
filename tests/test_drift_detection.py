@@ -8,6 +8,7 @@ from brix.integrity import run_integrity_checks
 from brix.mcp_handlers.help import _handle_get_tips
 from brix.migrations import run_pending_migrations
 from brix.pipeline_store import PipelineStore
+from brix.bricks.registry import BrickRegistry, _row_to_brick
 
 
 @pytest.fixture
@@ -134,6 +135,33 @@ def test_integrity_detects_materialized_step_schema_mismatch(tmp_path, db):
     assert "schema-drift-pipeline/custom:custom.required:required_field:required" in schema_issue["steps"]
 
 
+def test_integrity_ignores_dynamic_jinja_values_for_schema_enum(tmp_path, db):
+    """Dynamic Jinja enum values should not surface as semantic schema mismatch."""
+    store = PipelineStore(pipelines_dir=tmp_path, search_paths=[tmp_path], db=db)
+    store.save(
+        {
+            "name": "jinja-enum-pipeline",
+            "project": "utility",
+            "tags": ["one-shot"],
+            "steps": [
+                {
+                    "id": "notify",
+                    "type": "action.notify",
+                    "params": {
+                        "channel": "{{ var.notification_conditional | default('slack') }}",
+                        "message": "Hello",
+                    },
+                }
+            ],
+        }
+    )
+
+    result = run_integrity_checks(db)
+
+    mismatches = [issue for issue in result["issues"] if issue["code"] == "SEMANTIC_SCHEMA_MISMATCH"]
+    assert all("jinja-enum-pipeline/notify:action.notify:channel:enum" not in issue["steps"] for issue in mismatches)
+
+
 @pytest.mark.asyncio
 async def test_get_tips_surfaces_help_legacy_type_integrity_issue(tmp_path, db, monkeypatch):
     db.help_topics_upsert(
@@ -152,3 +180,65 @@ async def test_get_tips_surfaces_help_legacy_type_integrity_issue(tmp_path, db, 
 
     tips_text = "\n".join(result["tips"])
     assert "[HELP_LEGACY_TYPE]" in tips_text
+
+
+def test_row_to_brick_accepts_legacy_python_literal_payloads():
+    brick = _row_to_brick(
+        {
+            "name": "legacy.literal",
+            "runner": "python",
+            "namespace": "legacy",
+            "category": "custom",
+            "description": "Legacy literal payload brick",
+            "when_to_use": "Testing",
+            "when_NOT_to_use": "",
+            "aliases": "['legacy', 'literal']",
+            "config_schema": "{'path': 'string', 'mode': {'type': 'string', 'enum': ['copy', 'move']}}",
+            "examples": "[{'config': {'path': '/tmp/x'}}]",
+            "input_type": "none",
+            "output_type": "dict",
+            "system": 0,
+        }
+    )
+
+    assert brick.aliases == ["legacy", "literal"]
+    assert brick.config_schema["path"].type == "string"
+    assert brick.config_schema["mode"].enum == ["copy", "move"]
+    assert isinstance(brick.examples, list)
+
+
+def test_brick_registry_lists_legacy_literal_custom_bricks(tmp_path, db):
+    db.brick_definitions_upsert(
+        {
+            "name": "legacy.literal",
+            "runner": "python",
+            "namespace": "legacy",
+            "category": "custom",
+            "description": "Legacy literal payload brick",
+            "when_to_use": "Testing",
+            "when_NOT_to_use": "",
+            "aliases": ["legacy"],
+            "input_type": "none",
+            "output_type": "dict",
+            "config_schema": {"path": "string"},
+            "examples": [{"config": {"path": "/tmp/x"}}],
+            "system": False,
+        }
+    )
+    with db._connect() as conn:  # type: ignore[attr-defined]
+        conn.execute(
+            "UPDATE brick_definition SET aliases=?, config_schema=?, examples=? WHERE name=?",
+            (
+                "['legacy']",
+                "{'path': 'string'}",
+                "[{'config': {'path': '/tmp/x'}}]",
+                "legacy.literal",
+            ),
+        )
+        conn.commit()
+
+    registry = BrickRegistry(db=db)
+    listed = {brick.name: brick for brick in registry.list_all()}
+
+    assert "legacy.literal" in listed
+    assert listed["legacy.literal"].config_schema["path"].type == "string"

@@ -900,6 +900,12 @@ class PipelineValidator:
             step = analysis.step
             if step.id == when_step.id:
                 continue
+            guarded_by_when = (
+                isinstance(step.when, str)
+                and when_step.id in step.when
+                and "output" in step.when
+                and "defined" in step.when
+            )
             fields_to_check = []
             if analysis.has_params:
                 fields_to_check.extend(str(v) for v in analysis.param_values())
@@ -908,7 +914,7 @@ class PipelineValidator:
 
             for field in fields_to_check:
                 if when_step.id in str(field) and "output" in str(field):
-                    if "default" not in str(field):
+                    if "default" not in str(field) and not guarded_by_when:
                         result.add_warning(
                             f"Step '{step.id}' references conditional step '{when_step.id}' "
                             f"without | default() — may fail if skipped (D-16)",
