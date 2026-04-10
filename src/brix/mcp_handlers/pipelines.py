@@ -24,6 +24,12 @@ from brix.pipeline_store import PipelineStore
 from brix.history import RunHistory
 from brix.config import config
 from brix.engine import LEGACY_ALIASES
+from brix.metadata_enforcement import (
+    apply_metadata_result,
+    assess_metadata_enforcement,
+    blocking_metadata_response,
+    extract_supplemental_metadata,
+)
 
 
 def _bump_version(current: str, bump: str = "patch") -> str:
@@ -104,6 +110,7 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
+    supplemental_metadata = extract_supplemental_metadata(arguments)
 
     # Preserve any explicit step ``config`` so DB-backed persistence stores it
     # in ``config_json`` instead of incorrectly folding it into runtime params.
@@ -186,6 +193,16 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     # Validate
     validation = _validate_pipeline_dict(pipeline_data)
 
+    metadata_assessment = assess_metadata_enforcement(
+        "pipeline",
+        base_data={
+            "project": org_project or "",
+            "description": description,
+        },
+        incoming_metadata=supplemental_metadata,
+        operation="create",
+    )
+
     # Save regardless (agent can fix errors via add_step / validate)
     _save_pipeline_yaml(name, pipeline_data)
 
@@ -196,11 +213,11 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
     except Exception:
         pass  # Non-fatal
 
-    # Update project/tags/group_name in DB (T-BRIX-ORG-01)
-    if org_project is not None or org_tags is not None or org_group is not None:
-        try:
-            from brix.db import BrixDB as _BrixDB
-            _org_db = _BrixDB()
+    try:
+        from brix.db import BrixDB as _BrixDB
+        _org_db = _BrixDB()
+        # Update project/tags/group_name in DB (T-BRIX-ORG-01)
+        if org_project is not None or org_tags is not None or org_group is not None:
             _org_db.upsert_pipeline(
                 name=name,
                 path=str(_pipeline_path(name)),
@@ -208,8 +225,10 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
                 tags=org_tags,
                 group_name=org_group,
             )
-        except Exception:
-            pass  # Non-fatal — org fields are metadata only
+        if metadata_assessment.stored_metadata:
+            _org_db.entity_metadata_upsert("pipeline", name, **metadata_assessment.stored_metadata)
+    except Exception:
+        pass  # Non-fatal — org fields are metadata only
 
     # Audit log
     _audit_db.write_audit_entry(
@@ -245,7 +264,7 @@ async def _handle_create_pipeline(arguments: dict) -> dict:
         result["project"] = org_project
     if pipeline_warnings:
         result["warnings"] = pipeline_warnings
-    return result
+    return apply_metadata_result(result, metadata_assessment)
 
 
 async def _handle_get_pipeline(arguments: dict) -> dict:
@@ -329,6 +348,7 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
         raw = store.load_raw(name)
     except FileNotFoundError:
         return {"success": False, "error": f"Pipeline '{name}' not found."}
+    existing_db_row = db.get_pipeline(name) or {}
 
     changed_fields: list[str] = []
 
@@ -371,15 +391,32 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
+    supplemental_metadata = extract_supplemental_metadata(arguments)
     has_org_update = (org_project is not None or org_tags is not None or org_group is not None)
 
-    if not changed_fields and not has_org_update:
+    if not changed_fields and not has_org_update and not supplemental_metadata:
         return {
             "success": True,
             "pipeline_name": name,
             "changed_fields": [],
             "message": "No fields provided — pipeline unchanged.",
         }
+
+    existing_metadata = db.entity_metadata_get("pipeline", name) or {}
+    metadata_assessment = assess_metadata_enforcement(
+        "pipeline",
+        base_data={
+            "project": org_project if org_project is not None else existing_db_row.get("project", ""),
+            "description": raw.get("description", ""),
+            **({"description": arguments["description"]} if "description" in arguments and arguments["description"] is not None else {}),
+        },
+        incoming_metadata=supplemental_metadata,
+        existing_data={**existing_db_row, **raw},
+        existing_metadata=existing_metadata,
+        operation="update",
+    )
+    if metadata_assessment.blocking:
+        return blocking_metadata_response(metadata_assessment)
 
     if changed_fields:
         # Auto-bump version (patch for config changes, unless version was explicitly set)
@@ -416,6 +453,12 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
         except Exception:
             pass  # Non-fatal
 
+    if metadata_assessment.stored_metadata:
+        try:
+            db.entity_metadata_upsert("pipeline", name, **metadata_assessment.stored_metadata)
+        except Exception:
+            pass
+
     # Validate after save (only if YAML was changed)
     validated = True
     validation_error = None
@@ -445,7 +488,7 @@ async def _handle_update_pipeline(arguments: dict) -> dict:
     if _system_warning:
         result["warning"] = _system_warning
         result["system_pipeline"] = True
-    return result
+    return apply_metadata_result(result, metadata_assessment)
 
 
 async def _handle_delete_pipeline(arguments: dict) -> dict:

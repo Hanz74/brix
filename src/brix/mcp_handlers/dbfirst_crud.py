@@ -4,6 +4,13 @@ Consolidated action-based handlers following the brix__trigger pattern.
 """
 from __future__ import annotations
 
+from brix.metadata_enforcement import (
+    apply_metadata_result,
+    assess_metadata_enforcement,
+    blocking_metadata_response,
+    extract_supplemental_metadata,
+)
+
 import json
 
 
@@ -142,14 +149,22 @@ async def _handle_help_topic_add(arguments: dict) -> dict:
     content = arguments.get("content", "")
     category = arguments.get("category", "")
     db = _get_db()
+    metadata_assessment = assess_metadata_enforcement(
+        "help_topic",
+        base_data={"title": title},
+        incoming_metadata=extract_supplemental_metadata(arguments),
+        operation="create",
+    )
     db.help_topics_upsert({
         "name": name,
         "title": title,
         "content": content,
         "category": category,
     })
+    if metadata_assessment.stored_metadata:
+        db.entity_metadata_upsert("help_topic", name, **metadata_assessment.stored_metadata)
     record = db.help_topics_get(name)
-    return {"success": True, "help_topic": record}
+    return apply_metadata_result({"success": True, "help_topic": record}, metadata_assessment)
 
 
 async def _handle_help_topic_get(arguments: dict) -> dict:
@@ -178,6 +193,16 @@ async def _handle_help_topic_update(arguments: dict) -> dict:
     existing = db.help_topics_get(name)
     if existing is None:
         return {"success": False, "error": f"Help topic '{name}' not found."}
+    metadata_assessment = assess_metadata_enforcement(
+        "help_topic",
+        base_data={"title": arguments.get("title", existing.get("title", name))},
+        incoming_metadata=extract_supplemental_metadata(arguments),
+        existing_data=existing,
+        existing_metadata=db.entity_metadata_get("help_topic", name) or {},
+        operation="update",
+    )
+    if metadata_assessment.blocking:
+        return blocking_metadata_response(metadata_assessment)
     record = {
         "name": name,
         "title": arguments.get("title", existing.get("title", name)),
@@ -185,8 +210,10 @@ async def _handle_help_topic_update(arguments: dict) -> dict:
         "category": arguments.get("category", existing.get("category", "")),
     }
     db.help_topics_upsert(record)
+    if metadata_assessment.stored_metadata:
+        db.entity_metadata_upsert("help_topic", name, **metadata_assessment.stored_metadata)
     updated = db.help_topics_get(name)
-    return {"success": True, "help_topic": updated}
+    return apply_metadata_result({"success": True, "help_topic": updated}, metadata_assessment)
 
 
 async def _handle_help_topic_delete(arguments: dict) -> dict:

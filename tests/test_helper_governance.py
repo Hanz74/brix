@@ -56,6 +56,7 @@ def test_create_helper_surfaces_and_persists_governance(monkeypatch, tmp_path) -
                 "output_schema": {"type": "object"},
                 "project": "buddy",
                 "tags": ["extract"],
+                "owner": "team-brix",
                 "reason_not_a_brick": "Vendor-specific one-off logic, not reusable yet.",
             }
         )
@@ -119,6 +120,7 @@ def test_update_helper_can_complete_governance(monkeypatch, tmp_path) -> None:
                 "name": "needs_governance",
                 "project": "buddy",
                 "tags": ["utility"],
+                "owner": "team-brix",
                 "reason_not_a_brick": "Temporary adapter until a stable brick contract emerges.",
             }
         )
@@ -148,13 +150,14 @@ def test_update_helper_recomputes_governance_when_schemas_change(monkeypatch, tm
 
     result = asyncio.run(
         _handle_update_helper(
-            {
-                "name": "schema_governance",
-                "input_schema": {"type": "object"},
-                "output_schema": {"type": "object"},
-            }
+                {
+                    "name": "schema_governance",
+                    "input_schema": {"type": "object"},
+                    "output_schema": {"type": "object"},
+                    "owner": "team-brix",
+                }
+            )
         )
-    )
 
     assert result["success"] is True
     assert db.get_helper("schema_governance")["governance_status"] == "governed"

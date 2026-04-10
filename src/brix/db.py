@@ -856,6 +856,26 @@ _DDL = [
         updated_at          TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS entity_metadata (
+        id                TEXT PRIMARY KEY,
+        entity_type       TEXT NOT NULL,
+        entity_ref        TEXT NOT NULL,
+        owner             TEXT DEFAULT '',
+        purpose           TEXT DEFAULT '',
+        source_intent_id  TEXT DEFAULT '',
+        lifecycle_stage   TEXT DEFAULT 'draft',
+        status            TEXT DEFAULT '',
+        usage_scope       TEXT DEFAULT '',
+        version_relevance TEXT DEFAULT '',
+        linked_topic      TEXT DEFAULT '',
+        replacement_plan  TEXT DEFAULT '',
+        expiry_condition  TEXT DEFAULT '',
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        UNIQUE (entity_type, entity_ref)
+    )
+    """,
     # T-BRIX-DB-05b: Named DB-Connections
     """
     CREATE TABLE IF NOT EXISTS connection (
@@ -1183,6 +1203,15 @@ _KNOWN_TABLES: frozenset[str] = frozenset(
     "tip", "schema_migration", "changelog_entry",
 })
 
+_TABLE_ALIASES: dict[str, str] = {
+    "helpers": "helper",
+    "variables": "variable",
+    "triggers": "trigger",
+    "brick_definitions": "brick_definition",
+    "connections": "connection",
+    "profiles": "profile",
+}
+
 
 def _safe_table(name: str) -> str:
     """Validate *name* against the allowlist of known tables.
@@ -1192,12 +1221,13 @@ def _safe_table(name: str) -> str:
     internal dicts, but the explicit check silences static-analysis warnings
     about SQL string interpolation **and** adds a hard runtime guard.
     """
-    if name not in _KNOWN_TABLES:
+    canonical = _TABLE_ALIASES.get(name, name)
+    if canonical not in _KNOWN_TABLES:
         raise ValueError(
             f"Unknown table '{name}'. "
             f"Allowed tables: {', '.join(sorted(_KNOWN_TABLES))}"
         )
-    return name
+    return canonical
 
 
 # Valid registry type names → table names mapping (T-BRIX-V7-10)
@@ -4243,6 +4273,93 @@ class BrixDB:
         row.setdefault("project", "")
         row.setdefault("group_name", "")
         return row
+
+    # ------------------------------------------------------------------
+    # Entity Metadata (E4 / W4.1)
+    # ------------------------------------------------------------------
+
+    def entity_metadata_get(self, entity_type: str, entity_ref: str) -> Optional[dict]:
+        """Return supplemental metadata for a named entity, or None if absent."""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM entity_metadata WHERE entity_type = ? AND entity_ref = ?",
+                (entity_type, entity_ref),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        for field in (
+            "owner",
+            "purpose",
+            "source_intent_id",
+            "lifecycle_stage",
+            "status",
+            "usage_scope",
+            "version_relevance",
+            "linked_topic",
+            "replacement_plan",
+            "expiry_condition",
+        ):
+            result[field] = result.get(field) or ""
+        return result
+
+    def entity_metadata_upsert(
+        self,
+        entity_type: str,
+        entity_ref: str,
+        **fields: Any,
+    ) -> dict:
+        """Insert or update supplemental metadata for a named entity."""
+        allowed_fields = (
+            "owner",
+            "purpose",
+            "source_intent_id",
+            "lifecycle_stage",
+            "status",
+            "usage_scope",
+            "version_relevance",
+            "linked_topic",
+            "replacement_plan",
+            "expiry_condition",
+        )
+        now = _now_iso()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id, created_at FROM entity_metadata WHERE entity_type = ? AND entity_ref = ?",
+                (entity_type, entity_ref),
+            ).fetchone()
+            metadata_id = existing[0] if existing else str(uuid4())
+            created_at = existing[1] if existing else now
+
+            cols = ["id", "entity_type", "entity_ref", "created_at", "updated_at"]
+            vals: list[Any] = [metadata_id, entity_type, entity_ref, created_at, now]
+            updates = ["updated_at=excluded.updated_at"]
+
+            for field in allowed_fields:
+                if field not in fields:
+                    continue
+                cols.append(field)
+                vals.append(fields[field] or "")
+                updates.append(f"{field}=excluded.{field}")
+
+            placeholders = ",".join("?" * len(cols))
+            conn.execute(
+                f"""INSERT INTO entity_metadata ({",".join(cols)})
+                    VALUES ({placeholders})
+                    ON CONFLICT(entity_type, entity_ref) DO UPDATE SET {",".join(updates)}""",
+                vals,
+            )
+        return self.entity_metadata_get(entity_type, entity_ref) or {}
+
+    def entity_metadata_delete(self, entity_type: str, entity_ref: str) -> bool:
+        """Delete supplemental metadata for a named entity."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM entity_metadata WHERE entity_type = ? AND entity_ref = ?",
+                (entity_type, entity_ref),
+            )
+        return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
     # Knowledge Layer (E3 / W3.1)

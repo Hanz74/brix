@@ -3,6 +3,13 @@ from __future__ import annotations
 
 import sqlite3 as _sqlite3
 
+from brix.metadata_enforcement import (
+    apply_metadata_result,
+    assess_metadata_enforcement,
+    blocking_metadata_response,
+    extract_supplemental_metadata,
+)
+
 
 async def _handle_connection_add(arguments: dict) -> dict:
     """Register a named DB connection (DSN encrypted via CredentialStore)."""
@@ -19,6 +26,7 @@ async def _handle_connection_add(arguments: dict) -> dict:
     org_project = arguments.get("project") or None
     org_tags = arguments.get("tags") or None
     org_group = arguments.get("group") or None
+    supplemental_metadata = extract_supplemental_metadata(arguments)
 
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
@@ -32,11 +40,22 @@ async def _handle_connection_add(arguments: dict) -> dict:
 
     try:
         db = BrixDB()
+        metadata_assessment = assess_metadata_enforcement(
+            "connection",
+            base_data={
+                "description": description,
+                "project": org_project,
+            },
+            incoming_metadata=supplemental_metadata,
+            operation="create",
+        )
         manager = ConnectionManager(db)
         meta = manager.register(
             name, dsn, driver=driver, description=description, env_var=env_var,
             project=org_project, tags=org_tags, group_name=org_group,
         )
+        if metadata_assessment.stored_metadata:
+            db.entity_metadata_upsert("connection", name, **metadata_assessment.stored_metadata)
 
         # Org enforcement warnings
         warnings: list[str] = []
@@ -60,7 +79,7 @@ async def _handle_connection_add(arguments: dict) -> dict:
         }
         if warnings:
             result["warnings"] = warnings
-        return result
+        return apply_metadata_result(result, metadata_assessment)
     except _sqlite3.IntegrityError:
         return {
             "success": False,
@@ -161,6 +180,20 @@ async def _handle_update_connection(arguments: dict) -> dict:
 
     try:
         db = BrixDB()
+        existing = next((item for item in ConnectionManager(db).list() if item["name"] == name), None)
+        metadata_assessment = assess_metadata_enforcement(
+            "connection",
+            base_data={
+                "description": arguments.get("description") if "description" in arguments else existing.get("description", "") if existing else "",
+                "project": arguments.get("project") if "project" in arguments else existing.get("project", "") if existing else "",
+            },
+            incoming_metadata=extract_supplemental_metadata(arguments),
+            existing_data=existing or {},
+            existing_metadata=db.entity_metadata_get("connection", name) or {},
+            operation="update",
+        )
+        if metadata_assessment.blocking:
+            return blocking_metadata_response(metadata_assessment)
         manager = ConnectionManager(db)
         updated = manager.update(
             name=name,
@@ -179,11 +212,13 @@ async def _handle_update_connection(arguments: dict) -> dict:
             warnings.append(
                 "MISSING PROJECT: Bitte 'project' angeben (z.B. 'buddy', 'cody', 'utility')."
             )
+        if metadata_assessment.stored_metadata:
+            db.entity_metadata_upsert("connection", name, **metadata_assessment.stored_metadata)
 
         result: dict = {"success": True, **updated, "note": "DSN is encrypted and not shown."}
         if warnings:
             result["warnings"] = warnings
-        return result
+        return apply_metadata_result(result, metadata_assessment)
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
     except Exception as exc:

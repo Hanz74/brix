@@ -17,26 +17,31 @@ from brix.mcp_handlers._shared import (
 )
 from brix.helper_registry import HelperRegistry
 from brix.helper_governance import assess_helper_governance, governance_warnings
+from brix.metadata_enforcement import (
+    apply_metadata_result,
+    assess_metadata_enforcement,
+    blocking_metadata_response,
+    extract_supplemental_metadata,
+)
 
 
 _HELPER_CACHE_DIR = Path("/tmp/brix-helpers")
 
 
 def _validate_helper_metadata(arguments: dict, *, require_all: bool) -> str | None:
-    """Validate required helper metadata fields."""
+    """Validate helper metadata shape without forcing schemas upfront."""
     description = arguments.get("description")
     input_schema = arguments.get("input_schema")
     output_schema = arguments.get("output_schema")
 
-    if require_all or "description" in arguments:
-        if not isinstance(description, str) or len(description.strip()) < 10:
-            return "Parameter 'description' is required and must be at least 10 characters"
-    if require_all or "input_schema" in arguments:
+    if "description" in arguments and description is not None and not isinstance(description, str):
+        return "Parameter 'description' must be a string"
+    if "input_schema" in arguments:
         if not isinstance(input_schema, dict):
-            return "Parameter 'input_schema' is required and must be an object"
-    if require_all or "output_schema" in arguments:
+            return "Parameter 'input_schema' must be an object"
+    if "output_schema" in arguments:
         if not isinstance(output_schema, dict):
-            return "Parameter 'output_schema' is required and must be an object"
+            return "Parameter 'output_schema' must be an object"
     return None
 
 
@@ -75,6 +80,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
     code = arguments.get("code", "")
     description = arguments.get("description", "")
     source = _extract_source(arguments)
+    supplemental_metadata = extract_supplemental_metadata(arguments)
 
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
@@ -135,6 +141,18 @@ async def _handle_create_helper(arguments: dict) -> dict:
         "brick_candidate_ref": arguments.get("brick_candidate_ref", ""),
     }
     governance = assess_helper_governance(governance_input)
+    metadata_assessment = assess_metadata_enforcement(
+        "helper",
+        base_data={
+            "description": description,
+            "project": org_project,
+            "governance_status": governance.status,
+            "reason_not_a_brick": governance.reason_not_a_brick,
+            "brick_candidate_ref": governance.brick_candidate_ref,
+        },
+        incoming_metadata=supplemental_metadata,
+        operation="create",
+    )
     try:
         from brix.db import BrixDB as _BrixDB
         _org_db = _BrixDB()
@@ -154,6 +172,8 @@ async def _handle_create_helper(arguments: dict) -> dict:
             brick_candidate_ref=governance.brick_candidate_ref,
             governance_status=governance.status,
         )
+        if metadata_assessment.stored_metadata:
+            _org_db.entity_metadata_upsert("helper", name, **metadata_assessment.stored_metadata)
     except Exception:
         pass  # Non-fatal
 
@@ -188,7 +208,7 @@ async def _handle_create_helper(arguments: dict) -> dict:
     result["governance"] = governance.as_dict()
     if warnings:
         result["warnings"] = warnings
-    return result
+    return apply_metadata_result(result, metadata_assessment)
 
 
 async def _handle_register_helper(arguments: dict) -> dict:
@@ -431,6 +451,7 @@ async def _handle_update_helper(arguments: dict) -> dict:
     name = arguments.get("name", "")
     action = arguments.get("action", "update")
     source = _extract_source(arguments)
+    supplemental_metadata = extract_supplemental_metadata(arguments)
 
     if action == "remove":
         removed = registry.remove(name)
@@ -484,11 +505,17 @@ async def _handle_update_helper(arguments: dict) -> dict:
         or org_tags is not None
     )
     has_org_update = (org_project is not None or org_tags is not None or org_group is not None)
+    has_metadata_update = bool(supplemental_metadata)
 
-    if not update_fields and not has_org_update:
+    if not update_fields and not has_org_update and not has_metadata_update:
         return {
             "success": False,
-            "error": "No fields to update. Provide at least one of: code, script, description, requirements, input_schema, output_schema, project, tags, group, reason_not_a_brick, brick_candidate_ref",
+            "error": (
+                "No fields to update. Provide at least one of: code, script, description, requirements, "
+                "input_schema, output_schema, project, tags, group, owner, purpose, source_intent_id, "
+                "lifecycle_stage, status, usage_scope, version_relevance, linked_topic, replacement_plan, "
+                "expiry_condition, reason_not_a_brick, brick_candidate_ref"
+            ),
         }
 
     entry = None
@@ -500,7 +527,8 @@ async def _handle_update_helper(arguments: dict) -> dict:
 
     # Update project/tags/group_name in DB
     # T-BRIX-BUG-02: Read existing DB row to preserve fields not being updated
-    if has_org_update or has_governance_update:
+    metadata_assessment = None
+    if has_org_update or has_governance_update or has_metadata_update:
         try:
             from brix.db import BrixDB as _BrixDB
             _org_db = _BrixDB()
@@ -532,6 +560,25 @@ async def _handle_update_helper(arguments: dict) -> dict:
                     ),
                 }
             )
+            metadata_assessment = assess_metadata_enforcement(
+                "helper",
+                base_data={
+                    "description": update_fields.get(
+                        "description",
+                        existing_db.get("description", "") if existing_db else "",
+                    ),
+                    "project": org_project if org_project is not None else existing_db.get("project", "") if existing_db else "",
+                    "governance_status": governance.status,
+                    "reason_not_a_brick": governance.reason_not_a_brick,
+                    "brick_candidate_ref": governance.brick_candidate_ref,
+                },
+                incoming_metadata=supplemental_metadata,
+                existing_data=existing_db or {},
+                existing_metadata=_org_db.entity_metadata_get("helper", name) or {},
+                operation="update",
+            )
+            if metadata_assessment.blocking:
+                return blocking_metadata_response(metadata_assessment)
             _org_db.upsert_helper(
                 name=name,
                 script_path=(existing_db.get("script_path") if existing_db else "") or "",
@@ -555,6 +602,8 @@ async def _handle_update_helper(arguments: dict) -> dict:
                 brick_candidate_ref=governance.brick_candidate_ref,
                 governance_status=governance.status,
             )
+            if metadata_assessment.stored_metadata:
+                _org_db.entity_metadata_upsert("helper", name, **metadata_assessment.stored_metadata)
             update_warnings.extend(governance_warnings(governance))
         except Exception:
             pass  # Non-fatal
@@ -594,7 +643,7 @@ async def _handle_update_helper(arguments: dict) -> dict:
     }
     if update_warnings:
         result["warnings"] = update_warnings
-    return result
+    return apply_metadata_result(result, metadata_assessment) if metadata_assessment else result
 
 
 async def _handle_delete_helper(arguments: dict) -> dict:

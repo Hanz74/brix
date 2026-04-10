@@ -6,6 +6,12 @@ import json
 # Module-level imports allow patching in tests
 from brix.db import BrixDB
 from brix.bricks.registry import _row_to_brick
+from brix.metadata_enforcement import (
+    apply_metadata_result,
+    assess_metadata_enforcement,
+    blocking_metadata_response,
+    extract_supplemental_metadata,
+)
 
 
 def _get_valid_runners() -> set[str]:
@@ -102,6 +108,7 @@ async def _handle_create_brick(arguments: dict) -> dict:
     category = arguments.get("category", "custom")
     group = arguments.get("group", None)
     source = _extract_source(arguments)
+    supplemental_metadata = extract_supplemental_metadata(arguments)
 
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
@@ -143,7 +150,7 @@ async def _handle_create_brick(arguments: dict) -> dict:
         "input_type": input_type or "*",
         "output_type": output_type or "*",
         "config_schema": config_defaults if isinstance(config_defaults, dict) else {},
-        "examples": [],
+        "examples": arguments.get("examples") if isinstance(arguments.get("examples"), list) else [],
         "related_connector": "",
         "system": False,
     }
@@ -152,7 +159,22 @@ async def _handle_create_brick(arguments: dict) -> dict:
     if group is not None:
         record["group_name"] = group
 
+    metadata_assessment = assess_metadata_enforcement(
+        "brick",
+        base_data={
+            "description": description,
+            "input_type": input_type or "*",
+            "output_type": output_type or "*",
+            "examples": arguments.get("examples") or [],
+            "status": arguments.get("status", ""),
+        },
+        incoming_metadata=supplemental_metadata,
+        operation="create",
+    )
+
     db.brick_definitions_upsert(record)
+    if metadata_assessment.stored_metadata:
+        db.entity_metadata_upsert("brick", name, **metadata_assessment.stored_metadata)
 
     # Refresh registry
     import brix.mcp_handlers._shared as _shared_mod
@@ -195,7 +217,7 @@ async def _handle_create_brick(arguments: dict) -> dict:
         result["tags"] = org_tags
     if warnings:
         result["warnings"] = warnings
-    return result
+    return apply_metadata_result(result, metadata_assessment)
 
 
 async def _handle_update_brick(arguments: dict) -> dict:
@@ -204,6 +226,7 @@ async def _handle_update_brick(arguments: dict) -> dict:
 
     name = arguments.get("name", "").strip()
     source = _extract_source(arguments)
+    supplemental_metadata = extract_supplemental_metadata(arguments)
 
     if not name:
         return {"success": False, "error": "Parameter 'name' is required"}
@@ -243,6 +266,9 @@ async def _handle_update_brick(arguments: dict) -> dict:
     config_schema_raw = existing.get("config_schema", "{}")
     if isinstance(config_schema_raw, str):
         config_schema_raw = json.loads(config_schema_raw)
+    examples_raw = existing.get("examples", "[]")
+    if isinstance(examples_raw, str):
+        examples_raw = json.loads(examples_raw)
 
     record = {
         "name": name,
@@ -256,7 +282,7 @@ async def _handle_update_brick(arguments: dict) -> dict:
         "input_type": arguments.get("input_type", existing.get("input_type", "*")),
         "output_type": arguments.get("output_type", existing.get("output_type", "*")),
         "config_schema": arguments.get("config_defaults", config_schema_raw),
-        "examples": [],
+        "examples": arguments.get("examples", examples_raw),
         "related_connector": existing.get("related_connector", ""),
         "system": False,
     }
@@ -270,7 +296,26 @@ async def _handle_update_brick(arguments: dict) -> dict:
         if existing_group:
             record["group_name"] = existing_group
 
+    metadata_assessment = assess_metadata_enforcement(
+        "brick",
+        base_data={
+            "description": record["description"],
+            "input_type": record["input_type"],
+            "output_type": record["output_type"],
+            "examples": arguments.get("examples", []),
+            "status": arguments.get("status", ""),
+        },
+        incoming_metadata=supplemental_metadata,
+        existing_data=existing,
+        existing_metadata=db.entity_metadata_get("brick", name) or {},
+        operation="update",
+    )
+    if metadata_assessment.blocking:
+        return blocking_metadata_response(metadata_assessment)
+
     db.brick_definitions_upsert(record)
+    if metadata_assessment.stored_metadata:
+        db.entity_metadata_upsert("brick", name, **metadata_assessment.stored_metadata)
 
     # Refresh registry
     import brix.mcp_handlers._shared as _shared_mod
@@ -297,7 +342,7 @@ async def _handle_update_brick(arguments: dict) -> dict:
         result_upd["group"] = group
     if org_tags is not None:
         result_upd["tags"] = org_tags
-    return result_upd
+    return apply_metadata_result(result_upd, metadata_assessment)
 
 
 async def _handle_delete_brick(arguments: dict) -> dict:
