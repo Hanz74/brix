@@ -3,6 +3,7 @@ from __future__ import annotations
 from brix.db import BrixDB
 from brix.hmk_refactor import (
     promote_hmk_to_document_persistence_bricks,
+    register_hmk_prior_case_metadata,
     standardize_hmk_extract_flow,
     standardize_hmk_download_flow,
     rewrite_hmk_mark_processed_to_specialist_brick,
@@ -10,6 +11,7 @@ from brix.hmk_refactor import (
 )
 from brix.validator import PipelineValidator
 from brix.pipeline_store import PipelineStore
+from brix.semantic_retrieval import semantic_search
 
 
 def _hmk_single_pipeline() -> dict:
@@ -276,3 +278,48 @@ def test_fully_standardized_hmk_has_no_non_info_findings_on_standardized_steps(t
         and finding.severity != "info"
         for finding in result.findings
     )
+
+
+def test_register_hmk_prior_case_metadata_links_pipeline_bricks_and_semantics(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    standardize_hmk_download_flow(db=db)
+    standardize_hmk_extract_flow(db=db)
+    promote_hmk_to_document_persistence_bricks(db=db)
+
+    result = register_hmk_prior_case_metadata(db=db)
+
+    assert result["entry"]["name"] == "hmk-anchor-refactor-prior-case"
+    assert result["entry"]["entity_type"] == "decision"
+    assert result["entry"]["lifecycle_stage"] == "active"
+    assert result["semantic_document"]["entity_type"] == "decision"
+    assert result["semantic_document"]["document_type"] == "knowledge"
+    related = db.knowledge_context("decision", result["entry"]["id"])["related"]
+    related_pairs = {(item["relation_type"], item["entity_type"], item["entity"]["name"]) for item in related}
+    assert ("documents", "pipeline", "buddy-hmk-extract-single") in related_pairs
+    assert ("candidate_for_reuse", "brick", "source.download_to_file") in related_pairs
+    assert ("candidate_for_reuse", "brick", "document.persist_extraction_result") in related_pairs
+
+    search = semantic_search("HMK brick first orchestration prior case", db=db, project="buddy", limit=5)
+    assert any(match["entity_id"] == result["entry"]["id"] for match in search["matches"])
+
+
+def test_register_hmk_prior_case_metadata_is_idempotent(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    standardize_hmk_download_flow(db=db)
+    standardize_hmk_extract_flow(db=db)
+    promote_hmk_to_document_persistence_bricks(db=db)
+
+    first = register_hmk_prior_case_metadata(db=db)
+    second = register_hmk_prior_case_metadata(db=db)
+
+    assert first["entry"]["id"] == second["entry"]["id"]
+    assert len(db.knowledge_entity_list(entity_type="decision", project="buddy")) == 1
+    related = db.knowledge_context("decision", first["entry"]["id"])["related"]
+    assert len([item for item in related if item["relation_type"] == "documents"]) == 1
+    assert len([item for item in related if item["relation_type"] == "candidate_for_reuse"]) == 5

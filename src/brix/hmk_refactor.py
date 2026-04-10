@@ -1,10 +1,12 @@
 """Targeted DB-first refactors for HMK pipelines."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from brix.db import BrixDB
 from brix.pipeline_store import PipelineStore
+from brix.semantic_retrieval import sync_semantic_index
 
 
 def _step_by_id(steps: list[dict[str, Any]], step_id: str) -> dict[str, Any]:
@@ -198,3 +200,194 @@ def standardize_hmk_download_flow(
     raw["steps"] = steps
     store.save(raw, name=pipeline_name)
     return store.load_raw(pipeline_name)
+
+
+def _ensure_knowledge_entity(
+    db: BrixDB,
+    *,
+    entity_type: str,
+    name: str,
+    title: str,
+    raw_text: str = "",
+    summary: str = "",
+    rationale: str = "",
+    lifecycle_stage: str = "active",
+    status: str = "",
+    owner: str = "",
+    project: str = "",
+    tags: list[str] | None = None,
+    content: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    existing = db.knowledge_entity_get(name)
+    if existing is None:
+        return db.knowledge_entity_add(
+            entity_type,
+            name,
+            title,
+            raw_text=raw_text,
+            summary=summary,
+            rationale=rationale,
+            lifecycle_stage=lifecycle_stage,
+            status=status,
+            owner=owner,
+            project=project,
+            tags=tags or [],
+            content=content or {},
+        )
+    return db.knowledge_entity_update(
+        existing["id"],
+        title=title,
+        raw_text=raw_text,
+        summary=summary,
+        rationale=rationale,
+        lifecycle_stage=lifecycle_stage,
+        status=status,
+        owner=owner,
+        project=project,
+        tags=tags or [],
+        content=content or {},
+    ) or existing
+
+
+def _ensure_knowledge_link(
+    db: BrixDB,
+    *,
+    source_entity_type: str,
+    source_entity_id: str,
+    relation_type: str,
+    target_entity_type: str,
+    target_entity_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    canonical_source = db._knowledge_link_entity_canonical_id(source_entity_type, source_entity_id)
+    canonical_target = db._knowledge_link_entity_canonical_id(target_entity_type, target_entity_id)
+    for link in db.knowledge_link_list(entity_type=source_entity_type, entity_id=source_entity_id):
+        if (
+            link.get("source_entity_type") == source_entity_type
+            and link.get("source_entity_id") == canonical_source
+            and link.get("relation_type") == relation_type
+            and link.get("target_entity_type") == target_entity_type
+            and link.get("target_entity_id") == canonical_target
+        ):
+            return link
+    return db.knowledge_link_add(
+        source_entity_type,
+        source_entity_id,
+        relation_type,
+        target_entity_type,
+        target_entity_id,
+        metadata=metadata or {},
+    )
+
+
+def register_hmk_prior_case_metadata(
+    *,
+    db: BrixDB | None = None,
+    pipeline_name: str = "buddy-hmk-extract-single",
+) -> dict[str, Any]:
+    """Register the HMK brick-first migration as reusable prior-case knowledge."""
+
+    active_db = db if db is not None else BrixDB()
+    pipeline = active_db.get_pipeline(pipeline_name)
+    if pipeline is None:
+        raise ValueError(f"Pipeline '{pipeline_name}' not found")
+
+    prior_case = _ensure_knowledge_entity(
+        active_db,
+        entity_type="decision",
+        name="hmk-anchor-refactor-prior-case",
+        title="HMK anchor refactor proves brick-first orchestration",
+        raw_text=(
+            "HMK was reduced to orchestration by replacing helper and inline SQL workarounds with "
+            "reusable download, extract-preparation, extraction, and persistence bricks."
+        ),
+        summary=(
+            "Use HMK as the canonical prior case when a document pipeline must migrate from helper-heavy "
+            "logic to DB-first, brick-first orchestration."
+        ),
+        rationale=(
+            "The migration demonstrates that Brix should solve repeated document ingestion behavior through "
+            "reusable bricks and metadata-backed orchestration, not pipeline-local workaround code."
+        ),
+        lifecycle_stage="active",
+        status="accepted",
+        owner="platform",
+        project=str(pipeline.get("project") or "buddy"),
+        tags=["hmk", "prior-case", "brick-first", "db-first", "regression"],
+        content={
+            "pipeline_name": pipeline_name,
+            "migration_scope": [
+                "source.download_to_file",
+                "document.prepare_extractable_payload",
+                "extract.document_with_daigestr",
+                "document.persist_extraction_result",
+                "document.mark_specialist_processed",
+            ],
+            "replaced_patterns": [
+                "att_onedrive_save helper staging",
+                "flow.pipeline Daigestr glue",
+                "inline db.exec persistence SQL",
+                "inline specialist mutation SQL",
+            ],
+            "task_ids": ["T-6.1.1", "T-6.1.2", "T-6.2.1", "T-6.2.2", "T-6.3.1", "T-6.3.2"],
+        },
+    )
+
+    related_bricks = [
+        "source.download_to_file",
+        "document.prepare_extractable_payload",
+        "extract.document_with_daigestr",
+        "document.persist_extraction_result",
+        "document.mark_specialist_processed",
+    ]
+
+    links = [
+        _ensure_knowledge_link(
+            active_db,
+            source_entity_type="decision",
+            source_entity_id=prior_case["id"],
+            relation_type="documents",
+            target_entity_type="pipeline",
+            target_entity_id=pipeline_name,
+            metadata={"role": "canonical prior case"},
+        )
+    ]
+    for brick_name in related_bricks:
+        links.append(
+            _ensure_knowledge_link(
+                active_db,
+                source_entity_type="decision",
+                source_entity_id=prior_case["id"],
+                relation_type="candidate_for_reuse",
+                target_entity_type="brick",
+                target_entity_id=brick_name,
+                metadata={"pipeline_name": pipeline_name},
+            )
+        )
+
+    semantic_payload = {
+        "title": prior_case["title"],
+        "summary": prior_case["summary"],
+        "rationale": prior_case["rationale"],
+        "pipeline": pipeline_name,
+        "bricks": related_bricks,
+        "tags": prior_case["tags"],
+        "replaced_patterns": prior_case["content"].get("replaced_patterns", []),
+    }
+    semantic_doc = active_db.semantic_document_upsert(
+        entity_type="decision",
+        entity_id=prior_case["id"],
+        document_type="knowledge",
+        title=prior_case["title"],
+        text_content=json.dumps(semantic_payload, sort_keys=True),
+        project=str(pipeline.get("project") or "buddy"),
+        metadata={"name": prior_case["name"], "pipeline_name": pipeline_name},
+    )
+    sync_stats = sync_semantic_index(db=active_db)
+
+    return {
+        "entry": active_db.knowledge_entity_get(prior_case["id"]) or prior_case,
+        "links": links,
+        "semantic_document": semantic_doc,
+        "sync_stats": sync_stats,
+    }
