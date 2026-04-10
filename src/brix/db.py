@@ -832,6 +832,30 @@ _DDL = [
         )
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS semantic_document (
+        id            TEXT PRIMARY KEY,
+        entity_type   TEXT NOT NULL,
+        entity_id     TEXT NOT NULL,
+        document_type TEXT NOT NULL,
+        title         TEXT DEFAULT '',
+        text_content  TEXT NOT NULL,
+        project       TEXT DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        UNIQUE (entity_type, entity_id, document_type)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS semantic_embedding (
+        document_id         TEXT PRIMARY KEY,
+        strategy            TEXT NOT NULL,
+        token_weights_json  TEXT NOT NULL DEFAULT '{}',
+        token_count         INTEGER NOT NULL DEFAULT 0,
+        updated_at          TEXT NOT NULL
+    )
+    """,
     # T-BRIX-DB-05b: Named DB-Connections
     """
     CREATE TABLE IF NOT EXISTS connection (
@@ -4983,6 +5007,186 @@ class BrixDB:
             except (json.JSONDecodeError, TypeError):
                 pass
         row["metadata"] = row.pop("metadata_json", {})
+        return row
+
+    # ------------------------------------------------------------------
+    # Semantic Retrieval (E3 / W3.2)
+    # ------------------------------------------------------------------
+
+    def semantic_document_upsert(
+        self,
+        entity_type: str,
+        entity_id: str,
+        document_type: str,
+        *,
+        title: str = "",
+        text_content: str,
+        project: str = "",
+        metadata: Any = None,
+        document_id: Optional[str] = None,
+    ) -> dict:
+        """Upsert a semantic document and return the stored row."""
+        if not entity_type.strip():
+            raise ValueError("semantic_document entity_type is required")
+        if not entity_id.strip():
+            raise ValueError("semantic_document entity_id is required")
+        if not document_type.strip():
+            raise ValueError("semantic_document document_type is required")
+        if not text_content.strip():
+            raise ValueError("semantic_document text_content is required")
+
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT id FROM semantic_document
+                 WHERE entity_type=? AND entity_id=? AND document_type=?
+                """,
+                (entity_type.strip(), entity_id.strip(), document_type.strip()),
+            ).fetchone()
+            sid = existing["id"] if existing is not None else (document_id or str(uuid4()))
+            conn.execute(
+                """
+                INSERT INTO semantic_document (
+                    id, entity_type, entity_id, document_type, title, text_content,
+                    project, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entity_type, entity_id, document_type) DO UPDATE SET
+                    title=excluded.title,
+                    text_content=excluded.text_content,
+                    project=excluded.project,
+                    metadata_json=excluded.metadata_json,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    sid,
+                    entity_type.strip(),
+                    entity_id.strip(),
+                    document_type.strip(),
+                    title.strip(),
+                    text_content,
+                    project,
+                    json.dumps(metadata or {}),
+                    now,
+                    now,
+                ),
+            )
+        return self.semantic_document_get(sid) or {}
+
+    def semantic_document_get(self, document_id: str) -> Optional[dict]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM semantic_document WHERE id=?",
+                (document_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._semantic_document_row_to_dict(dict(row))
+
+    def semantic_document_list(
+        self,
+        *,
+        entity_types: Optional[list[str]] = None,
+        project: Optional[str] = None,
+        document_types: Optional[list[str]] = None,
+    ) -> list[dict]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if entity_types:
+            placeholders = ",".join("?" * len(entity_types))
+            clauses.append(f"entity_type IN ({placeholders})")
+            params.extend(entity_types)
+        if document_types:
+            placeholders = ",".join("?" * len(document_types))
+            clauses.append(f"document_type IN ({placeholders})")
+            params.extend(document_types)
+        if project is not None:
+            clauses.append("project=?")
+            params.append(project)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT * FROM semantic_document {where} ORDER BY updated_at DESC",
+                params,
+            ).fetchall()
+        return [self._semantic_document_row_to_dict(dict(row)) for row in rows]
+
+    def semantic_embedding_upsert(
+        self,
+        document_id: str,
+        *,
+        strategy: str,
+        token_weights: dict[str, float],
+    ) -> dict:
+        if not document_id.strip():
+            raise ValueError("semantic_embedding document_id is required")
+        if not strategy.strip():
+            raise ValueError("semantic_embedding strategy is required")
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO semantic_embedding (
+                    document_id, strategy, token_weights_json, token_count, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(document_id) DO UPDATE SET
+                    strategy=excluded.strategy,
+                    token_weights_json=excluded.token_weights_json,
+                    token_count=excluded.token_count,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    document_id.strip(),
+                    strategy.strip(),
+                    json.dumps(token_weights, sort_keys=True),
+                    len(token_weights),
+                    now,
+                ),
+            )
+        return self.semantic_embedding_get(document_id) or {}
+
+    def semantic_embedding_get(self, document_id: str) -> Optional[dict]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM semantic_embedding WHERE document_id=?",
+                (document_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._semantic_embedding_row_to_dict(dict(row))
+
+    def semantic_embedding_list(self) -> list[dict]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM semantic_embedding ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._semantic_embedding_row_to_dict(dict(row)) for row in rows]
+
+    @staticmethod
+    def _semantic_document_row_to_dict(row: dict) -> dict:
+        raw = row.get("metadata_json")
+        if isinstance(raw, str):
+            try:
+                row["metadata_json"] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        row["metadata"] = row.pop("metadata_json", {})
+        return row
+
+    @staticmethod
+    def _semantic_embedding_row_to_dict(row: dict) -> dict:
+        raw = row.get("token_weights_json")
+        if isinstance(raw, str):
+            try:
+                row["token_weights_json"] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        row["token_weights"] = row.pop("token_weights_json", {})
         return row
 
     # ------------------------------------------------------------------
