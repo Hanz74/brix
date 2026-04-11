@@ -2,20 +2,23 @@
 from __future__ import annotations
 
 import base64
-import os
 import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from brix.config import config
+from brix.config import BrixConfig, config
 from brix.runners.base import BaseRunner, _coerce_bool
 from brix.serialization import sanitize_for_json
 
 
 def _daigestr_base_url() -> str:
-    return os.environ.get("BRIX_DAIGESTR_URL") or os.environ.get("BRIX_MARKITDOWN_URL", "http://markitdown-mcp:8081")
+    return BrixConfig.reload().DAIGESTR_URL
+
+
+def _daigestr_default_endpoint() -> str:
+    return BrixConfig.reload().DAIGESTR_CONVERT_ENDPOINT
 
 
 def _normalize_payload(step: Any, context: Any) -> dict[str, Any]:
@@ -135,7 +138,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
             request_payload["template"] = payload["template"]
 
         base_url = _daigestr_base_url().rstrip("/")
-        endpoint = str(payload.get("endpoint") or "/v1/convert")
+        endpoint = str(payload.get("endpoint") or _daigestr_default_endpoint())
         if not endpoint.startswith("/"):
             endpoint = f"/{endpoint}"
         url = f"{base_url}{endpoint}"

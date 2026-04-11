@@ -1,6 +1,6 @@
 """Tests for MarkitdownRunner.
 
-All tests mock httpx — no real markitdown-mcp service calls are made.
+All tests mock httpx — no real Daigestr service calls are made.
 """
 import asyncio
 import base64
@@ -9,8 +9,6 @@ import os
 import tempfile
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from brix.runners.markitdown import MarkitdownRunner, _looks_like_file_path
 
@@ -55,7 +53,7 @@ def _make_runner() -> MarkitdownRunner:
 
 
 def _run(coro: Any) -> Any:
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +372,7 @@ def test_input_from_context_last_output():
 
 
 def test_custom_markitdown_url_from_env():
-    """BRIX_MARKITDOWN_URL env var is respected."""
+    """BRIX_DAIGESTR_URL env var is respected."""
     raw_b64 = base64.b64encode(b"data").decode("ascii")
     step = _Step(input=raw_b64)
     ctx = _Context()
@@ -386,7 +384,7 @@ def test_custom_markitdown_url_from_env():
         captured_urls.append(url)
         return mock_resp
 
-    with patch.dict(os.environ, {"BRIX_MARKITDOWN_URL": "http://custom-host:9999"}):
+    with patch.dict(os.environ, {"BRIX_DAIGESTR_URL": "http://custom-host:9999"}):
         with patch("httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -398,6 +396,43 @@ def test_custom_markitdown_url_from_env():
 
     assert result["success"] is True
     assert captured_urls[0].startswith("http://custom-host:9999")
+
+
+def test_custom_markitdown_endpoints_from_env():
+    """Daigestr endpoint env vars are respected for convert and extract flows."""
+    raw_b64 = base64.b64encode(b"data").decode("ascii")
+    ctx = _Context()
+    captured_urls: list[str] = []
+    mock_resp = _mock_response(200, {"markdown": "ok", "metadata": {}, "extracted": {}})
+
+    async def fake_post(url, **kwargs):
+        captured_urls.append(url)
+        return mock_resp
+
+    with patch.dict(
+        os.environ,
+        {
+            "BRIX_DAIGESTR_URL": "http://custom-host:9999",
+            "BRIX_DAIGESTR_CONVERT_ENDPOINT": "/custom/convert",
+            "BRIX_DAIGESTR_EXTRACT_ENDPOINT": "/custom/extract",
+        },
+    ):
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=fake_post)
+            mock_client_cls.return_value = mock_client
+
+            convert_result = _run(_make_runner().execute(_Step(input=raw_b64, auto_extract=False), ctx))
+            extract_result = _run(_make_runner().execute(_Step(input=raw_b64, auto_extract=True), ctx))
+
+    assert convert_result["success"] is True
+    assert extract_result["success"] is True
+    assert captured_urls == [
+        "http://custom-host:9999/custom/convert",
+        "http://custom-host:9999/custom/extract",
+    ]
 
 
 # ---------------------------------------------------------------------------

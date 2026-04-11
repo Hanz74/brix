@@ -1,4 +1,4 @@
-"""Markitdown runner — converts files to Markdown via markitdown-mcp service."""
+"""Markitdown runner — converts files to Markdown via the Daigestr HTTP service."""
 import base64
 import os
 import time
@@ -7,18 +7,28 @@ from typing import Any
 
 import httpx
 
-from brix.config import config
+from brix.config import BrixConfig, config
 from brix.runners.base import BaseRunner, _coerce_bool
 
 
 def _get_markitdown_base_url() -> str:
-    """Return the markitdown service base URL from env or default."""
-    return os.environ.get("BRIX_MARKITDOWN_URL", "http://markitdown-mcp:8081")
+    """Return the Daigestr conversion service base URL from env or default."""
+    return BrixConfig.reload().DAIGESTR_URL
+
+
+def _get_markitdown_convert_endpoint() -> str:
+    """Return the default Daigestr conversion endpoint."""
+    return BrixConfig.reload().DAIGESTR_CONVERT_ENDPOINT
+
+
+def _get_markitdown_extract_endpoint() -> str:
+    """Return the default Daigestr extraction endpoint."""
+    return BrixConfig.reload().DAIGESTR_EXTRACT_ENDPOINT
 
 
 class MarkitdownRunner(BaseRunner):
     """Converts a file (or base64-encoded content) to Markdown using the
-    markitdown-mcp HTTP service.
+    Daigestr HTTP service.
 
     Config parameters:
         input      — File path on disk OR base64-encoded file content (string).
@@ -143,7 +153,9 @@ class MarkitdownRunner(BaseRunner):
 
         # Choose endpoint
         base_url = _get_markitdown_base_url().rstrip("/")
-        endpoint = "/v1/extract" if auto_extract else "/v1/convert"
+        endpoint = _get_markitdown_extract_endpoint() if auto_extract else _get_markitdown_convert_endpoint()
+        if not endpoint.startswith("/"):
+            endpoint = f"/{endpoint}"
         url = f"{base_url}{endpoint}"
 
         timeout_seconds = config.TIMEOUT_MARKITDOWN
@@ -160,7 +172,7 @@ class MarkitdownRunner(BaseRunner):
                     self.report_progress(0.0, f"error: HTTP {response.status_code}")
                     return {
                         "success": False,
-                        "error": f"Markitdown service error HTTP {response.status_code}: {response.text[:300]}",
+                        "error": f"Daigestr service error HTTP {response.status_code}: {response.text[:300]}",
                         "status_code": response.status_code,
                         "duration": time.monotonic() - start,
                     }
@@ -174,14 +186,14 @@ class MarkitdownRunner(BaseRunner):
             self.report_progress(0.0, "error: service unreachable")
             return {
                 "success": False,
-                "error": f"Markitdown service unreachable at {base_url}: {exc}",
+                "error": f"Daigestr service unreachable at {base_url}: {exc}",
                 "duration": time.monotonic() - start,
             }
         except httpx.TimeoutException:
             self.report_progress(0.0, "error: timeout")
             return {
                 "success": False,
-                "error": f"Markitdown service timed out after {timeout_seconds}s",
+                "error": f"Daigestr service timed out after {timeout_seconds}s",
                 "duration": time.monotonic() - start,
             }
         except httpx.RequestError as exc:

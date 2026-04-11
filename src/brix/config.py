@@ -59,6 +59,26 @@ class BrixConfig:
             "BRIX_LEGACY_HELPERS_DIR", "/app/helpers"
         )
 
+        #: Base URL of the Daigestr conversion / extraction service
+        self.DAIGESTR_URL: str = os.environ.get(
+            "BRIX_DAIGESTR_URL", "http://daigestr:8081"
+        )
+
+        #: Default Daigestr endpoint for conversion-style requests
+        self.DAIGESTR_CONVERT_ENDPOINT: str = os.environ.get(
+            "BRIX_DAIGESTR_CONVERT_ENDPOINT", "/v1/convert"
+        )
+
+        #: Default Daigestr endpoint for extraction-style requests
+        self.DAIGESTR_EXTRACT_ENDPOINT: str = os.environ.get(
+            "BRIX_DAIGESTR_EXTRACT_ENDPOINT", "/v1/extract"
+        )
+
+        #: Default named DB connection for document persistence flows
+        self.DEFAULT_DOCUMENT_CONNECTION: str = os.environ.get(
+            "BRIX_DEFAULT_DOCUMENT_CONNECTION", "buddy-db"
+        )
+
         # -----------------------------------------------------------------------
         # Timeouts (seconds)
         # -----------------------------------------------------------------------

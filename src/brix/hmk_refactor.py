@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from brix.config import BrixConfig
 from brix.db import BrixDB
 from brix.pipeline_store import PipelineStore
 from brix.semantic_retrieval import sync_semantic_index
@@ -14,6 +15,13 @@ def _step_by_id(steps: list[dict[str, Any]], step_id: str) -> dict[str, Any]:
         if isinstance(step, dict) and step.get("id") == step_id:
             return step
     raise ValueError(f"Step '{step_id}' not found")
+
+
+def _preserve_connection(config: dict[str, Any], *, fallback: str | None = None) -> str:
+    connection = config.get("connection")
+    if isinstance(connection, str) and connection.strip():
+        return connection.strip()
+    return fallback or BrixConfig.reload().DEFAULT_DOCUMENT_CONNECTION
 
 
 def rewrite_hmk_save_results_to_persistence_brick(
@@ -41,9 +49,10 @@ def rewrite_hmk_save_results_to_persistence_brick(
     if "replace(\"'\", \"''\")" not in current_query:
         raise ValueError("HMK 'save_results' no longer matches interpolated SQL workaround shape")
 
+    connection_name = _preserve_connection(config)
     save_results["type"] = "document.persist_extraction_result"
     save_results["config"] = {
-        "connection": "buddy-db",
+        "connection": connection_name,
         "document_id": "{{ input.item.id }}",
         "extraction_result": "{{ extract.output | tojson }}",
         "content_hash": "{{ download_save.output.content_hash | default('') }}",
@@ -80,9 +89,10 @@ def rewrite_hmk_mark_processed_to_specialist_brick(
     if "array_append" not in current_query or "hmk_extracted" not in current_query:
         raise ValueError("HMK 'mark_processed' no longer matches inline specialist mutation shape")
 
+    connection_name = _preserve_connection(config)
     mark_processed["type"] = "document.mark_specialist_processed"
     mark_processed["config"] = {
-        "connection": "buddy-db",
+        "connection": connection_name,
         "document_id": "{{ input.item.id }}",
         "specialist_name": "hmk_extracted",
     }

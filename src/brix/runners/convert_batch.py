@@ -1,26 +1,29 @@
-"""Convert Batch runner — batch-convert files via MarkItDown HTTP API."""
+"""Convert Batch runner — batch-convert files via the Daigestr HTTP API."""
 import asyncio
 import base64
-import glob as globmod
-import os
 import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from brix.config import config
+from brix.config import BrixConfig, config
 from brix.runners.base import BaseRunner
 from brix.runners.cli import parse_timeout
 
 
 def _get_markitdown_base_url() -> str:
-    """Return the markitdown service base URL from env or default."""
-    return os.environ.get("BRIX_MARKITDOWN_URL", "http://markitdown-mcp:8081")
+    """Return the Daigestr conversion service base URL from env or default."""
+    return BrixConfig.reload().DAIGESTR_URL
+
+
+def _get_markitdown_convert_endpoint() -> str:
+    """Return the default Daigestr conversion endpoint."""
+    return BrixConfig.reload().DAIGESTR_CONVERT_ENDPOINT
 
 
 class ConvertBatchRunner(BaseRunner):
-    """Batch-convert files in a directory via the MarkItDown HTTP service.
+    """Batch-convert files in a directory via the Daigestr HTTP service.
 
     Pipeline YAML example::
 
@@ -144,7 +147,10 @@ class ConvertBatchRunner(BaseRunner):
         self.report_progress(0.0, f"Converting {len(files)} files")
 
         base_url = _get_markitdown_base_url().rstrip("/")
-        url = f"{base_url}/v1/convert"
+        endpoint = _get_markitdown_convert_endpoint()
+        if not endpoint.startswith("/"):
+            endpoint = f"/{endpoint}"
+        url = f"{base_url}{endpoint}"
         timeout_http = config.TIMEOUT_MARKITDOWN
 
         details: list[dict] = []

@@ -200,6 +200,23 @@ def test_promote_hmk_to_document_persistence_bricks(tmp_path):
     )
 
 
+def test_promote_hmk_preserves_existing_connection_name(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    pipeline = _hmk_single_pipeline()
+    for step in pipeline["steps"]:
+        if step["id"] in {"save_results", "mark_processed"}:
+            step["config"]["connection"] = "custom-docs-db"
+    store.save(pipeline)
+
+    updated = promote_hmk_to_document_persistence_bricks(db=db)
+
+    save_results = next(step for step in updated["steps"] if step["id"] == "save_results")
+    mark_processed = next(step for step in updated["steps"] if step["id"] == "mark_processed")
+    assert save_results["config"]["connection"] == "custom-docs-db"
+    assert mark_processed["config"]["connection"] == "custom-docs-db"
+
+
 def test_standardize_hmk_extract_flow(tmp_path):
     db = BrixDB(db_path=tmp_path / "brix.db")
     store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
