@@ -151,8 +151,6 @@ def _capture_environment() -> dict[str, Any]:
     }
 
     try:
-        from importlib.metadata import packages_distributions
-
         dists: list[str] = []
         try:
             import importlib.metadata as _imeta
@@ -165,6 +163,14 @@ def _capture_environment() -> dict[str, Any]:
                 version = dist.metadata.get("Version") or ""
                 if name:
                     dists.append(f"{name}=={version}")
+        except Exception:
+            pass
+        try:
+            from brix import __version__ as _brix_version
+
+            dists = [entry for entry in dists if not entry.lower().startswith("brix==")]
+            dists.insert(0, f"brix=={_brix_version}")
+            snapshot["brix_version"] = _brix_version
         except Exception:
             pass
         snapshot["installed_packages"] = dists[:200]

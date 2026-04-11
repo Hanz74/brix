@@ -25,6 +25,16 @@ def _daigestr_default_mode() -> str:
     return BrixConfig.reload().DAIGESTR_MODE
 
 
+def _first_mapping(mapping: Any, *keys: str) -> Any:
+    if not isinstance(mapping, dict):
+        return None
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
 def _normalize_payload(step: Any, context: Any) -> dict[str, Any]:
     params = getattr(step, "params", None)
     if isinstance(params, dict) and params:
@@ -178,17 +188,54 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         except Exception as exc:
             return {"success": False, "error": str(exc), "duration": time.monotonic() - start}
 
-        normalized = data.get("normalized")
-        if not isinstance(normalized, dict):
-            normalized = data.get("extracted") if isinstance(data.get("extracted"), dict) else {}
+        meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+        normalized = data.get("normalized") if isinstance(data.get("normalized"), dict) else {}
+        extracted = data.get("extracted") if isinstance(data.get("extracted"), dict) else {}
+        if not normalized:
+            normalized = extracted
+
+        document_type = (
+            _first_mapping(meta, "document_type")
+            or _first_mapping(data, "document_type")
+            or _first_mapping(normalized, "document_type", "doc_type")
+            or _first_mapping(extracted, "document_type", "doc_type")
+            or ""
+        )
+        quality_score = (
+            _first_mapping(meta, "quality_score", "final_quality_score", "initial_quality_score")
+            or _first_mapping(data, "quality_score", "_quality_score")
+            or _first_mapping(normalized, "quality_score", "_quality_score")
+            or _first_mapping(extracted, "quality_score", "_quality_score")
+        )
+        template_name = (
+            _first_mapping(meta, "template_used", "template")
+            or _first_mapping(data, "template")
+        )
 
         result = sanitize_for_json(
             {
                 "normalized": normalized,
-                "document_type": data.get("document_type") or normalized.get("document_type") or "",
-                "quality_score": data.get("quality_score", data.get("_quality_score")),
-                "_quality_score": data.get("_quality_score", data.get("quality_score")),
+                "document_type": document_type,
+                "quality_score": quality_score,
+                "_quality_score": quality_score,
                 "markdown": data.get("markdown", ""),
+                "_meta": {
+                    "template": template_name,
+                    "document_type_confidence": _first_mapping(meta, "document_type_confidence"),
+                    "quality_grade": _first_mapping(meta, "quality_grade"),
+                    "retry_applied": _first_mapping(meta, "retry_applied"),
+                    "retry_reason": _first_mapping(meta, "retry_reason"),
+                    "initial_mode": _first_mapping(meta, "initial_mode"),
+                    "final_mode": _first_mapping(meta, "final_mode"),
+                    "initial_quality_score": _first_mapping(meta, "initial_quality_score"),
+                    "final_quality_score": _first_mapping(meta, "final_quality_score"),
+                    "retry_threshold_used": _first_mapping(meta, "retry_threshold_used"),
+                    "request_id": _first_mapping(meta, "request_id"),
+                    "attempt_number": _first_mapping(meta, "attempt_number"),
+                    "attempt_count": _first_mapping(meta, "attempt_count"),
+                    "attempt_mode": _first_mapping(meta, "attempt_mode"),
+                    "pipeline_steps": meta.get("pipeline_steps") if isinstance(meta.get("pipeline_steps"), list) else None,
+                },
                 "raw": data,
                 "warnings": data.get("warnings", []),
             }

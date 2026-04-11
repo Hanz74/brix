@@ -381,6 +381,70 @@ def test_migration_registers_document_extract_bricks(tmp_path):
     assert db.brick_definitions_get("extract.document_with_daigestr") is not None
 
 
+def test_extract_document_with_daigestr_uses_meta_as_canonical_contract(monkeypatch, tmp_path):
+    file_path = tmp_path / "meta-contract.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "bank_statement",
+                    "document_type_confidence": 0.99,
+                    "template_used": "bank_statement",
+                    "quality_score": 0.52,
+                    "quality_grade": "medium",
+                    "retry_applied": True,
+                    "retry_reason": "low_quality",
+                    "initial_mode": "default",
+                    "final_mode": "full",
+                    "initial_quality_score": 0.52,
+                    "final_quality_score": 0.8045,
+                    "retry_threshold_used": 0.75,
+                    "request_id": "req-123",
+                    "attempt_number": 2,
+                    "attempt_count": 2,
+                    "attempt_mode": "full",
+                    "pipeline_steps": ["ocr", "dual_pass_validation"],
+                },
+                "extracted": {"iban": "DE62..."},
+                "normalized": {"iban_normalized": "DE62..."},
+                "markdown": "# statement",
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    data = result["data"]
+    assert data["document_type"] == "bank_statement"
+    assert data["quality_score"] == 0.52
+    assert data["_quality_score"] == 0.52
+    assert data["_meta"]["template"] == "bank_statement"
+    assert data["_meta"]["final_quality_score"] == 0.8045
+    assert data["_meta"]["pipeline_steps"] == ["ocr", "dual_pass_validation"]
+
+
 def test_v90_runs_via_normal_migration_loop(tmp_path, monkeypatch):
     db = BrixDB(db_path=tmp_path / "migration_loop.db")
     fake_v90 = {

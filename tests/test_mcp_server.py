@@ -1963,6 +1963,45 @@ class TestLiveRunStatusAndResume:
             shutil.rmtree(run_dir, ignore_errors=True)
 
     @pytest.mark.asyncio
+    async def test_get_run_status_prefers_finished_history_over_stale_live_run_json(self):
+        """Finished history rows should win over stale live run.json state."""
+        import json as _json
+        import time as _time
+        from brix.context import WORKDIR_BASE
+        from brix.history import RunHistory
+
+        run_id = "run-stale-live-status"
+        run_dir = WORKDIR_BASE / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "run.json").write_text(
+            _json.dumps(
+                {
+                    "run_id": run_id,
+                    "pipeline": "stale-test",
+                    "input": {},
+                    "status": "running",
+                    "completed_steps": [],
+                    "last_heartbeat": _time.time() - 600,
+                }
+            )
+        )
+
+        history = RunHistory()
+        history.record_start(run_id=run_id, pipeline="stale-test", version="1.0.0", input_data={})
+        history.record_finish(run_id=run_id, success=True, duration=1.0, steps={}, result_summary={"status": "ok"})
+
+        try:
+            result = await _handle_get_run_status({"run_id": run_id})
+            assert result["success"] is True
+            assert result["source"] == "history"
+            assert result["run_id"] == run_id
+            assert result["result"] == {"status": "ok"}
+        finally:
+            import shutil
+
+            shutil.rmtree(run_dir, ignore_errors=True)
+
+    @pytest.mark.asyncio
     async def test_run_pipeline_resume_param(self, tmp_path, monkeypatch):
         """brix__run_pipeline tool schema exposes resume_run_id parameter."""
         tool = next(t for t in BRIX_TOOLS if t.name == "brix__run_pipeline")

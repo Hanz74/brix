@@ -14,13 +14,11 @@ from brix.mcp_handlers._shared import (
     _load_pipeline_yaml,
     _background_runs,
     _ensure_watchdog,
-    _pipeline_dir,
 )
 from brix.config import config
 from brix.engine import PipelineEngine
 from brix.mcp_pool import McpConnectionPool
 from brix.history import RunHistory
-from brix.pipeline_store import PipelineStore
 from brix.db import BrixDB
 from brix.validator import PipelineValidator
 
@@ -351,6 +349,23 @@ async def _handle_get_run_status(arguments: dict) -> dict:
             with open(run_json_path) as f:
                 live = _json.load(f)
             if live.get("status") == "running":
+                history = RunHistory()
+                history_run = history.get_run(run_id)
+                if history_run and history_run.get("finished_at") is not None:
+                    run_data = dict(history_run)
+                    if "success" in run_data:
+                        run_data["success"] = bool(run_data["success"])
+                    result_output, truncated = history.get_result(run_id)
+                    if truncated:
+                        run_data["result"] = "(truncated, use get_run_log for full output)"
+                    elif result_output is not None:
+                        run_data["result"] = result_output
+                    else:
+                        run_data["result"] = None
+                        run_data["result_hint"] = (
+                            "Result is empty. Set persist_output: true on steps to capture outputs."
+                        )
+                    return {"success": True, "source": "history", **run_data}
                 # Hang detection: no heartbeat for >5 minutes
                 heartbeat = live.get("last_heartbeat", 0)
                 age = _time.time() - heartbeat if heartbeat else 0
@@ -913,7 +928,7 @@ async def _handle_replay_step(arguments: dict) -> dict:
     try:
         import yaml as _yaml
         data = _load_pipeline_yaml(pipeline_name)
-        pipeline = _loader.load_from_string(_yaml.dump(data))
+        _loader.load_from_string(_yaml.dump(data))
     except Exception as exc:
         return {"success": False, "error": f"Could not load pipeline: {exc}"}
 
