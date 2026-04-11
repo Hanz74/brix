@@ -75,6 +75,20 @@ def test_alternative_metadata_fields_satisfy_requirement():
     assert violations == []
 
 
+def test_reuse_status_satisfies_decision_outcome_requirement():
+    violations = evaluate_required_metadata(
+        "reuse",
+        {
+            "project": "buddy",
+            "title": "Reuse review",
+            "owner": "team-brix",
+            "status": "new_component_justified",
+            "lifecycle_stage": "active",
+        },
+    )
+    assert violations == []
+
+
 def test_enforcement_severity_map_is_explicit():
     severity_map = enforcement_severity_map()
     assert severity_map["pipeline"]["project"]["active"] == "error"

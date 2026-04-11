@@ -89,7 +89,7 @@ REQUIRED_METADATA_MATRIX: dict[str, tuple[MetadataRequirement, ...]] = {
         MetadataRequirement("project", "Project ownership."),
         MetadataRequirement("title", "Readable title."),
         MetadataRequirement("owner", "Responsible owner or team."),
-        MetadataRequirement("decision_outcome", "Explicit reuse outcome."),
+        MetadataRequirement("decision_outcome", "Explicit reuse outcome.", alternatives=("status",)),
     ),
 }
 

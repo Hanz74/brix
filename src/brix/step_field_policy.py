@@ -160,8 +160,13 @@ def explicit_runner_specific_fields(step: Step) -> dict[str, Any]:
     in the submitted/persisted shape are migration debt signals.
     """
     explicit_fields = getattr(step, "model_fields_set", set())
+    config = getattr(step, "config", None)
+    config_dict = config if isinstance(config, dict) else {}
     return {
         field: getattr(step, field)
         for field in sorted(RUNNER_SPECIFIC_TOP_LEVEL_FIELDS)
-        if field in explicit_fields and getattr(step, field) is not None
+        if field in explicit_fields
+        and getattr(step, field) is not None
+        and getattr(step, field) != Step.model_fields[field].default
+        and config_dict.get(field) != getattr(step, field)
     }

@@ -37,6 +37,24 @@ def test_explicit_runner_specific_fields_capture_compatibility_inputs() -> None:
     }
 
 
+def test_explicit_runner_specific_fields_ignore_db_mirrored_defaults_and_config() -> None:
+    step = Step(
+        id="load",
+        type="db.query",
+        method="GET",
+        approval_timeout="24h",
+        on_timeout="stop",
+        max_iterations=100,
+        fetch_all_pages=False,
+        persist=False,
+        connection="main",
+        query="SELECT 1",
+        config={"connection": "main", "query": "SELECT 1"},
+    )
+
+    assert explicit_runner_specific_fields(step) == {}
+
+
 def test_materialized_step_surfaces_runner_specific_policy_flags() -> None:
     materialized = materialize_step(Step(id="call", type="mcp.call", server="cody", tool="get_tips"))
 
@@ -65,6 +83,32 @@ def test_validator_does_not_warn_when_runner_fields_are_in_config() -> None:
             name="field-policy",
             steps=[
                 Step(id="load", type="db.query", config={"connection": "main", "query": "SELECT 1"}),
+            ],
+        ),
+        level="standard",
+    )
+
+    assert not any(finding.code == "RUNNER_TOP_LEVEL_FIELD_COMPAT" for finding in result.findings)
+
+
+def test_validator_ignores_db_mirrored_runner_defaults() -> None:
+    result = PipelineValidator().validate(
+        Pipeline(
+            name="field-policy",
+            steps=[
+                Step(
+                    id="load",
+                    type="db.query",
+                    method="GET",
+                    approval_timeout="24h",
+                    on_timeout="stop",
+                    max_iterations=100,
+                    fetch_all_pages=False,
+                    persist=False,
+                    connection="main",
+                    query="SELECT 1",
+                    config={"connection": "main", "query": "SELECT 1"},
+                ),
             ],
         ),
         level="standard",
