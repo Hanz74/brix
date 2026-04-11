@@ -169,6 +169,10 @@ def standardize_hmk_extract_flow(
         "language": "{{ prepare_extractable.output.language | default('de') }}",
         "mime_type": "{{ prepare_extractable.output.mime_type | default('') }}",
         "metadata": "{{ prepare_extractable.output.metadata }}",
+        "mode": "default",
+        "retry_on_low_quality": True,
+        "quality_retry_threshold": 0.75,
+        "quality_retry_mode": "full",
     }
     extract_step["params"] = {}
     extract_step["when"] = "{{ prepare_extractable.output is defined }}"

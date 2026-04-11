@@ -1313,6 +1313,19 @@ SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR = BrickSchema(
         "metadata": BrickParam(type="object", description="Optional extra metadata"),
         "endpoint": BrickParam(type="string", description="Optional Daigestr endpoint override"),
         "template": BrickParam(type="string", description="Optional extraction template"),
+        "mode": BrickParam(type="string", description="Optional Daigestr mode override"),
+        "retry_on_low_quality": BrickParam(
+            type="boolean",
+            description="Retry with a stronger Daigestr mode when the initial quality is below threshold",
+        ),
+        "quality_retry_threshold": BrickParam(
+            type="number",
+            description="Quality threshold below which Daigestr retries the extraction",
+        ),
+        "quality_retry_mode": BrickParam(
+            type="string",
+            description="Target mode for the low-quality retry path",
+        ),
         "mime_type": BrickParam(type="string", description="Optional MIME type hint"),
     },
     input_type="document_extract_input",

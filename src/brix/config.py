@@ -79,6 +79,26 @@ class BrixConfig:
             "BRIX_DEFAULT_DOCUMENT_CONNECTION", "buddy-db"
         )
 
+        #: Default Daigestr mode for document extraction requests
+        self.DAIGESTR_MODE: str = os.environ.get(
+            "BRIX_DAIGESTR_MODE", "default"
+        )
+
+        #: Whether low-quality Daigestr results should be retried automatically
+        self.DAIGESTR_RETRY_ON_LOW_QUALITY: bool = os.environ.get(
+            "BRIX_DAIGESTR_RETRY_ON_LOW_QUALITY", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
+        #: Quality threshold below which Daigestr should retry with a stronger mode
+        self.DAIGESTR_QUALITY_RETRY_THRESHOLD: float = float(
+            os.environ.get("BRIX_DAIGESTR_QUALITY_RETRY_THRESHOLD", "0.75")
+        )
+
+        #: Retry mode used when low-quality fallback is enabled
+        self.DAIGESTR_QUALITY_RETRY_MODE: str = os.environ.get(
+            "BRIX_DAIGESTR_QUALITY_RETRY_MODE", "full"
+        )
+
         # -----------------------------------------------------------------------
         # Timeouts (seconds)
         # -----------------------------------------------------------------------

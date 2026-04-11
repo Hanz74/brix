@@ -21,6 +21,10 @@ def _daigestr_default_endpoint() -> str:
     return BrixConfig.reload().DAIGESTR_CONVERT_ENDPOINT
 
 
+def _daigestr_default_mode() -> str:
+    return BrixConfig.reload().DAIGESTR_MODE
+
+
 def _normalize_payload(step: Any, context: Any) -> dict[str, Any]:
     params = getattr(step, "params", None)
     if isinstance(params, dict) and params:
@@ -100,6 +104,19 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                 "metadata": {"type": "object", "description": "Optional extra metadata"},
                 "endpoint": {"type": "string", "description": "Optional Daigestr endpoint override"},
                 "template": {"type": "string", "description": "Optional extraction template"},
+                "mode": {"type": "string", "description": "Optional Daigestr mode override"},
+                "retry_on_low_quality": {
+                    "type": "boolean",
+                    "description": "Retry extraction with a stronger mode when quality is below threshold",
+                },
+                "quality_retry_threshold": {
+                    "type": "number",
+                    "description": "Quality threshold below which Daigestr retries the extraction",
+                },
+                "quality_retry_mode": {
+                    "type": "string",
+                    "description": "Target mode used for low-quality retry escalation",
+                },
                 "mime_type": {"type": "string", "description": "Optional MIME type hint"},
             },
             "required": [],
@@ -132,7 +149,17 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
             "language": payload.get("language") or "de",
             "mime_type": payload.get("mime_type") or "",
             "metadata": payload.get("metadata") or {},
+            "mode": payload.get("mode") or _daigestr_default_mode(),
             "auto_extract": True,
+            "retry_on_low_quality": _coerce_bool(
+                payload.get("retry_on_low_quality", BrixConfig.reload().DAIGESTR_RETRY_ON_LOW_QUALITY)
+            ),
+            "quality_retry_threshold": float(
+                payload.get("quality_retry_threshold", BrixConfig.reload().DAIGESTR_QUALITY_RETRY_THRESHOLD)
+            ),
+            "quality_retry_mode": str(
+                payload.get("quality_retry_mode") or BrixConfig.reload().DAIGESTR_QUALITY_RETRY_MODE
+            ),
         }
         if payload.get("template"):
             request_payload["template"] = payload["template"]

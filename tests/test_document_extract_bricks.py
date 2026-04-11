@@ -67,6 +67,10 @@ def test_extract_document_with_daigestr_normalizes_response(monkeypatch, tmp_pat
         async def post(self, url, json, headers):
             assert url.endswith("/v1/convert")
             assert json["auto_extract"] is True
+            assert json["mode"] == "default"
+            assert json["retry_on_low_quality"] is True
+            assert json["quality_retry_threshold"] == 0.75
+            assert json["quality_retry_mode"] == "full"
             assert json["base64"]
             assert json["content"]
             return FakeResponse()
@@ -146,6 +150,7 @@ def test_extract_document_with_daigestr_prefers_step_params(monkeypatch, tmp_pat
             assert url.endswith("/v1/convert")
             assert json["auto_extract"] is True
             assert json["filename"] == "params.pdf"
+            assert json["mode"] == "default"
             return FakeResponse()
 
     monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
@@ -259,6 +264,104 @@ def test_extract_document_with_daigestr_uses_env_default_endpoint(monkeypatch, t
 
     assert result["success"] is True
     assert captured["url"] == "http://daigestr:9999/custom/convert"
+
+
+def test_extract_document_with_daigestr_uses_retry_env_defaults(monkeypatch, tmp_path):
+    file_path = tmp_path / "retry-defaults.pdf"
+    file_path.write_bytes(b"pdf-content")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"normalized": {"vendor_name": "Retry Defaults"}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+    monkeypatch.setenv("BRIX_DAIGESTR_MODE", "default")
+    monkeypatch.setenv("BRIX_DAIGESTR_RETRY_ON_LOW_QUALITY", "true")
+    monkeypatch.setenv("BRIX_DAIGESTR_QUALITY_RETRY_THRESHOLD", "0.75")
+    monkeypatch.setenv("BRIX_DAIGESTR_QUALITY_RETRY_MODE", "full")
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={"file_bytes_path": str(file_path)},
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    assert captured["json"]["mode"] == "default"
+    assert captured["json"]["retry_on_low_quality"] is True
+    assert captured["json"]["quality_retry_threshold"] == 0.75
+    assert captured["json"]["quality_retry_mode"] == "full"
+
+
+def test_extract_document_with_daigestr_prefers_explicit_retry_settings(monkeypatch, tmp_path):
+    file_path = tmp_path / "retry-explicit.pdf"
+    file_path.write_bytes(b"pdf-content")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"normalized": {"vendor_name": "Retry Explicit"}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={
+            "file_bytes_path": str(file_path),
+            "mode": "default",
+            "retry_on_low_quality": True,
+            "quality_retry_threshold": 0.8,
+            "quality_retry_mode": "full",
+        },
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    assert captured["json"]["mode"] == "default"
+    assert captured["json"]["retry_on_low_quality"] is True
+    assert captured["json"]["quality_retry_threshold"] == 0.8
+    assert captured["json"]["quality_retry_mode"] == "full"
 
 
 def test_document_extract_bricks_are_registered_in_builtins():
