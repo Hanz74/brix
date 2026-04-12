@@ -51,6 +51,26 @@ def _canonical_daigestr_meta(data: dict[str, Any]) -> dict[str, Any]:
     return meta if isinstance(meta, dict) else {}
 
 
+def _canonical_daigestr_business_payloads(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    raw = data.get("raw")
+    raw_payload = dict(raw) if isinstance(raw, dict) else {}
+
+    top_extracted = data.get("extracted") if isinstance(data.get("extracted"), dict) else {}
+    top_normalized = data.get("normalized") if isinstance(data.get("normalized"), dict) else {}
+    raw_extracted = raw_payload.get("extracted") if isinstance(raw_payload.get("extracted"), dict) else {}
+    raw_normalized = raw_payload.get("normalized") if isinstance(raw_payload.get("normalized"), dict) else {}
+
+    if not raw_extracted and top_extracted:
+        raw_extracted = top_extracted
+    if not raw_normalized and top_normalized:
+        raw_normalized = top_normalized
+
+    raw_payload["meta"] = _canonical_daigestr_meta(data)
+    raw_payload["extracted"] = raw_extracted
+    raw_payload["normalized"] = raw_normalized
+    return raw_payload, raw_extracted, raw_normalized
+
+
 class DocumentPrepareExtractablePayloadRunner(BaseRunner):
     """Normalize file/base64 inputs into the document_extract_input contract."""
 
@@ -193,9 +213,8 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         except Exception as exc:
             return {"success": False, "error": str(exc), "duration": time.monotonic() - start}
 
-        meta = _canonical_daigestr_meta(data)
-        normalized = data.get("normalized") if isinstance(data.get("normalized"), dict) else {}
-        extracted = data.get("extracted") if isinstance(data.get("extracted"), dict) else {}
+        raw_payload, extracted, normalized = _canonical_daigestr_business_payloads(data)
+        meta = raw_payload["meta"]
         if not normalized:
             normalized = extracted
 
@@ -231,7 +250,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     "attempt_mode": _first_mapping(meta, "attempt_mode"),
                     "pipeline_steps": meta.get("pipeline_steps") if isinstance(meta.get("pipeline_steps"), list) else None,
                 },
-                "raw": data,
+                "raw": raw_payload,
                 "warnings": data.get("warnings", []),
             }
         )

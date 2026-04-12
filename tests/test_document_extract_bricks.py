@@ -509,6 +509,59 @@ def test_extract_document_with_daigestr_ignores_noncanonical_top_level_mirrors(m
     assert data["_meta"]["template"] == "bank_statement"
 
 
+def test_extract_document_with_daigestr_canonicalizes_partial_business_payloads(monkeypatch, tmp_path):
+    file_path = tmp_path / "partial-business-payload.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "receipt",
+                    "template_used": "receipt",
+                    "quality_score": 0.77,
+                },
+                "extracted": {"vendor_name": "REWE"},
+                "normalized": {"vendor_name": "REWE", "summary": "Receipt summary"},
+                "raw": {
+                    "meta": {
+                        "document_type": "receipt",
+                        "template_used": "receipt",
+                        "quality_score": 0.77,
+                    }
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    data = result["data"]
+    assert data["normalized"] == {"vendor_name": "REWE", "summary": "Receipt summary"}
+    assert data["raw"]["extracted"] == {"vendor_name": "REWE"}
+    assert data["raw"]["normalized"] == {"vendor_name": "REWE", "summary": "Receipt summary"}
+
+
 def test_v90_runs_via_normal_migration_loop(tmp_path, monkeypatch):
     db = BrixDB(db_path=tmp_path / "migration_loop.db")
     fake_v90 = {
