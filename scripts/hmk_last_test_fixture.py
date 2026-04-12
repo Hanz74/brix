@@ -94,7 +94,7 @@ def _print_reset_sql() -> None:
 def _print_notes() -> None:
     print("Pipeline: buddy-hmk-extract-single")
     print("Daigestr target: http://daigestr:8081/v1/convert")
-    print("Request style: auto_extract=true, no explicit mode, no explicit template")
+    print("Request style: auto_extract=true, mode=default, retry_on_low_quality=true, quality_retry_threshold=0.75, quality_retry_mode=full")
 
 
 def main() -> int:
