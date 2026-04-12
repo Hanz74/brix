@@ -24,6 +24,7 @@ class ExternalServiceCapabilities:
     supports_job_status: bool
     supports_job_result: bool
     job_progress_fields: tuple[str, ...]
+    drift_issues: tuple[str, ...]
     raw_health: dict[str, Any]
     raw_tips: dict[str, Any]
 
@@ -72,10 +73,19 @@ async def fetch_daigestr_capabilities(
     else:
         job_progress_fields = ()
 
+    supports_job_start = "start" in job_progress_endpoints
     supports_job_status = "status" in job_progress_endpoints
     supports_job_result = "result" in job_progress_endpoints
-    supports_async_jobs = "start" in job_progress_endpoints and supports_job_status and supports_job_result
+    supports_async_jobs = supports_job_start and supports_job_status and supports_job_result
     version = str(health.get("version") or "").strip() or None
+    drift_issues: list[str] = []
+    if version is None:
+        drift_issues.append("missing_service_version")
+    if supports_job_start and not supports_async_jobs:
+        drift_issues.append("async_contract_incomplete")
+    required_progress_fields = {"progress.status", "progress.job_id", "progress.current_stage"}
+    if supports_job_status and not required_progress_fields.issubset(set(job_progress_fields)):
+        drift_issues.append("job_progress_fields_incomplete")
 
     return ExternalServiceCapabilities(
         service="daigestr",
@@ -84,6 +94,7 @@ async def fetch_daigestr_capabilities(
         supports_job_status=supports_job_status,
         supports_job_result=supports_job_result,
         job_progress_fields=job_progress_fields,
+        drift_issues=tuple(drift_issues),
         raw_health=health,
         raw_tips=tips,
     )

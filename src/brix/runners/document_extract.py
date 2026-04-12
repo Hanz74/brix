@@ -513,6 +513,35 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     if use_async_jobs:
                         capabilities = await fetch_daigestr_capabilities(base_url=base_url, client=client)
                         service_capabilities = capabilities.to_dict()
+                        if explicit_use_async_jobs and capabilities.drift_issues:
+                            error = _structured_daigestr_error(
+                                message=(
+                                    "Daigestr runtime contract is incompatible with the explicitly required async path. "
+                                    f"Drift issues: {', '.join(capabilities.drift_issues)}."
+                                ),
+                                error_type="external_job_capability_error",
+                                request_payload=request_payload,
+                                url=async_start_url,
+                                service_capabilities=service_capabilities,
+                            )
+                            _update_external_job_progress(
+                                context,
+                                step_id,
+                                {
+                                    "stage": "compatibility",
+                                    "status": "failed",
+                                    "attempt_number": 1,
+                                    "attempt_count": 1,
+                                    "attempt_mode": request_payload["mode"],
+                                    "retry_state": "none",
+                                    "message": error["error"],
+                                    "metadata": {
+                                        "service_version": capabilities.version,
+                                        "drift_issues": list(capabilities.drift_issues),
+                                    },
+                                },
+                            )
+                            return {"success": False, "error": error, "duration": time.monotonic() - start}
                         if not capabilities.supports_async_jobs:
                             if explicit_use_async_jobs:
                                 error = _structured_daigestr_error(
