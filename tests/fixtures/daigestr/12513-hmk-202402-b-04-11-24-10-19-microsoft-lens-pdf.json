@@ -1,0 +1,289 @@
+{
+  "doc_id": 12513,
+  "file_name": "HMK 202402-B 04.11.24, 10_19 Microsoft Lens.pdf",
+  "extraction_result": {
+    "raw": {
+      "html": null,
+      "meta": {
+        "url": null,
+        "exif": null,
+        "iptc": null,
+        "hints": null,
+        "pages": null,
+        "title": null,
+        "width": null,
+        "author": null,
+        "cached": null,
+        "format": "pdf",
+        "height": null,
+        "job_id": null,
+        "source": "base64",
+        "resized": null,
+        "zugferd": null,
+        "language": null,
+        "ocr_model": null,
+        "final_mode": "full",
+        "request_id": "0221482c-2345-40c7-aed7-6cf9682e8930",
+        "size_bytes": 422047,
+        "_request_id": "0221482c-2345-40c7-aed7-6cf9682e8930",
+        "duration_ms": 179,
+        "source_type": "base64",
+        "vision_used": null,
+        "attempt_mode": "full",
+        "auto_extract": true,
+        "content_type": null,
+        "email_thread": null,
+        "initial_mode": "default",
+        "processed_at": null,
+        "retry_reason": "low_quality",
+        "tokens_total": null,
+        "vision_model": null,
+        "xmp_metadata": {
+          "creator": "Office Lens",
+          "modDate": "D:20241104091930+00'00'",
+          "producer": "Office Lens",
+          "document_id": "uuid:32B1A0F8-A989-4AB4-9713-1E57ECCE4625",
+          "instance_id": "uuid:32B1A0F8-A989-4AB4-9713-1E57ECCE4625",
+          "creationDate": "D:20241104091930+00'00'",
+          "creator_tool": "Office Lens"
+        },
+        "accuracy_mode": "high",
+        "attempt_count": 2,
+        "document_type": "receipt",
+        "email_routing": null,
+        "hidden_sheets": null,
+        "hidden_slides": null,
+        "ocr_corrected": null,
+        "quality_grade": "good",
+        "quality_score": 0.7777,
+        "retry_applied": true,
+        "template_used": "receipt",
+        "tokens_prompt": null,
+        "whisper_model": null,
+        "attempt_number": 2,
+        "embedded_files": null,
+        "original_width": null,
+        "pipeline_steps": [
+          "markitdown",
+          "page_descriptions",
+          "dual_pass_validation"
+        ],
+        "calendar_events": null,
+        "original_height": null,
+        "pages_described": 1,
+        "pages_requested": null,
+        "duration_seconds": null,
+        "images_described": null,
+        "template_version": 1,
+        "tokens_completion": null,
+        "document_properties": null,
+        "final_quality_score": 0.7777,
+        "retry_threshold_used": 0.75,
+        "initial_quality_score": 0.7007,
+        "ocr_corrections_count": null,
+        "document_type_confidence": 0.99
+      },
+      "error": null,
+      "chunks": [
+        {
+          "text": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n41063 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
+          "index": 0,
+          "source": "base64",
+          "heading": "",
+          "token_count": 295
+        }
+      ],
+      "success": true,
+      "markdown": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n41063 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
+      "extracted": {
+        "_meta": {
+          "absender": {
+            "bic": null,
+            "iban": null,
+            "name": "Herr Khodeda",
+            "slug": "maxmo-apotheke",
+            "email": null,
+            "firma": "MAXMO Apotheke Krefelder Straße",
+            "ust_id": "DE175523539",
+            "adresse": {
+              "ort": "Musterstadt",
+              "plz": "41063",
+              "land": null,
+              "strasse": "Krefelder Straße 131"
+            },
+            "telefon": "+4921612474090"
+          },
+          "mwst_satz": "19.0",
+          "empfaenger": {
+            "name": null,
+            "slug": null,
+            "adresse": {
+              "ort": null,
+              "plz": null,
+              "land": null,
+              "strasse": null
+            }
+          },
+          "steuerjahr": null,
+          "mwst_betrag": "9.94",
+          "zahlungsart": "karte",
+          "aktenzeichen": null,
+          "bestellnummer": null,
+          "dokumenten_id": "3454",
+          "zahlungsweise": null,
+          "steuerrelevant": true,
+          "vertragsnummer": null,
+          "empfaenger_iban": null,
+          "mandatsreferenz": null,
+          "zusammenfassung": "Quittung über den Kauf von BICALUTIN 50MG (30 Stück) in der MAXMO Apotheke am 09.10.2024 mit einem Gesamtbetrag von 62,26 EUR inkl. 19% MwSt.",
+          "mwst_ausgewiesen": true,
+          "steuer_kategorie": "sonderausgaben",
+          "faelligkeitsdatum": null,
+          "steuerrelevanz_hinweis": null,
+          "automatische_verlaengerung": null
+        },
+        "datum": "2024-10-09",
+        "summary": "Quittung über den Kauf von BICALUTIN 50MG (30 Stück) in der MAXMO Apotheke am 09.10.2024 mit einem Gesamtbetrag von 62,26 EUR inkl. 19% MwSt.",
+        "währung": "EUR",
+        "geschaeft": {
+          "name": "MAXMO Apotheke Krefelder Straße",
+          "email": null,
+          "ust_id": "DE 175523539",
+          "adresse": {
+            "ort": "Musterstadt",
+            "plz": "41063",
+            "land": null,
+            "strasse": "Krefelder Straße 131"
+          },
+          "telefon": "+4921612474090",
+          "steuernummer": null
+        },
+        "positionen": [
+          {
+            "menge": 1,
+            "einheit": "ST",
+            "mwst_satz": "19.0%",
+            "einzelpreis": "62.26",
+            "gesamtpreis": "62.26",
+            "mwst_betrag": "9.94",
+            "beschreibung": "BICALUTIN 50MG, 00724732, FTA, 30ST"
+          }
+        ],
+        "gesamtbetrag": "62.26",
+        "zahlungsmethode": "karte"
+      },
+      "normalized": null,
+      "enriched_pdf": null,
+      "normalized_trace": null,
+      "normalized_context": null,
+      "normalized_version": null,
+      "normalized_warnings": [
+        "No normalize_mapping found for template 'receipt'"
+      ],
+      "normalized_confidence": null
+    },
+    "_meta": {
+      "template": "receipt",
+      "final_mode": "full",
+      "request_id": "0221482c-2345-40c7-aed7-6cf9682e8930",
+      "attempt_mode": "full",
+      "initial_mode": "default",
+      "retry_reason": "low_quality",
+      "attempt_count": 2,
+      "quality_grade": "good",
+      "retry_applied": true,
+      "attempt_number": 2,
+      "pipeline_steps": [
+        "markitdown",
+        "page_descriptions",
+        "dual_pass_validation"
+      ],
+      "final_quality_score": 0.7777,
+      "retry_threshold_used": 0.75,
+      "initial_quality_score": 0.7007,
+      "document_type_confidence": 0.99
+    },
+    "markdown": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n41063 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
+    "warnings": [],
+    "normalized": {
+      "_meta": {
+        "absender": {
+          "bic": null,
+          "iban": null,
+          "name": "Herr Khodeda",
+          "slug": "maxmo-apotheke",
+          "email": null,
+          "firma": "MAXMO Apotheke Krefelder Straße",
+          "ust_id": "DE175523539",
+          "adresse": {
+            "ort": "Musterstadt",
+            "plz": "41063",
+            "land": null,
+            "strasse": "Krefelder Straße 131"
+          },
+          "telefon": "+4921612474090"
+        },
+        "mwst_satz": "19.0",
+        "empfaenger": {
+          "name": null,
+          "slug": null,
+          "adresse": {
+            "ort": null,
+            "plz": null,
+            "land": null,
+            "strasse": null
+          }
+        },
+        "steuerjahr": null,
+        "mwst_betrag": "9.94",
+        "zahlungsart": "karte",
+        "aktenzeichen": null,
+        "bestellnummer": null,
+        "dokumenten_id": "3454",
+        "zahlungsweise": null,
+        "steuerrelevant": true,
+        "vertragsnummer": null,
+        "empfaenger_iban": null,
+        "mandatsreferenz": null,
+        "zusammenfassung": "Quittung über den Kauf von BICALUTIN 50MG (30 Stück) in der MAXMO Apotheke am 09.10.2024 mit einem Gesamtbetrag von 62,26 EUR inkl. 19% MwSt.",
+        "mwst_ausgewiesen": true,
+        "steuer_kategorie": "sonderausgaben",
+        "faelligkeitsdatum": null,
+        "steuerrelevanz_hinweis": null,
+        "automatische_verlaengerung": null
+      },
+      "datum": "2024-10-09",
+      "summary": "Quittung über den Kauf von BICALUTIN 50MG (30 Stück) in der MAXMO Apotheke am 09.10.2024 mit einem Gesamtbetrag von 62,26 EUR inkl. 19% MwSt.",
+      "währung": "EUR",
+      "geschaeft": {
+        "name": "MAXMO Apotheke Krefelder Straße",
+        "email": null,
+        "ust_id": "DE 175523539",
+        "adresse": {
+          "ort": "Musterstadt",
+          "plz": "41063",
+          "land": null,
+          "strasse": "Krefelder Straße 131"
+        },
+        "telefon": "+4921612474090",
+        "steuernummer": null
+      },
+      "positionen": [
+        {
+          "menge": 1,
+          "einheit": "ST",
+          "mwst_satz": "19.0%",
+          "einzelpreis": "62.26",
+          "gesamtpreis": "62.26",
+          "mwst_betrag": "9.94",
+          "beschreibung": "BICALUTIN 50MG, 00724732, FTA, 30ST"
+        }
+      ],
+      "gesamtbetrag": "62.26",
+      "zahlungsmethode": "karte"
+    },
+    "document_type": "receipt",
+    "quality_score": 0.7777,
+    "_quality_score": 0.7777
+  }
+}

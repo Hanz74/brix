@@ -1,0 +1,300 @@
+{
+  "doc_id": 12550,
+  "file_name": "HMK 202454 Rechnung-R-DE-118475690-2024-31001775.pdf",
+  "extraction_result": {
+    "raw": {
+      "html": null,
+      "meta": {
+        "url": null,
+        "exif": null,
+        "iptc": null,
+        "hints": null,
+        "pages": null,
+        "title": null,
+        "width": null,
+        "author": null,
+        "cached": null,
+        "format": "pdf",
+        "height": null,
+        "job_id": null,
+        "source": "base64",
+        "resized": null,
+        "zugferd": null,
+        "language": null,
+        "ocr_model": null,
+        "final_mode": "full",
+        "request_id": "96eb72b9-0ba1-454e-b98f-fc954febe355",
+        "size_bytes": 90394,
+        "_request_id": "96eb72b9-0ba1-454e-b98f-fc954febe355",
+        "duration_ms": 201,
+        "source_type": "base64",
+        "vision_used": null,
+        "attempt_mode": "full",
+        "auto_extract": true,
+        "content_type": null,
+        "email_thread": null,
+        "initial_mode": "default",
+        "processed_at": null,
+        "retry_reason": "low_quality",
+        "tokens_total": null,
+        "vision_model": null,
+        "xmp_metadata": {
+          "title": "Rechnung",
+          "modDate": "D:20241108093521Z",
+          "producer": "OpenPDF 2.0.2",
+          "creationDate": "D:20241108093521Z"
+        },
+        "accuracy_mode": "high",
+        "attempt_count": 2,
+        "document_type": "invoice",
+        "email_routing": null,
+        "hidden_sheets": null,
+        "hidden_slides": null,
+        "ocr_corrected": null,
+        "quality_grade": "good",
+        "quality_score": 0.7964,
+        "retry_applied": true,
+        "template_used": "invoice",
+        "tokens_prompt": null,
+        "whisper_model": null,
+        "attempt_number": 2,
+        "embedded_files": null,
+        "original_width": null,
+        "pipeline_steps": [
+          "markitdown",
+          "page_descriptions",
+          "dual_pass_validation"
+        ],
+        "calendar_events": null,
+        "original_height": null,
+        "pages_described": 1,
+        "pages_requested": null,
+        "duration_seconds": null,
+        "images_described": null,
+        "template_version": 1,
+        "tokens_completion": null,
+        "document_properties": null,
+        "final_quality_score": 0.7964,
+        "retry_threshold_used": 0.75,
+        "initial_quality_score": 0.7435,
+        "ocr_corrections_count": null,
+        "document_type_confidence": 0.99
+      },
+      "error": null,
+      "chunks": [
+        {
+          "text": "# Rechnung\n\n**Der Verkauf erfolgte im Namen und auf Rechnung von OTTO (GmbH & Co KG).**\n\n**Hilfe und Kontakt**\n[www.otto.de/kontakt](www.otto.de/kontakt)\n\n---\n\n**Kundendaten:**\nMax Mustermann\nMusterstraße 42\n41169 Musterstadt\nDeutschland\n\n| Feld                  | Information                          |\n|-----------------------|--------------------------------------|\n| Kundennummer          | 1230 7402                            |\n| Auftragsnummer        | cbn4nk52zz                           |\n| Auftragsdatum         | 07.11.2024                           |\n| Rechnungsnummer       | R-DE-118475690-2024-31001775         |\n| Rechnungsdatum        | 08.11.2024                           |\n| Zahlungspartner       | **OTTO Payments**                    |\n| Zahlungsart           | Auf Rechnung                         |\n\n**Lieferanschrift:**\nMax Mustermann\nMusterstraße 42\n41169 Musterstadt\nDeutschland\n\n---\n\nHallo Hans,\n\nvielen Dank für die Bestellung und viel Spaß mit deinen neuen Artikeln.\nBitte bezahle den Rechnungsbetrag an unseren Zahlungspartner OTTO Payments.\n\nViele Grüße\ndein OTTO-Service-Team\n\n---",
+          "index": 0,
+          "source": "base64",
+          "heading": "# Rechnung",
+          "token_count": 279
+        },
+        {
+          "text": "### Artikelübersicht:\n\n| Artikel                                                                                     | Gesamt brutto | Gesamt Steuer | Gesamt netto | Endpreis  |\n|---------------------------------------------------------------------------------------------|---------------|---------------|--------------|-----------|\n| 1 x le jogger® Pyjama (Packung, 4 tlg., 2 Stück) mit kontrastfarbigen Einsätzen vorn       |               |               |              |           |\n| 56/58 (XL), marine, beige (Art.Nr. 74696672)                                                |               |               |              |           |\n| € 64,99 / Stück inkl. 19% MwSt.                                                             | 64,99         | 10,38         | 54,61        | **64,99 €**|\n\n| Kostenart                              | Gesamt brutto | Gesamt Steuer | Gesamt netto | Endpreis  |\n|----------------------------------------|---------------|---------------|--------------|-----------|\n| Versandkosten inkl. 19% MwSt.          | 4,95          | 0,79          | 4,16         | **4,95 €**|\n\n| Summe                                  | 69,94         | 11,17         | 58,77        | **69,94 €**|\n\n---",
+          "index": 1,
+          "source": "base64",
+          "heading": "### Artikelübersicht:",
+          "token_count": 303
+        },
+        {
+          "text": "### Bankverbindung unseres Zahlungspartners **OTTO Payments**\n\n| Feld                  | Information                          |\n|-----------------------|--------------------------------------|\n| Kontoinhaber          | OTTO Payments GmbH                   |\n| Bank                  | Hanseatic Bank                       |\n| IBAN                  | DE12 2012 0700 3100 9903 33          |\n| BIC                   | HSTBDEHHXXX                          |\n| Verwendungszweck      | CRE-CEG-UMS-24S (Bitte immer angeben)|\n\n**Zahlungsbetrag:**\n69,94 €\nBitte überweise den Zahlungsbetrag an OTTO Payments.\n\n---\n\n**Rechtliche Hinweise:**\nDas Leistungsdatum entspricht dem Rechnungsdatum.\n\nWir haben die Kaufpreisforderung aus deiner Bestellung einschließlich etwaiger Nebenforderungen zum Zwecke der Zahlungsabwicklung an unseren Zahlungspartner für den OTTO-Marktplatz, die OTTO Payments GmbH, abgetreten. Forderungsinhaber ist damit die OTTO Payments GmbH. Die Überweisung des Zahlungsbetrages muss unter Angabe des Verwendungszwecks erfolgen. Es gelten die zusätzlichen Geschäftsbedingungen und Datenschutzhinweise der OTTO Payments GmbH.\n\nOTTO Payments GmbH\nWerner-Otto-Straße 1-7, 22179 Hamburg, Deutschland\nVertreten durch: Hans Georg Spliethoff, Mirko Krauel\nAmtsgericht Hamburg, Handelsregisternummer: HRB 156951, USt-IdNr.: DE334007262\n\n---\n\nOTTO (GmbH & Co KG)\nWerner-Otto-Straße 1-7, 22179 Hamburg, Deutschland\nVertreten durch: Alexander Birken, Dr. Marcus Ackermann, Sergio Bucher, Sebastian Klauke, Petra Scharner-Wolff, Kay Schiebur\nAmtsgericht Hamburg, Handelsregisternummer: HRA 62024, USt-IdNr.: DE118475690, WEEE-Reg.-Nr.: DE 28144017\n\nSummenangaben auf dem Beleg werden aus Einzelwerten zusammengefasst. Bei der Summenverdichtung kann dies zu Abweichungen aufgrund von Rundungsdifferenzen führen.",
+          "index": 2,
+          "source": "base64",
+          "heading": "### Bankverbindung unseres Zahlungspartners **OTTO Payments**",
+          "token_count": 452
+        }
+      ],
+      "success": true,
+      "markdown": "# Rechnung\n\n**Der Verkauf erfolgte im Namen und auf Rechnung von OTTO (GmbH & Co KG).**\n\n**Hilfe und Kontakt**\n[www.otto.de/kontakt](www.otto.de/kontakt)\n\n---\n\n**Kundendaten:**\nMax Mustermann\nMusterstraße 42\n41169 Musterstadt\nDeutschland\n\n| Feld                  | Information                          |\n|-----------------------|--------------------------------------|\n| Kundennummer          | 1230 7402                            |\n| Auftragsnummer        | cbn4nk52zz                           |\n| Auftragsdatum         | 07.11.2024                           |\n| Rechnungsnummer       | R-DE-118475690-2024-31001775         |\n| Rechnungsdatum        | 08.11.2024                           |\n| Zahlungspartner       | **OTTO Payments**                    |\n| Zahlungsart           | Auf Rechnung                         |\n\n**Lieferanschrift:**\nMax Mustermann\nMusterstraße 42\n41169 Musterstadt\nDeutschland\n\n---\n\nHallo Hans,\n\nvielen Dank für die Bestellung und viel Spaß mit deinen neuen Artikeln.\nBitte bezahle den Rechnungsbetrag an unseren Zahlungspartner OTTO Payments.\n\nViele Grüße\ndein OTTO-Service-Team\n\n---\n\n### Artikelübersicht:\n\n| Artikel                                                                                     | Gesamt brutto | Gesamt Steuer | Gesamt netto | Endpreis  |\n|---------------------------------------------------------------------------------------------|---------------|---------------|--------------|-----------|\n| 1 x le jogger® Pyjama (Packung, 4 tlg., 2 Stück) mit kontrastfarbigen Einsätzen vorn       |               |               |              |           |\n| 56/58 (XL), marine, beige (Art.Nr. 74696672)                                                |               |               |              |           |\n| € 64,99 / Stück inkl. 19% MwSt.                                                             | 64,99         | 10,38         | 54,61        | **64,99 €**|\n\n| Kostenart                              | Gesamt brutto | Gesamt Steuer | Gesamt netto | Endpreis  |\n|----------------------------------------|---------------|---------------|--------------|-----------|\n| Versandkosten inkl. 19% MwSt.          | 4,95          | 0,79          | 4,16         | **4,95 €**|\n\n| Summe                                  | 69,94         | 11,17         | 58,77        | **69,94 €**|\n\n---\n\n### Bankverbindung unseres Zahlungspartners **OTTO Payments**\n\n| Feld                  | Information                          |\n|-----------------------|--------------------------------------|\n| Kontoinhaber          | OTTO Payments GmbH                   |\n| Bank                  | Hanseatic Bank                       |\n| IBAN                  | DE12 2012 0700 3100 9903 33          |\n| BIC                   | HSTBDEHHXXX                          |\n| Verwendungszweck      | CRE-CEG-UMS-24S (Bitte immer angeben)|\n\n**Zahlungsbetrag:**\n69,94 €\nBitte überweise den Zahlungsbetrag an OTTO Payments.\n\n---\n\n**Rechtliche Hinweise:**\nDas Leistungsdatum entspricht dem Rechnungsdatum.\n\nWir haben die Kaufpreisforderung aus deiner Bestellung einschließlich etwaiger Nebenforderungen zum Zwecke der Zahlungsabwicklung an unseren Zahlungspartner für den OTTO-Marktplatz, die OTTO Payments GmbH, abgetreten. Forderungsinhaber ist damit die OTTO Payments GmbH. Die Überweisung des Zahlungsbetrages muss unter Angabe des Verwendungszwecks erfolgen. Es gelten die zusätzlichen Geschäftsbedingungen und Datenschutzhinweise der OTTO Payments GmbH.\n\nOTTO Payments GmbH\nWerner-Otto-Straße 1-7, 22179 Hamburg, Deutschland\nVertreten durch: Hans Georg Spliethoff, Mirko Krauel\nAmtsgericht Hamburg, Handelsregisternummer: HRB 156951, USt-IdNr.: DE334007262\n\n---\n\nOTTO (GmbH & Co KG)\nWerner-Otto-Straße 1-7, 22179 Hamburg, Deutschland\nVertreten durch: Alexander Birken, Dr. Marcus Ackermann, Sergio Bucher, Sebastian Klauke, Petra Scharner-Wolff, Kay Schiebur\nAmtsgericht Hamburg, Handelsregisternummer: HRA 62024, USt-IdNr.: DE118475690, WEEE-Reg.-Nr.: DE 28144017\n\nSummenangaben auf dem Beleg werden aus Einzelwerten zusammengefasst. Bei der Summenverdichtung kann dies zu Abweichungen aufgrund von Rundungsdifferenzen führen.",
+      "extracted": {
+        "iban": "DE12201207003100990333",
+        "mwst": "11.17",
+        "_meta": {
+          "absender": {
+            "bic": "HSTBDEHHXXX",
+            "iban": "DE12201207003100990333",
+            "name": null,
+            "slug": "otto",
+            "email": null,
+            "firma": "OTTO (GmbH & Co KG)",
+            "ust_id": "DE118475690",
+            "adresse": {
+              "ort": "Hamburg",
+              "plz": "22179",
+              "land": "Deutschland",
+              "strasse": "Werner-Otto-Straße 1-7"
+            },
+            "telefon": null
+          },
+          "mwst_satz": "19",
+          "empfaenger": {
+            "name": "Max Mustermann",
+            "slug": "hans-kuhlen",
+            "adresse": {
+              "ort": "Musterstadt",
+              "plz": "41169",
+              "land": "Deutschland",
+              "strasse": "Musterstraße 42"
+            }
+          },
+          "steuerjahr": null,
+          "mwst_betrag": "11.17",
+          "zahlungsart": "Überweisung",
+          "aktenzeichen": null,
+          "bestellnummer": "cbn4nk52zz",
+          "dokumenten_id": "R-DE-118475690-2024-31001775",
+          "zahlungsweise": "einmalig",
+          "steuerrelevant": true,
+          "vertragsnummer": null,
+          "empfaenger_iban": null,
+          "mandatsreferenz": null,
+          "zusammenfassung": "Rechnung über den Kauf eines Pyjama-Sets und Versandkosten in Höhe von 69,94 € inkl. 19% MwSt. für Max Mustermann, zahlbar an OTTO Payments.",
+          "mwst_ausgewiesen": true,
+          "steuer_kategorie": null,
+          "faelligkeitsdatum": null,
+          "steuerrelevanz_hinweis": "inkl. 19% MwSt.",
+          "automatische_verlaengerung": null
+        },
+        "datum": "2024-11-08",
+        "netto": "58.77",
+        "brutto": "69.94",
+        "summary": "Rechnung über den Kauf eines Pyjama-Sets und Versandkosten in Höhe von 69,94 € inkl. 19% MwSt. für Max Mustermann, zahlbar an OTTO Payments.",
+        "waehrung": "EUR",
+        "po_nummer": null,
+        "positionen": [
+          {
+            "menge": 1,
+            "einheit": null,
+            "einzelpreis": "64.99",
+            "gesamtpreis": "64.99",
+            "beschreibung": "le jogger® Pyjama (Packung, 4 tlg., 2 Stück) mit kontrastfarbigen Einsätzen vorn, 56/58 (XL), marine, beige (Art.Nr. 74696672)"
+          },
+          {
+            "menge": 1,
+            "einheit": null,
+            "einzelpreis": "4.95",
+            "gesamtpreis": "4.95",
+            "beschreibung": "Versandkosten inkl. 19% MwSt."
+          }
+        ],
+        "kundennummer": "12307402",
+        "bestellnummer": "cbn4nk52zz",
+        "projektnummer": null,
+        "zahlungsfrist": null,
+        "rechnungsnummer": "R-DE-118475690-2024-31001775"
+      },
+      "normalized": null,
+      "enriched_pdf": null,
+      "normalized_trace": null,
+      "normalized_context": null,
+      "normalized_version": null,
+      "normalized_warnings": [
+        "No normalize_mapping found for template 'invoice'"
+      ],
+      "normalized_confidence": null
+    },
+    "_meta": {
+      "template": "invoice",
+      "final_mode": "full",
+      "request_id": "96eb72b9-0ba1-454e-b98f-fc954febe355",
+      "attempt_mode": "full",
+      "initial_mode": "default",
+      "retry_reason": "low_quality",
+      "attempt_count": 2,
+      "quality_grade": "good",
+      "retry_applied": true,
+      "attempt_number": 2,
+      "pipeline_steps": [
+        "markitdown",
+        "page_descriptions",
+        "dual_pass_validation"
+      ],
+      "final_quality_score": 0.7964,
+      "retry_threshold_used": 0.75,
+      "initial_quality_score": 0.7435,
+      "document_type_confidence": 0.99
+    },
+    "markdown": "# Rechnung\n\n**Der Verkauf erfolgte im Namen und auf Rechnung von OTTO (GmbH & Co KG).**\n\n**Hilfe und Kontakt**\n[www.otto.de/kontakt](www.otto.de/kontakt)\n\n---\n\n**Kundendaten:**\nMax Mustermann\nMusterstraße 42\n41169 Musterstadt\nDeutschland\n\n| Feld                  | Information                          |\n|-----------------------|--------------------------------------|\n| Kundennummer          | 1230 7402                            |\n| Auftragsnummer        | cbn4nk52zz                           |\n| Auftragsdatum         | 07.11.2024                           |\n| Rechnungsnummer       | R-DE-118475690-2024-31001775         |\n| Rechnungsdatum        | 08.11.2024                           |\n| Zahlungspartner       | **OTTO Payments**                    |\n| Zahlungsart           | Auf Rechnung                         |\n\n**Lieferanschrift:**\nMax Mustermann\nMusterstraße 42\n41169 Musterstadt\nDeutschland\n\n---\n\nHallo Hans,\n\nvielen Dank für die Bestellung und viel Spaß mit deinen neuen Artikeln.\nBitte bezahle den Rechnungsbetrag an unseren Zahlungspartner OTTO Payments.\n\nViele Grüße\ndein OTTO-Service-Team\n\n---\n\n### Artikelübersicht:\n\n| Artikel                                                                                     | Gesamt brutto | Gesamt Steuer | Gesamt netto | Endpreis  |\n|---------------------------------------------------------------------------------------------|---------------|---------------|--------------|-----------|\n| 1 x le jogger® Pyjama (Packung, 4 tlg., 2 Stück) mit kontrastfarbigen Einsätzen vorn       |               |               |              |           |\n| 56/58 (XL), marine, beige (Art.Nr. 74696672)                                                |               |               |              |           |\n| € 64,99 / Stück inkl. 19% MwSt.                                                             | 64,99         | 10,38         | 54,61        | **64,99 €**|\n\n| Kostenart                              | Gesamt brutto | Gesamt Steuer | Gesamt netto | Endpreis  |\n|----------------------------------------|---------------|---------------|--------------|-----------|\n| Versandkosten inkl. 19% MwSt.          | 4,95          | 0,79          | 4,16         | **4,95 €**|\n\n| Summe                                  | 69,94         | 11,17         | 58,77        | **69,94 €**|\n\n---\n\n### Bankverbindung unseres Zahlungspartners **OTTO Payments**\n\n| Feld                  | Information                          |\n|-----------------------|--------------------------------------|\n| Kontoinhaber          | OTTO Payments GmbH                   |\n| Bank                  | Hanseatic Bank                       |\n| IBAN                  | DE12 2012 0700 3100 9903 33          |\n| BIC                   | HSTBDEHHXXX                          |\n| Verwendungszweck      | CRE-CEG-UMS-24S (Bitte immer angeben)|\n\n**Zahlungsbetrag:**\n69,94 €\nBitte überweise den Zahlungsbetrag an OTTO Payments.\n\n---\n\n**Rechtliche Hinweise:**\nDas Leistungsdatum entspricht dem Rechnungsdatum.\n\nWir haben die Kaufpreisforderung aus deiner Bestellung einschließlich etwaiger Nebenforderungen zum Zwecke der Zahlungsabwicklung an unseren Zahlungspartner für den OTTO-Marktplatz, die OTTO Payments GmbH, abgetreten. Forderungsinhaber ist damit die OTTO Payments GmbH. Die Überweisung des Zahlungsbetrages muss unter Angabe des Verwendungszwecks erfolgen. Es gelten die zusätzlichen Geschäftsbedingungen und Datenschutzhinweise der OTTO Payments GmbH.\n\nOTTO Payments GmbH\nWerner-Otto-Straße 1-7, 22179 Hamburg, Deutschland\nVertreten durch: Hans Georg Spliethoff, Mirko Krauel\nAmtsgericht Hamburg, Handelsregisternummer: HRB 156951, USt-IdNr.: DE334007262\n\n---\n\nOTTO (GmbH & Co KG)\nWerner-Otto-Straße 1-7, 22179 Hamburg, Deutschland\nVertreten durch: Alexander Birken, Dr. Marcus Ackermann, Sergio Bucher, Sebastian Klauke, Petra Scharner-Wolff, Kay Schiebur\nAmtsgericht Hamburg, Handelsregisternummer: HRA 62024, USt-IdNr.: DE118475690, WEEE-Reg.-Nr.: DE 28144017\n\nSummenangaben auf dem Beleg werden aus Einzelwerten zusammengefasst. Bei der Summenverdichtung kann dies zu Abweichungen aufgrund von Rundungsdifferenzen führen.",
+    "warnings": [],
+    "normalized": {
+      "iban": "DE12201207003100990333",
+      "mwst": "11.17",
+      "_meta": {
+        "absender": {
+          "bic": "HSTBDEHHXXX",
+          "iban": "DE12201207003100990333",
+          "name": null,
+          "slug": "otto",
+          "email": null,
+          "firma": "OTTO (GmbH & Co KG)",
+          "ust_id": "DE118475690",
+          "adresse": {
+            "ort": "Hamburg",
+            "plz": "22179",
+            "land": "Deutschland",
+            "strasse": "Werner-Otto-Straße 1-7"
+          },
+          "telefon": null
+        },
+        "mwst_satz": "19",
+        "empfaenger": {
+          "name": "Max Mustermann",
+          "slug": "hans-kuhlen",
+          "adresse": {
+            "ort": "Musterstadt",
+            "plz": "41169",
+            "land": "Deutschland",
+            "strasse": "Musterstraße 42"
+          }
+        },
+        "steuerjahr": null,
+        "mwst_betrag": "11.17",
+        "zahlungsart": "Überweisung",
+        "aktenzeichen": null,
+        "bestellnummer": "cbn4nk52zz",
+        "dokumenten_id": "R-DE-118475690-2024-31001775",
+        "zahlungsweise": "einmalig",
+        "steuerrelevant": true,
+        "vertragsnummer": null,
+        "empfaenger_iban": null,
+        "mandatsreferenz": null,
+        "zusammenfassung": "Rechnung über den Kauf eines Pyjama-Sets und Versandkosten in Höhe von 69,94 € inkl. 19% MwSt. für Max Mustermann, zahlbar an OTTO Payments.",
+        "mwst_ausgewiesen": true,
+        "steuer_kategorie": null,
+        "faelligkeitsdatum": null,
+        "steuerrelevanz_hinweis": "inkl. 19% MwSt.",
+        "automatische_verlaengerung": null
+      },
+      "datum": "2024-11-08",
+      "netto": "58.77",
+      "brutto": "69.94",
+      "summary": "Rechnung über den Kauf eines Pyjama-Sets und Versandkosten in Höhe von 69,94 € inkl. 19% MwSt. für Max Mustermann, zahlbar an OTTO Payments.",
+      "waehrung": "EUR",
+      "po_nummer": null,
+      "positionen": [
+        {
+          "menge": 1,
+          "einheit": null,
+          "einzelpreis": "64.99",
+          "gesamtpreis": "64.99",
+          "beschreibung": "le jogger® Pyjama (Packung, 4 tlg., 2 Stück) mit kontrastfarbigen Einsätzen vorn, 56/58 (XL), marine, beige (Art.Nr. 74696672)"
+        },
+        {
+          "menge": 1,
+          "einheit": null,
+          "einzelpreis": "4.95",
+          "gesamtpreis": "4.95",
+          "beschreibung": "Versandkosten inkl. 19% MwSt."
+        }
+      ],
+      "kundennummer": "12307402",
+      "bestellnummer": "cbn4nk52zz",
+      "projektnummer": null,
+      "zahlungsfrist": null,
+      "rechnungsnummer": "R-DE-118475690-2024-31001775"
+    },
+    "document_type": "invoice",
+    "quality_score": 0.7964,
+    "_quality_score": 0.7964
+  }
+}

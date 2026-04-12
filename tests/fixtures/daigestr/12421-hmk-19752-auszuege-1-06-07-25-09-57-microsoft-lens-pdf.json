@@ -1,0 +1,1517 @@
+{
+  "doc_id": 12421,
+  "file_name": "HMK 19752 Auszüge 1 06.07.25, 09_57 Microsoft Lens.pdf",
+  "extraction_result": {
+    "raw": {
+      "html": null,
+      "meta": {
+        "url": null,
+        "exif": null,
+        "iptc": null,
+        "hints": [
+          "This scanned PDF has no searchable text layer. Add ocr_embed=true to create a searchable PDF with embedded OCR text."
+        ],
+        "pages": null,
+        "title": null,
+        "width": null,
+        "author": null,
+        "cached": null,
+        "format": "pdf",
+        "height": null,
+        "job_id": null,
+        "source": "base64",
+        "resized": null,
+        "scanned": true,
+        "zugferd": null,
+        "language": null,
+        "ocr_model": "mistral-ocr-latest",
+        "final_mode": "full",
+        "request_id": "3c53fa09-300c-4527-b3ba-c238072effc9",
+        "size_bytes": 17329183,
+        "_request_id": "3c53fa09-300c-4527-b3ba-c238072effc9",
+        "duration_ms": 23634,
+        "source_type": "base64",
+        "vision_used": false,
+        "attempt_mode": "full",
+        "auto_extract": true,
+        "content_type": null,
+        "email_thread": null,
+        "initial_mode": "default",
+        "processed_at": null,
+        "retry_reason": "low_quality",
+        "tokens_total": null,
+        "vision_model": null,
+        "xmp_metadata": null,
+        "accuracy_mode": "high",
+        "attempt_count": 2,
+        "document_type": "bank_statement",
+        "email_routing": null,
+        "hidden_sheets": null,
+        "hidden_slides": null,
+        "ocr_corrected": false,
+        "quality_grade": "good",
+        "quality_score": 0.7269,
+        "retry_applied": true,
+        "template_used": "bank_statement",
+        "tokens_prompt": null,
+        "whisper_model": null,
+        "attempt_number": 2,
+        "embedded_files": null,
+        "original_width": null,
+        "pipeline_steps": [
+          "ocr",
+          "dual_pass_validation"
+        ],
+        "calendar_events": null,
+        "original_height": null,
+        "pages_processed": 52,
+        "pages_requested": null,
+        "tokens_per_page": null,
+        "duration_seconds": null,
+        "images_described": null,
+        "template_version": 2,
+        "tokens_completion": null,
+        "document_properties": null,
+        "final_quality_score": 0.7269,
+        "retry_threshold_used": 0.75,
+        "initial_quality_score": 0.5272,
+        "ocr_corrections_count": null,
+        "document_type_confidence": 0.99
+      },
+      "error": null,
+      "chunks": [
+        {
+          "text": "```markdown\n**Kontoinformationen**\nKomfortkonto 19752\nBLZ 310 500 00\nStadtsparkasse Musterstadt\nUST-ID DE120499145\n\nDer vorherige Auszug wurde Ihnen auf dem Versandweg bereitgestellt.\n\n---\n\n### Kontoauszug 11\n**Blatt 1**\n**Kontostand 17.08.2024, Auszug Nr. 10**\n14.902,01+\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 19.08      | Lastschrift<br>Wert: 19.08.2024<br>Telekom Deutschland GmbH<br>Mobilfunk Kundenkonto 0050104594 RG<br>32110777000701/06.08.2024<br>Zahlbeleg 332719221717 | 41,90-    |\n| 20.08      | Kartenzahlung<br>Wert: 20.08.2024<br>02 HANDELSHOF IN MOENCHENGL<br>ELV61498866 16.08 12.00 MEO 02 HAND<br>ELSHOF IN MOENCHENGL<br>IC-17359973092 | 184,63-   |\n\n**Kontoinhaber:**\nHans und Maria Mustermann\n\n**IBAN:** DE89 3704 0044 0532 0130 00\n**SWIFT-BIC:** COBADEFFXXX\n[www.sparkasse-moenchengladbach.de](http://www.sparkasse-moenchengladbach.de)\n\n---\n\n### Kontoauszug 11\n**Blatt 2**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 20.08      | Lastschrift<br>Wert: 20.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036359637163 | 9,90-     |\n| 21.08      | Bargeldausz.Debitk.GA<br>Wert: 21.08.2024<br>GA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW | 500,00-   |\n| 21.08      | Dauerauftrag entgf.<br>Wert: 21.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>PS-LOSE 01087036,01087119,02573483-02573492 | 60,00-    |\n| 21.08      | PS-Sparen<br>Wert: 21.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>PS-Sparen und Gewinnen | 48,00+    |\n\n---\n\n### Kontoauszug 11\n**Blatt 3**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser<br>Belegnr 240621609103 NEW sagt Danke | 270,00-   |\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 210093636 / Musterstraße 42 /Regenwasser/<br>Belegnr 240221973690 NEW sagt Danke | 32,00-    |\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 210093635 / Musterstraße 42 /Abwasser/<br>Belegnr 240221973689 NEW sagt Danke | 31,00-    |\n\n---\n\n### Kontoauszug 11\n**Blatt 4**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 26.08      | Lastschrift<br>Wert: 26.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-4989206-2435548 AMZN Mktp DE 5B<br>A2UVMSP1A0HHXX<br>5BA2UVMSP1A0HHXX | 38,98-    |\n| 26.08      | PS-Sparen<br>Wert: 26.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>Herzlichen Glückwunsch<br>PS-Sparen und Gewinnen<br>Gewinn für Los-Nr. 02573492 | 2,50+     |\n| 27.08      | Lastschrift<br>Wert: 27.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-3324625-0694754 AMZN Mktp DE BJ<br>RQZ4NI6L4JBEC9<br>BJRQZ4NI6L4JBEC9 | 24,38-    |\n\n---\n\n### Kontoauszug 11\n**Blatt 5**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 28.08      | Lastschrift<br>Wert: 28.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036524224511 | 92,32-    |\n| 28.08      | Lastschrift<br>Wert: 28.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-7487383-5517940 AMZN Mktp DE 11<br>KQ61PE80PWMOX9<br>11KQ61PE80PWMOX9 | 26,99-    |\n| 28.08      | Gutschriftüberweisung<br>Wert: 28.08.2024<br>eBay S.a.r.l.<br>P.6511955513<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>NWTPQPPSSEQA56D | 29,97+    |\n\n---\n\n### Kontoauszug 11\n**Blatt 6**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal (Europe) S.a.r.l. et Cie, S.C.A.<br>1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>1036541697066 PP.8860.PP PAYPAL | 5,49-     |\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036541661685 | 5,49-     |\n\n---\n\n### Kontoauszug 11\n**Blatt 7**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036541637290 | 5,49-     |\n| 30.08      | Lastschrift<br>Wert: 30.08.2024<br>Hans und Maria Mustermann<br>Rechnung<br>Darl.-Leistung 6000848587<br>Zinsen<br>20240830-RL001-00022356711 | 443,75-   |\n\n---\n\n### Kontoauszug 11\n**Blatt 8**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Techniker Krankenkasse Pflegeversicherung<br>TK-Beleg 270824, AW204,844 Monat 09/2024<br>3007780284 | 332,00+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Techniker Krankenkasse Pflegeversicherung<br>TK-Beleg 270824, BA672,844 Monat 09/2024<br>4807846063 | 573,00+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Renten Service<br>12345678A12345 RV-RENTE 09.2024<br>/KUHLEN MARLENE<br>PANR12345678A12345 | 622,91+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Renten Service<br>98765432B98765 RV-RENTE 09.2024<br>/KUHLEN HANS<br>PANR98765432B98765 | 766,09+   |\n\n**Kontostand am 30.08.2024, 20:04 Uhr** 15.504,16+\n*Kontostand kann Beträge mit späterer Wertstellung enthalten, s. Rückseite*\n\n---\n\n### Kontoauszug 12\n**Blatt 1**\n**Kontostand 30.08.2024, Auszug Nr. 11**\n15.504,16+\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 02.09      | Lastschrift<br>Wert: 02.09.2024<br>DKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF<br>KV214899170 01.09.2024 - 30.09.2024<br>257240901R000501KV214899170 | 26,14-    |\n| 03.09      | Kartenzahlung<br>Wert: 03.09.2024<br>02 HANDELSHOF IN MOENCHENGL<br>ELV61498866 30.08 11.39 MEO 02 HAND<br>ELSHOF IN MOENCHENGL<br>IC-17438071681 | 14,90-    |\n\n---\n\n*(Fortsetzung folgt analog für alle weiteren Seiten mit korrigierter Struktur und Formatierung.)*```",
+          "index": 0,
+          "source": "base64",
+          "heading": "",
+          "token_count": 2019
+        }
+      ],
+      "success": true,
+      "markdown": "```markdown\n**Kontoinformationen**\nKomfortkonto 19752\nBLZ 310 500 00\nStadtsparkasse Musterstadt\nUST-ID DE120499145\n\nDer vorherige Auszug wurde Ihnen auf dem Versandweg bereitgestellt.\n\n---\n\n### Kontoauszug 11\n**Blatt 1**\n**Kontostand 17.08.2024, Auszug Nr. 10**\n14.902,01+\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 19.08      | Lastschrift<br>Wert: 19.08.2024<br>Telekom Deutschland GmbH<br>Mobilfunk Kundenkonto 0050104594 RG<br>32110777000701/06.08.2024<br>Zahlbeleg 332719221717 | 41,90-    |\n| 20.08      | Kartenzahlung<br>Wert: 20.08.2024<br>02 HANDELSHOF IN MOENCHENGL<br>ELV61498866 16.08 12.00 MEO 02 HAND<br>ELSHOF IN MOENCHENGL<br>IC-17359973092 | 184,63-   |\n\n**Kontoinhaber:**\nHans und Maria Mustermann\n\n**IBAN:** DE89 3704 0044 0532 0130 00\n**SWIFT-BIC:** COBADEFFXXX\n[www.sparkasse-moenchengladbach.de](http://www.sparkasse-moenchengladbach.de)\n\n---\n\n### Kontoauszug 11\n**Blatt 2**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 20.08      | Lastschrift<br>Wert: 20.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036359637163 | 9,90-     |\n| 21.08      | Bargeldausz.Debitk.GA<br>Wert: 21.08.2024<br>GA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW | 500,00-   |\n| 21.08      | Dauerauftrag entgf.<br>Wert: 21.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>PS-LOSE 01087036,01087119,02573483-02573492 | 60,00-    |\n| 21.08      | PS-Sparen<br>Wert: 21.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>PS-Sparen und Gewinnen | 48,00+    |\n\n---\n\n### Kontoauszug 11\n**Blatt 3**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser<br>Belegnr 240621609103 NEW sagt Danke | 270,00-   |\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 210093636 / Musterstraße 42 /Regenwasser/<br>Belegnr 240221973690 NEW sagt Danke | 32,00-    |\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 210093635 / Musterstraße 42 /Abwasser/<br>Belegnr 240221973689 NEW sagt Danke | 31,00-    |\n\n---\n\n### Kontoauszug 11\n**Blatt 4**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 26.08      | Lastschrift<br>Wert: 26.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-4989206-2435548 AMZN Mktp DE 5B<br>A2UVMSP1A0HHXX<br>5BA2UVMSP1A0HHXX | 38,98-    |\n| 26.08      | PS-Sparen<br>Wert: 26.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>Herzlichen Glückwunsch<br>PS-Sparen und Gewinnen<br>Gewinn für Los-Nr. 02573492 | 2,50+     |\n| 27.08      | Lastschrift<br>Wert: 27.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-3324625-0694754 AMZN Mktp DE BJ<br>RQZ4NI6L4JBEC9<br>BJRQZ4NI6L4JBEC9 | 24,38-    |\n\n---\n\n### Kontoauszug 11\n**Blatt 5**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 28.08      | Lastschrift<br>Wert: 28.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036524224511 | 92,32-    |\n| 28.08      | Lastschrift<br>Wert: 28.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-7487383-5517940 AMZN Mktp DE 11<br>KQ61PE80PWMOX9<br>11KQ61PE80PWMOX9 | 26,99-    |\n| 28.08      | Gutschriftüberweisung<br>Wert: 28.08.2024<br>eBay S.a.r.l.<br>P.6511955513<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>NWTPQPPSSEQA56D | 29,97+    |\n\n---\n\n### Kontoauszug 11\n**Blatt 6**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal (Europe) S.a.r.l. et Cie, S.C.A.<br>1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>1036541697066 PP.8860.PP PAYPAL | 5,49-     |\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036541661685 | 5,49-     |\n\n---\n\n### Kontoauszug 11\n**Blatt 7**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036541637290 | 5,49-     |\n| 30.08      | Lastschrift<br>Wert: 30.08.2024<br>Hans und Maria Mustermann<br>Rechnung<br>Darl.-Leistung 6000848587<br>Zinsen<br>20240830-RL001-00022356711 | 443,75-   |\n\n---\n\n### Kontoauszug 11\n**Blatt 8**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Techniker Krankenkasse Pflegeversicherung<br>TK-Beleg 270824, AW204,844 Monat 09/2024<br>3007780284 | 332,00+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Techniker Krankenkasse Pflegeversicherung<br>TK-Beleg 270824, BA672,844 Monat 09/2024<br>4807846063 | 573,00+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Renten Service<br>12345678A12345 RV-RENTE 09.2024<br>/KUHLEN MARLENE<br>PANR12345678A12345 | 622,91+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Renten Service<br>98765432B98765 RV-RENTE 09.2024<br>/KUHLEN HANS<br>PANR98765432B98765 | 766,09+   |\n\n**Kontostand am 30.08.2024, 20:04 Uhr** 15.504,16+\n*Kontostand kann Beträge mit späterer Wertstellung enthalten, s. Rückseite*\n\n---\n\n### Kontoauszug 12\n**Blatt 1**\n**Kontostand 30.08.2024, Auszug Nr. 11**\n15.504,16+\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 02.09      | Lastschrift<br>Wert: 02.09.2024<br>DKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF<br>KV214899170 01.09.2024 - 30.09.2024<br>257240901R000501KV214899170 | 26,14-    |\n| 03.09      | Kartenzahlung<br>Wert: 03.09.2024<br>02 HANDELSHOF IN MOENCHENGL<br>ELV61498866 30.08 11.39 MEO 02 HAND<br>ELSHOF IN MOENCHENGL<br>IC-17438071681 | 14,90-    |\n\n---\n\n*(Fortsetzung folgt analog für alle weiteren Seiten mit korrigierter Struktur und Formatierung.)*```",
+      "extracted": {
+        "bic": "COBADEFFXXX",
+        "bank": "Stadtsparkasse Musterstadt",
+        "iban": "DE89370400440532013000",
+        "_meta": {
+          "absender": {
+            "bic": "COBADEFFXXX",
+            "iban": null,
+            "name": null,
+            "slug": "sparkasse-mg",
+            "email": null,
+            "firma": "Stadtsparkasse Musterstadt",
+            "ust_id": "DE120499145",
+            "adresse": {
+              "ort": null,
+              "plz": null,
+              "land": null,
+              "strasse": null
+            },
+            "telefon": null
+          },
+          "mwst_satz": null,
+          "empfaenger": {
+            "name": "Hans und Maria Mustermann",
+            "slug": "kuhlen",
+            "adresse": {
+              "ort": null,
+              "plz": null,
+              "land": null,
+              "strasse": null
+            }
+          },
+          "steuerjahr": "2024",
+          "mwst_betrag": null,
+          "zahlungsart": null,
+          "aktenzeichen": null,
+          "bestellnummer": null,
+          "dokumenten_id": "11,12",
+          "zahlungsweise": null,
+          "steuerrelevant": true,
+          "vertragsnummer": null,
+          "empfaenger_iban": "DE89370400440532013000",
+          "mandatsreferenz": null,
+          "zusammenfassung": "Sammel-Kontoauszug der Stadtsparkasse Musterstadt für Hans und Maria Mustermann mit 2 Auszügen (11, 12) und 25 Buchungen vom 2024-08-19 bis 2024-09-03, Anfangssaldo 14.902,01 EUR, Endsaldo 15.463,12 EUR.",
+          "mwst_ausgewiesen": false,
+          "steuer_kategorie": "vorsorgeaufwendungen",
+          "faelligkeitsdatum": null,
+          "steuerrelevanz_hinweis": null,
+          "automatische_verlaengerung": null
+        },
+        "datum": "2024-09-30",
+        "summary": "Sammel-Kontoauszug der Stadtsparkasse Musterstadt für Hans und Maria Mustermann mit 2 Auszügen (11, 12) und 25 Buchungen vom 2024-08-19 bis 2024-09-03, Anfangssaldo 14.902,01 EUR, Endsaldo 15.463,12 EUR.",
+        "endsaldo": "15463.12",
+        "währung": "EUR",
+        "zeitraum": {
+          "bis": "2024-09-03",
+          "von": "2024-08-19"
+        },
+        "buchungen": [
+          {
+            "text": "Lastschrift\nWert: 19.08.2024\nTelekom Deutschland GmbH\nMobilfunk Kundenkonto 0050104594 RG\n32110777000701/06.08.2024\nZahlbeleg 332719221717",
+            "datum": "2024-08-19",
+            "saldo": "14860.11",
+            "betrag": "-41.90",
+            "währung": "EUR"
+          },
+          {
+            "text": "Kartenzahlung\nWert: 20.08.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 16.08 12.00 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17359973092",
+            "datum": "2024-08-20",
+            "saldo": "14675.48",
+            "betrag": "-184.63",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 20.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036359637163",
+            "datum": "2024-08-20",
+            "saldo": "14665.58",
+            "betrag": "-9.90",
+            "währung": "EUR"
+          },
+          {
+            "text": "Bargeldausz.Debitk.GA\nWert: 21.08.2024\nGA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW",
+            "datum": "2024-08-21",
+            "saldo": "14165.58",
+            "betrag": "-500.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Dauerauftrag entgf.\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-LOSE 01087036,01087119,02573483-02573492",
+            "datum": "2024-08-21",
+            "saldo": "14105.58",
+            "betrag": "-60.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "PS-Sparen\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-Sparen und Gewinnen",
+            "datum": "2024-08-21",
+            "saldo": "14153.58",
+            "betrag": "+48.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser\nBelegnr 240621609103 NEW sagt Danke",
+            "datum": "2024-08-23",
+            "saldo": "13883.58",
+            "betrag": "-270.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093636 / Musterstraße 42 /Regenwasser/\nBelegnr 240221973690 NEW sagt Danke",
+            "datum": "2024-08-23",
+            "saldo": "13851.58",
+            "betrag": "-32.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093635 / Musterstraße 42 /Abwasser/\nBelegnr 240221973689 NEW sagt Danke",
+            "datum": "2024-08-23",
+            "saldo": "13820.58",
+            "betrag": "-31.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 26.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-4989206-2435548 AMZN Mktp DE 5B\nA2UVMSP1A0HHXX\n5BA2UVMSP1A0HHXX",
+            "datum": "2024-08-26",
+            "saldo": "13781.60",
+            "betrag": "-38.98",
+            "währung": "EUR"
+          },
+          {
+            "text": "PS-Sparen\nWert: 26.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nHerzlichen Glückwunsch\nPS-Sparen und Gewinnen\nGewinn für Los-Nr. 02573492",
+            "datum": "2024-08-26",
+            "saldo": "13784.10",
+            "betrag": "+2.50",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 27.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-3324625-0694754 AMZN Mktp DE BJ\nRQZ4NI6L4JBEC9\nBJRQZ4NI6L4JBEC9",
+            "datum": "2024-08-27",
+            "saldo": "13759.72",
+            "betrag": "-24.38",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 28.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036524224511",
+            "datum": "2024-08-28",
+            "saldo": "13667.40",
+            "betrag": "-92.32",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 28.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-7487383-5517940 AMZN Mktp DE 11\nKQ61PE80PWMOX9\n11KQ61PE80PWMOX9",
+            "datum": "2024-08-28",
+            "saldo": "13640.41",
+            "betrag": "-26.99",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 28.08.2024\neBay S.a.r.l.\nP.6511955513\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\nNWTPQPPSSEQA56D",
+            "datum": "2024-08-28",
+            "saldo": "13670.38",
+            "betrag": "+29.97",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 29.08.2024\nPayPal (Europe) S.a.r.l. et Cie, S.C.A.\n1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\n1036541697066 PP.8860.PP PAYPAL",
+            "datum": "2024-08-29",
+            "saldo": "13664.89",
+            "betrag": "-5.49",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541661685",
+            "datum": "2024-08-29",
+            "saldo": "13659.40",
+            "betrag": "-5.49",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541637290",
+            "datum": "2024-08-29",
+            "saldo": "13653.91",
+            "betrag": "-5.49",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 30.08.2024\nHans und Maria Mustermann\nRechnung\nDarl.-Leistung 6000848587\nZinsen\n20240830-RL001-00022356711",
+            "datum": "2024-08-30",
+            "saldo": "13210.16",
+            "betrag": "-443.75",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, AW204,844 Monat 09/2024\n3007780284",
+            "datum": "2024-08-30",
+            "saldo": "13542.16",
+            "betrag": "+332.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, BA672,844 Monat 09/2024\n4807846063",
+            "datum": "2024-08-30",
+            "saldo": "14115.16",
+            "betrag": "+573.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n12345678A12345 RV-RENTE 09.2024\n/KUHLEN MARLENE\nPANR12345678A12345",
+            "datum": "2024-08-30",
+            "saldo": "14738.07",
+            "betrag": "+622.91",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n98765432B98765 RV-RENTE 09.2024\n/KUHLEN HANS\nPANR98765432B98765",
+            "datum": "2024-08-30",
+            "saldo": "15504.16",
+            "betrag": "+766.09",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 02.09.2024\nDKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF\nKV214899170 01.09.2024 - 30.09.2024\n257240901R000501KV214899170",
+            "datum": "2024-09-02",
+            "saldo": "15478.02",
+            "betrag": "-26.14",
+            "währung": "EUR"
+          },
+          {
+            "text": "Kartenzahlung\nWert: 03.09.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 30.08 11.39 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17438071681",
+            "datum": "2024-09-03",
+            "saldo": "15463.12",
+            "betrag": "-14.90",
+            "währung": "EUR"
+          }
+        ],
+        "anfangssaldo": "14902.01",
+        "kontoinhaber": {
+          "name": "Hans und Maria Mustermann",
+          "adresse": {
+            "ort": null,
+            "plz": null,
+            "land": null,
+            "strasse": null
+          }
+        },
+        "auszugsnummer": "11,12",
+        "kontoauszuege": [
+          {
+            "bic": "COBADEFFXXX",
+            "bank": "Stadtsparkasse Musterstadt",
+            "iban": "DE89370400440532013000",
+            "datum": "2024-08-30",
+            "endsaldo": "15504.16",
+            "währung": "EUR",
+            "zeitraum": {
+              "bis": "2024-08-30",
+              "von": "2024-08-19"
+            },
+            "buchungen": [
+              {
+                "text": "Lastschrift\nWert: 19.08.2024\nTelekom Deutschland GmbH\nMobilfunk Kundenkonto 0050104594 RG\n32110777000701/06.08.2024\nZahlbeleg 332719221717",
+                "datum": "2024-08-19",
+                "saldo": "14860.11",
+                "betrag": "-41.90",
+                "währung": "EUR"
+              },
+              {
+                "text": "Kartenzahlung\nWert: 20.08.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 16.08 12.00 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17359973092",
+                "datum": "2024-08-20",
+                "saldo": "14675.48",
+                "betrag": "-184.63",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 20.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036359637163",
+                "datum": "2024-08-20",
+                "saldo": "14665.58",
+                "betrag": "-9.90",
+                "währung": "EUR"
+              },
+              {
+                "text": "Bargeldausz.Debitk.GA\nWert: 21.08.2024\nGA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW",
+                "datum": "2024-08-21",
+                "saldo": "14165.58",
+                "betrag": "-500.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Dauerauftrag entgf.\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-LOSE 01087036,01087119,02573483-02573492",
+                "datum": "2024-08-21",
+                "saldo": "14105.58",
+                "betrag": "-60.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "PS-Sparen\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-Sparen und Gewinnen",
+                "datum": "2024-08-21",
+                "saldo": "14153.58",
+                "betrag": "+48.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser\nBelegnr 240621609103 NEW sagt Danke",
+                "datum": "2024-08-23",
+                "saldo": "13883.58",
+                "betrag": "-270.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093636 / Musterstraße 42 /Regenwasser/\nBelegnr 240221973690 NEW sagt Danke",
+                "datum": "2024-08-23",
+                "saldo": "13851.58",
+                "betrag": "-32.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093635 / Musterstraße 42 /Abwasser/\nBelegnr 240221973689 NEW sagt Danke",
+                "datum": "2024-08-23",
+                "saldo": "13820.58",
+                "betrag": "-31.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 26.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-4989206-2435548 AMZN Mktp DE 5B\nA2UVMSP1A0HHXX\n5BA2UVMSP1A0HHXX",
+                "datum": "2024-08-26",
+                "saldo": "13781.60",
+                "betrag": "-38.98",
+                "währung": "EUR"
+              },
+              {
+                "text": "PS-Sparen\nWert: 26.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nHerzlichen Glückwunsch\nPS-Sparen und Gewinnen\nGewinn für Los-Nr. 02573492",
+                "datum": "2024-08-26",
+                "saldo": "13784.10",
+                "betrag": "+2.50",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 27.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-3324625-0694754 AMZN Mktp DE BJ\nRQZ4NI6L4JBEC9\nBJRQZ4NI6L4JBEC9",
+                "datum": "2024-08-27",
+                "saldo": "13759.72",
+                "betrag": "-24.38",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 28.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036524224511",
+                "datum": "2024-08-28",
+                "saldo": "13667.40",
+                "betrag": "-92.32",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 28.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-7487383-5517940 AMZN Mktp DE 11\nKQ61PE80PWMOX9\n11KQ61PE80PWMOX9",
+                "datum": "2024-08-28",
+                "saldo": "13640.41",
+                "betrag": "-26.99",
+                "währung": "EUR"
+              },
+              {
+                "text": "Gutschriftüberweisung\nWert: 28.08.2024\neBay S.a.r.l.\nP.6511955513\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\nNWTPQPPSSEQA56D",
+                "datum": "2024-08-28",
+                "saldo": "13670.38",
+                "betrag": "+29.97",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 29.08.2024\nPayPal (Europe) S.a.r.l. et Cie, S.C.A.\n1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\n1036541697066 PP.8860.PP PAYPAL",
+                "datum": "2024-08-29",
+                "saldo": "13664.89",
+                "betrag": "-5.49",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541661685",
+                "datum": "2024-08-29",
+                "saldo": "13659.40",
+                "betrag": "-5.49",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541637290",
+                "datum": "2024-08-29",
+                "saldo": "13653.91",
+                "betrag": "-5.49",
+                "währung": "EUR"
+              },
+              {
+                "text": "Lastschrift\nWert: 30.08.2024\nHans und Maria Mustermann\nRechnung\nDarl.-Leistung 6000848587\nZinsen\n20240830-RL001-00022356711",
+                "datum": "2024-08-30",
+                "saldo": "13210.16",
+                "betrag": "-443.75",
+                "währung": "EUR"
+              },
+              {
+                "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, AW204,844 Monat 09/2024\n3007780284",
+                "datum": "2024-08-30",
+                "saldo": "13542.16",
+                "betrag": "+332.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, BA672,844 Monat 09/2024\n4807846063",
+                "datum": "2024-08-30",
+                "saldo": "14115.16",
+                "betrag": "+573.00",
+                "währung": "EUR"
+              },
+              {
+                "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n12345678A12345 RV-RENTE 09.2024\n/KUHLEN MARLENE\nPANR12345678A12345",
+                "datum": "2024-08-30",
+                "saldo": "14738.07",
+                "betrag": "+622.91",
+                "währung": "EUR"
+              },
+              {
+                "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n98765432B98765 RV-RENTE 09.2024\n/KUHLEN HANS\nPANR98765432B98765",
+                "datum": "2024-08-30",
+                "saldo": "15504.16",
+                "betrag": "+766.09",
+                "währung": "EUR"
+              }
+            ],
+            "anfangssaldo": "14902.01",
+            "kontoinhaber": {
+              "name": "Hans und Maria Mustermann",
+              "adresse": {
+                "ort": null,
+                "plz": null,
+                "land": null,
+                "strasse": null
+              }
+            },
+            "auszugsnummer": "11"
+          },
+          {
+            "bic": "COBADEFFXXX",
+            "bank": "Stadtsparkasse Musterstadt",
+            "iban": "DE89370400440532013000",
+            "datum": "2024-09-30",
+            "endsaldo": "15463.12",
+            "währung": "EUR",
+            "zeitraum": {
+              "bis": "2024-09-03",
+              "von": "2024-09-02"
+            },
+            "buchungen": [
+              {
+                "text": "Lastschrift\nWert: 02.09.2024\nDKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF\nKV214899170 01.09.2024 - 30.09.2024\n257240901R000501KV214899170",
+                "datum": "2024-09-02",
+                "saldo": "15478.02",
+                "betrag": "-26.14",
+                "währung": "EUR"
+              },
+              {
+                "text": "Kartenzahlung\nWert: 03.09.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 30.08 11.39 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17438071681",
+                "datum": "2024-09-03",
+                "saldo": "15463.12",
+                "betrag": "-14.90",
+                "währung": "EUR"
+              }
+            ],
+            "anfangssaldo": "15504.16",
+            "kontoinhaber": {
+              "name": "Hans und Maria Mustermann",
+              "adresse": {
+                "ort": null,
+                "plz": null,
+                "land": null,
+                "strasse": null
+              }
+            },
+            "auszugsnummer": "12"
+          }
+        ]
+      },
+      "normalized": {
+        "bic": "COBADEFFXXX",
+        "amount": 15463.12,
+        "summary": "Sammel-Kontoauszug der Stadtsparkasse Musterstadt für Hans und Maria Mustermann mit 2 Auszügen (11, 12) und 25 Buchungen vom 2024-08-19 bis 2024-09-03, Anfangssaldo 14.902,01 EUR, Endsaldo 15.463,12 EUR.",
+        "currency": "EUR",
+        "date_due": null,
+        "tax_rate": null,
+        "amount_tax": null,
+        "line_items": [
+          {
+            "text": "Lastschrift\nWert: 19.08.2024\nTelekom Deutschland GmbH\nMobilfunk Kundenkonto 0050104594 RG\n32110777000701/06.08.2024\nZahlbeleg 332719221717",
+            "datum": "2024-08-19",
+            "saldo": "14860.11",
+            "betrag": "-41.90",
+            "währung": "EUR"
+          },
+          {
+            "text": "Kartenzahlung\nWert: 20.08.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 16.08 12.00 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17359973092",
+            "datum": "2024-08-20",
+            "saldo": "14675.48",
+            "betrag": "-184.63",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 20.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036359637163",
+            "datum": "2024-08-20",
+            "saldo": "14665.58",
+            "betrag": "-9.90",
+            "währung": "EUR"
+          },
+          {
+            "text": "Bargeldausz.Debitk.GA\nWert: 21.08.2024\nGA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW",
+            "datum": "2024-08-21",
+            "saldo": "14165.58",
+            "betrag": "-500.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Dauerauftrag entgf.\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-LOSE 01087036,01087119,02573483-02573492",
+            "datum": "2024-08-21",
+            "saldo": "14105.58",
+            "betrag": "-60.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "PS-Sparen\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-Sparen und Gewinnen",
+            "datum": "2024-08-21",
+            "saldo": "14153.58",
+            "betrag": "+48.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser\nBelegnr 240621609103 NEW sagt Danke",
+            "datum": "2024-08-23",
+            "saldo": "13883.58",
+            "betrag": "-270.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093636 / Musterstraße 42 /Regenwasser/\nBelegnr 240221973690 NEW sagt Danke",
+            "datum": "2024-08-23",
+            "saldo": "13851.58",
+            "betrag": "-32.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093635 / Musterstraße 42 /Abwasser/\nBelegnr 240221973689 NEW sagt Danke",
+            "datum": "2024-08-23",
+            "saldo": "13820.58",
+            "betrag": "-31.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 26.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-4989206-2435548 AMZN Mktp DE 5B\nA2UVMSP1A0HHXX\n5BA2UVMSP1A0HHXX",
+            "datum": "2024-08-26",
+            "saldo": "13781.60",
+            "betrag": "-38.98",
+            "währung": "EUR"
+          },
+          {
+            "text": "PS-Sparen\nWert: 26.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nHerzlichen Glückwunsch\nPS-Sparen und Gewinnen\nGewinn für Los-Nr. 02573492",
+            "datum": "2024-08-26",
+            "saldo": "13784.10",
+            "betrag": "+2.50",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 27.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-3324625-0694754 AMZN Mktp DE BJ\nRQZ4NI6L4JBEC9\nBJRQZ4NI6L4JBEC9",
+            "datum": "2024-08-27",
+            "saldo": "13759.72",
+            "betrag": "-24.38",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 28.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036524224511",
+            "datum": "2024-08-28",
+            "saldo": "13667.40",
+            "betrag": "-92.32",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 28.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-7487383-5517940 AMZN Mktp DE 11\nKQ61PE80PWMOX9\n11KQ61PE80PWMOX9",
+            "datum": "2024-08-28",
+            "saldo": "13640.41",
+            "betrag": "-26.99",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 28.08.2024\neBay S.a.r.l.\nP.6511955513\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\nNWTPQPPSSEQA56D",
+            "datum": "2024-08-28",
+            "saldo": "13670.38",
+            "betrag": "+29.97",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 29.08.2024\nPayPal (Europe) S.a.r.l. et Cie, S.C.A.\n1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\n1036541697066 PP.8860.PP PAYPAL",
+            "datum": "2024-08-29",
+            "saldo": "13664.89",
+            "betrag": "-5.49",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541661685",
+            "datum": "2024-08-29",
+            "saldo": "13659.40",
+            "betrag": "-5.49",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541637290",
+            "datum": "2024-08-29",
+            "saldo": "13653.91",
+            "betrag": "-5.49",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 30.08.2024\nHans und Maria Mustermann\nRechnung\nDarl.-Leistung 6000848587\nZinsen\n20240830-RL001-00022356711",
+            "datum": "2024-08-30",
+            "saldo": "13210.16",
+            "betrag": "-443.75",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, AW204,844 Monat 09/2024\n3007780284",
+            "datum": "2024-08-30",
+            "saldo": "13542.16",
+            "betrag": "+332.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, BA672,844 Monat 09/2024\n4807846063",
+            "datum": "2024-08-30",
+            "saldo": "14115.16",
+            "betrag": "+573.00",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n12345678A12345 RV-RENTE 09.2024\n/KUHLEN MARLENE\nPANR12345678A12345",
+            "datum": "2024-08-30",
+            "saldo": "14738.07",
+            "betrag": "+622.91",
+            "währung": "EUR"
+          },
+          {
+            "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n98765432B98765 RV-RENTE 09.2024\n/KUHLEN HANS\nPANR98765432B98765",
+            "datum": "2024-08-30",
+            "saldo": "15504.16",
+            "betrag": "+766.09",
+            "währung": "EUR"
+          },
+          {
+            "text": "Lastschrift\nWert: 02.09.2024\nDKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF\nKV214899170 01.09.2024 - 30.09.2024\n257240901R000501KV214899170",
+            "datum": "2024-09-02",
+            "saldo": "15478.02",
+            "betrag": "-26.14",
+            "währung": "EUR"
+          },
+          {
+            "text": "Kartenzahlung\nWert: 03.09.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 30.08 11.39 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17438071681",
+            "datum": "2024-09-03",
+            "saldo": "15463.12",
+            "betrag": "-14.90",
+            "währung": "EUR"
+          }
+        ],
+        "page_count": 52,
+        "date_issued": "2024-09-30",
+        "iban_vendor": "DE89370400440532013000",
+        "tax_country": "DE",
+        "vendor_name": "Stadtsparkasse Musterstadt",
+        "vendor_slug": "sparkasse-mg",
+        "auto_renewal": null,
+        "order_number": null,
+        "phone_number": null,
+        "tax_category": "special_expenses",
+        "tax_relevant": true,
+        "vendor_email": null,
+        "vendor_phone": null,
+        "quality_score": 0.576,
+        "vendor_tax_id": "DE120499145",
+        "_quality_score": 0.576,
+        "date_period_to": "2024-09-03",
+        "iban_recipient": "DE89370400440532013000",
+        "invoice_number": "11,12",
+        "payment_method": null,
+        "recipient_name": "Hans und Maria Mustermann",
+        "vendor_address": null,
+        "vendor_country": "DE",
+        "contract_number": null,
+        "date_period_from": "2024-08-19",
+        "line_items_count": 25,
+        "mandate_reference": null,
+        "payment_frequency": null,
+        "recipient_address": null,
+        "recipient_country": "DE",
+        "completeness_score": 0.576
+      },
+      "enriched_pdf": null,
+      "normalized_trace": [
+        {
+          "raw": "Stadtsparkasse Musterstadt",
+          "rule": "meta_path_fallback",
+          "field": "vendor_name",
+          "confidence": 0.8,
+          "source_field": "_meta.absender.firma"
+        },
+        {
+          "raw": {
+            "ort": null,
+            "plz": null,
+            "land": null,
+            "strasse": null
+          },
+          "rule": "flatten_dict_to_string",
+          "field": "vendor_address",
+          "confidence": 0.9,
+          "source_field": "_meta.absender.adresse"
+        },
+        {
+          "raw": {
+            "ort": null,
+            "plz": null,
+            "land": null,
+            "strasse": null
+          },
+          "rule": "flatten_dict_to_string",
+          "field": "recipient_address",
+          "confidence": 0.9,
+          "source_field": "_meta.empfaenger.adresse"
+        },
+        {
+          "raw": "EUR",
+          "rule": "find_canonical",
+          "field": "currency",
+          "confidence": 1.0,
+          "source_field": "currency"
+        },
+        {
+          "raw": "vorsorgeaufwendungen",
+          "rule": "find_canonical",
+          "field": "tax_category",
+          "confidence": 1.0,
+          "source_field": "tax_category"
+        },
+        {
+          "raw": "15463.12",
+          "rule": "convert_decimal",
+          "field": "amount",
+          "confidence": 0.9,
+          "source_field": "amount"
+        },
+        {
+          "raw": null,
+          "rule": "default_fallback_country",
+          "field": "vendor_country",
+          "confidence": 0.3,
+          "source_field": null
+        },
+        {
+          "raw": null,
+          "rule": "default_fallback_country",
+          "field": "recipient_country",
+          "confidence": 0.3,
+          "source_field": null
+        },
+        {
+          "raw": "COBADEFFXXX",
+          "rule": "direct_mapping",
+          "field": "bic",
+          "confidence": 1.0,
+          "source_field": "bic"
+        },
+        {
+          "raw": "Sammel-Kontoauszug der Stadtsparkasse Musterstadt für Hans und Maria Mustermann mit 2 Auszügen (11, 12) und 25 Buchungen vom 2024-08-19 bis 2024-09-03, Anfangssaldo 14.902,01 EUR, Endsaldo 15.463,12 EUR.",
+          "rule": "direct_mapping",
+          "field": "summary",
+          "confidence": 1.0,
+          "source_field": "_meta.zusammenfassung"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "date_due",
+          "confidence": 0.0,
+          "source_field": "_meta.faelligkeitsdatum"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "tax_rate",
+          "confidence": 0.0,
+          "source_field": "_meta.mwst_satz"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "amount_tax",
+          "confidence": 0.0,
+          "source_field": "_meta.mwst_betrag"
+        },
+        {
+          "raw": [
+            {
+              "text": "Lastschrift\nWert: 19.08.2024\nTelekom Deutschland GmbH\nMobilfunk Kundenkonto 0050104594 RG\n32110777000701/06.08.2024\nZahlbeleg 332719221717",
+              "datum": "2024-08-19",
+              "saldo": "14860.11",
+              "betrag": "-41.90",
+              "währung": "EUR"
+            },
+            {
+              "text": "Kartenzahlung\nWert: 20.08.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 16.08 12.00 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17359973092",
+              "datum": "2024-08-20",
+              "saldo": "14675.48",
+              "betrag": "-184.63",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 20.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036359637163",
+              "datum": "2024-08-20",
+              "saldo": "14665.58",
+              "betrag": "-9.90",
+              "währung": "EUR"
+            },
+            {
+              "text": "Bargeldausz.Debitk.GA\nWert: 21.08.2024\nGA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW",
+              "datum": "2024-08-21",
+              "saldo": "14165.58",
+              "betrag": "-500.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Dauerauftrag entgf.\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-LOSE 01087036,01087119,02573483-02573492",
+              "datum": "2024-08-21",
+              "saldo": "14105.58",
+              "betrag": "-60.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "PS-Sparen\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-Sparen und Gewinnen",
+              "datum": "2024-08-21",
+              "saldo": "14153.58",
+              "betrag": "+48.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser\nBelegnr 240621609103 NEW sagt Danke",
+              "datum": "2024-08-23",
+              "saldo": "13883.58",
+              "betrag": "-270.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093636 / Musterstraße 42 /Regenwasser/\nBelegnr 240221973690 NEW sagt Danke",
+              "datum": "2024-08-23",
+              "saldo": "13851.58",
+              "betrag": "-32.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093635 / Musterstraße 42 /Abwasser/\nBelegnr 240221973689 NEW sagt Danke",
+              "datum": "2024-08-23",
+              "saldo": "13820.58",
+              "betrag": "-31.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 26.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-4989206-2435548 AMZN Mktp DE 5B\nA2UVMSP1A0HHXX\n5BA2UVMSP1A0HHXX",
+              "datum": "2024-08-26",
+              "saldo": "13781.60",
+              "betrag": "-38.98",
+              "währung": "EUR"
+            },
+            {
+              "text": "PS-Sparen\nWert: 26.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nHerzlichen Glückwunsch\nPS-Sparen und Gewinnen\nGewinn für Los-Nr. 02573492",
+              "datum": "2024-08-26",
+              "saldo": "13784.10",
+              "betrag": "+2.50",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 27.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-3324625-0694754 AMZN Mktp DE BJ\nRQZ4NI6L4JBEC9\nBJRQZ4NI6L4JBEC9",
+              "datum": "2024-08-27",
+              "saldo": "13759.72",
+              "betrag": "-24.38",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 28.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036524224511",
+              "datum": "2024-08-28",
+              "saldo": "13667.40",
+              "betrag": "-92.32",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 28.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-7487383-5517940 AMZN Mktp DE 11\nKQ61PE80PWMOX9\n11KQ61PE80PWMOX9",
+              "datum": "2024-08-28",
+              "saldo": "13640.41",
+              "betrag": "-26.99",
+              "währung": "EUR"
+            },
+            {
+              "text": "Gutschriftüberweisung\nWert: 28.08.2024\neBay S.a.r.l.\nP.6511955513\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\nNWTPQPPSSEQA56D",
+              "datum": "2024-08-28",
+              "saldo": "13670.38",
+              "betrag": "+29.97",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 29.08.2024\nPayPal (Europe) S.a.r.l. et Cie, S.C.A.\n1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\n1036541697066 PP.8860.PP PAYPAL",
+              "datum": "2024-08-29",
+              "saldo": "13664.89",
+              "betrag": "-5.49",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541661685",
+              "datum": "2024-08-29",
+              "saldo": "13659.40",
+              "betrag": "-5.49",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541637290",
+              "datum": "2024-08-29",
+              "saldo": "13653.91",
+              "betrag": "-5.49",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 30.08.2024\nHans und Maria Mustermann\nRechnung\nDarl.-Leistung 6000848587\nZinsen\n20240830-RL001-00022356711",
+              "datum": "2024-08-30",
+              "saldo": "13210.16",
+              "betrag": "-443.75",
+              "währung": "EUR"
+            },
+            {
+              "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, AW204,844 Monat 09/2024\n3007780284",
+              "datum": "2024-08-30",
+              "saldo": "13542.16",
+              "betrag": "+332.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, BA672,844 Monat 09/2024\n4807846063",
+              "datum": "2024-08-30",
+              "saldo": "14115.16",
+              "betrag": "+573.00",
+              "währung": "EUR"
+            },
+            {
+              "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n12345678A12345 RV-RENTE 09.2024\n/KUHLEN MARLENE\nPANR12345678A12345",
+              "datum": "2024-08-30",
+              "saldo": "14738.07",
+              "betrag": "+622.91",
+              "währung": "EUR"
+            },
+            {
+              "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n98765432B98765 RV-RENTE 09.2024\n/KUHLEN HANS\nPANR98765432B98765",
+              "datum": "2024-08-30",
+              "saldo": "15504.16",
+              "betrag": "+766.09",
+              "währung": "EUR"
+            },
+            {
+              "text": "Lastschrift\nWert: 02.09.2024\nDKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF\nKV214899170 01.09.2024 - 30.09.2024\n257240901R000501KV214899170",
+              "datum": "2024-09-02",
+              "saldo": "15478.02",
+              "betrag": "-26.14",
+              "währung": "EUR"
+            },
+            {
+              "text": "Kartenzahlung\nWert: 03.09.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 30.08 11.39 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17438071681",
+              "datum": "2024-09-03",
+              "saldo": "15463.12",
+              "betrag": "-14.90",
+              "währung": "EUR"
+            }
+          ],
+          "rule": "direct_mapping",
+          "field": "line_items",
+          "confidence": 1.0,
+          "source_field": "buchungen"
+        },
+        {
+          "raw": "2024-09-30",
+          "rule": "direct_mapping",
+          "field": "date_issued",
+          "confidence": 1.0,
+          "source_field": "datum"
+        },
+        {
+          "raw": "DE89370400440532013000",
+          "rule": "direct_mapping",
+          "field": "iban_vendor",
+          "confidence": 1.0,
+          "source_field": "iban"
+        },
+        {
+          "raw": "sparkasse-mg",
+          "rule": "direct_mapping",
+          "field": "vendor_slug",
+          "confidence": 1.0,
+          "source_field": "_meta.absender.slug"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "auto_renewal",
+          "confidence": 0.0,
+          "source_field": "_meta.automatische_verlaengerung"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "order_number",
+          "confidence": 0.0,
+          "source_field": "_meta.bestellnummer"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "phone_number",
+          "confidence": 0.0,
+          "source_field": "_meta.absender.telefon"
+        },
+        {
+          "raw": true,
+          "rule": "direct_mapping",
+          "field": "tax_relevant",
+          "confidence": 1.0,
+          "source_field": "_meta.steuerrelevant"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "vendor_email",
+          "confidence": 0.0,
+          "source_field": "_meta.absender.email"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "vendor_phone",
+          "confidence": 0.0,
+          "source_field": "_meta.absender.telefon"
+        },
+        {
+          "raw": "DE120499145",
+          "rule": "direct_mapping",
+          "field": "vendor_tax_id",
+          "confidence": 1.0,
+          "source_field": "_meta.absender.ust_id"
+        },
+        {
+          "raw": "2024-09-03",
+          "rule": "direct_mapping",
+          "field": "date_period_to",
+          "confidence": 1.0,
+          "source_field": "zeitraum.bis"
+        },
+        {
+          "raw": "DE89370400440532013000",
+          "rule": "direct_mapping",
+          "field": "iban_recipient",
+          "confidence": 1.0,
+          "source_field": "_meta.empfaenger_iban"
+        },
+        {
+          "raw": "11,12",
+          "rule": "direct_mapping",
+          "field": "invoice_number",
+          "confidence": 1.0,
+          "source_field": "auszugsnummer"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "payment_method",
+          "confidence": 0.0,
+          "source_field": "_meta.zahlungsart"
+        },
+        {
+          "raw": "Hans und Maria Mustermann",
+          "rule": "direct_mapping",
+          "field": "recipient_name",
+          "confidence": 1.0,
+          "source_field": "_meta.empfaenger.name"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "contract_number",
+          "confidence": 0.0,
+          "source_field": "_meta.vertragsnummer"
+        },
+        {
+          "raw": "2024-08-19",
+          "rule": "direct_mapping",
+          "field": "date_period_from",
+          "confidence": 1.0,
+          "source_field": "zeitraum.von"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "mandate_reference",
+          "confidence": 0.0,
+          "source_field": "_meta.mandatsreferenz"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "payment_frequency",
+          "confidence": 0.0,
+          "source_field": "_meta.zahlungsweise"
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "line_items_count",
+          "confidence": 1.0,
+          "source_field": null
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "page_count",
+          "confidence": 1.0,
+          "source_field": null
+        },
+        {
+          "raw": null,
+          "rule": "direct_mapping",
+          "field": "tax_country",
+          "confidence": 1.0,
+          "source_field": null
+        }
+      ],
+      "normalized_context": {
+        "tax_country": "DE",
+        "quality_score": 0.576,
+        "vendor_country": "DE",
+        "recipient_country": "DE",
+        "validation_errors": [],
+        "document_quality_score": 0.7269
+      },
+      "normalized_version": "1179b1450a4ab99ec6df88ea766aace3431a4cf5ae89584a772403b2ce0f2bc6",
+      "normalized_warnings": [],
+      "normalized_confidence": {
+        "bic": 1.0,
+        "amount": 0.9,
+        "summary": 1.0,
+        "currency": 1.0,
+        "date_due": 0.0,
+        "tax_rate": 0.0,
+        "amount_tax": 0.0,
+        "line_items": 1.0,
+        "page_count": 1.0,
+        "date_issued": 1.0,
+        "iban_vendor": 1.0,
+        "tax_country": 1.0,
+        "vendor_name": 0.8,
+        "vendor_slug": 1.0,
+        "auto_renewal": 0.0,
+        "order_number": 0.0,
+        "phone_number": 0.0,
+        "tax_category": 1.0,
+        "tax_relevant": 1.0,
+        "vendor_email": 0.0,
+        "vendor_phone": 0.0,
+        "vendor_tax_id": 1.0,
+        "date_period_to": 1.0,
+        "iban_recipient": 1.0,
+        "invoice_number": 1.0,
+        "payment_method": 0.0,
+        "recipient_name": 1.0,
+        "vendor_address": 0.9,
+        "vendor_country": 0.3,
+        "contract_number": 0.0,
+        "date_period_from": 1.0,
+        "line_items_count": 1.0,
+        "mandate_reference": 0.0,
+        "payment_frequency": 0.0,
+        "recipient_address": 0.9,
+        "recipient_country": 0.3
+      }
+    },
+    "_meta": {
+      "template": "bank_statement",
+      "final_mode": "full",
+      "request_id": "3c53fa09-300c-4527-b3ba-c238072effc9",
+      "attempt_mode": "full",
+      "initial_mode": "default",
+      "retry_reason": "low_quality",
+      "attempt_count": 2,
+      "quality_grade": "good",
+      "retry_applied": true,
+      "attempt_number": 2,
+      "pipeline_steps": [
+        "ocr",
+        "dual_pass_validation"
+      ],
+      "final_quality_score": 0.7269,
+      "retry_threshold_used": 0.75,
+      "initial_quality_score": 0.5272,
+      "document_type_confidence": 0.99
+    },
+    "markdown": "```markdown\n**Kontoinformationen**\nKomfortkonto 19752\nBLZ 310 500 00\nStadtsparkasse Musterstadt\nUST-ID DE120499145\n\nDer vorherige Auszug wurde Ihnen auf dem Versandweg bereitgestellt.\n\n---\n\n### Kontoauszug 11\n**Blatt 1**\n**Kontostand 17.08.2024, Auszug Nr. 10**\n14.902,01+\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 19.08      | Lastschrift<br>Wert: 19.08.2024<br>Telekom Deutschland GmbH<br>Mobilfunk Kundenkonto 0050104594 RG<br>32110777000701/06.08.2024<br>Zahlbeleg 332719221717 | 41,90-    |\n| 20.08      | Kartenzahlung<br>Wert: 20.08.2024<br>02 HANDELSHOF IN MOENCHENGL<br>ELV61498866 16.08 12.00 MEO 02 HAND<br>ELSHOF IN MOENCHENGL<br>IC-17359973092 | 184,63-   |\n\n**Kontoinhaber:**\nHans und Maria Mustermann\n\n**IBAN:** DE89 3704 0044 0532 0130 00\n**SWIFT-BIC:** COBADEFFXXX\n[www.sparkasse-moenchengladbach.de](http://www.sparkasse-moenchengladbach.de)\n\n---\n\n### Kontoauszug 11\n**Blatt 2**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 20.08      | Lastschrift<br>Wert: 20.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036359637163 | 9,90-     |\n| 21.08      | Bargeldausz.Debitk.GA<br>Wert: 21.08.2024<br>GA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW | 500,00-   |\n| 21.08      | Dauerauftrag entgf.<br>Wert: 21.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>PS-LOSE 01087036,01087119,02573483-02573492 | 60,00-    |\n| 21.08      | PS-Sparen<br>Wert: 21.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>PS-Sparen und Gewinnen | 48,00+    |\n\n---\n\n### Kontoauszug 11\n**Blatt 3**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser<br>Belegnr 240621609103 NEW sagt Danke | 270,00-   |\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 210093636 / Musterstraße 42 /Regenwasser/<br>Belegnr 240221973690 NEW sagt Danke | 32,00-    |\n| 23.08      | Lastschrift<br>Wert: 23.08.2024<br>NEW Niederrhein Energie und Wasser GmbH<br>Vertragskonto 210093635 / Musterstraße 42 /Abwasser/<br>Belegnr 240221973689 NEW sagt Danke | 31,00-    |\n\n---\n\n### Kontoauszug 11\n**Blatt 4**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 26.08      | Lastschrift<br>Wert: 26.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-4989206-2435548 AMZN Mktp DE 5B<br>A2UVMSP1A0HHXX<br>5BA2UVMSP1A0HHXX | 38,98-    |\n| 26.08      | PS-Sparen<br>Wert: 26.08.2024<br>STADTSPARKASSE MOENCHENGLADBACH<br>Herzlichen Glückwunsch<br>PS-Sparen und Gewinnen<br>Gewinn für Los-Nr. 02573492 | 2,50+     |\n| 27.08      | Lastschrift<br>Wert: 27.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-3324625-0694754 AMZN Mktp DE BJ<br>RQZ4NI6L4JBEC9<br>BJRQZ4NI6L4JBEC9 | 24,38-    |\n\n---\n\n### Kontoauszug 11\n**Blatt 5**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 28.08      | Lastschrift<br>Wert: 28.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036524224511 | 92,32-    |\n| 28.08      | Lastschrift<br>Wert: 28.08.2024<br>AMAZON PAYMENTS EUROPE S.C.A.<br>306-7487383-5517940 AMZN Mktp DE 11<br>KQ61PE80PWMOX9<br>11KQ61PE80PWMOX9 | 26,99-    |\n| 28.08      | Gutschriftüberweisung<br>Wert: 28.08.2024<br>eBay S.a.r.l.<br>P.6511955513<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>NWTPQPPSSEQA56D | 29,97+    |\n\n---\n\n### Kontoauszug 11\n**Blatt 6**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal (Europe) S.a.r.l. et Cie, S.C.A.<br>1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>1036541697066 PP.8860.PP PAYPAL | 5,49-     |\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036541661685 | 5,49-     |\n\n---\n\n### Kontoauszug 11\n**Blatt 7**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 29.08      | Lastschrift<br>Wert: 29.08.2024<br>PayPal Europe S.a.r.l. et Cie S.C.A<br>1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG<br>AWV-MELDEPFLICHT BEACHTEN<br>HOTLINE BUNDESBANK: (0800) 1234-111<br>1036541637290 | 5,49-     |\n| 30.08      | Lastschrift<br>Wert: 30.08.2024<br>Hans und Maria Mustermann<br>Rechnung<br>Darl.-Leistung 6000848587<br>Zinsen<br>20240830-RL001-00022356711 | 443,75-   |\n\n---\n\n### Kontoauszug 11\n**Blatt 8**\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Techniker Krankenkasse Pflegeversicherung<br>TK-Beleg 270824, AW204,844 Monat 09/2024<br>3007780284 | 332,00+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Techniker Krankenkasse Pflegeversicherung<br>TK-Beleg 270824, BA672,844 Monat 09/2024<br>4807846063 | 573,00+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Renten Service<br>12345678A12345 RV-RENTE 09.2024<br>/KUHLEN MARLENE<br>PANR12345678A12345 | 622,91+   |\n| 30.08      | Gutschriftüberweisung<br>Wert: 30.08.2024<br>Renten Service<br>98765432B98765 RV-RENTE 09.2024<br>/KUHLEN HANS<br>PANR98765432B98765 | 766,09+   |\n\n**Kontostand am 30.08.2024, 20:04 Uhr** 15.504,16+\n*Kontostand kann Beträge mit späterer Wertstellung enthalten, s. Rückseite*\n\n---\n\n### Kontoauszug 12\n**Blatt 1**\n**Kontostand 30.08.2024, Auszug Nr. 11**\n15.504,16+\n\n| Datum      | Erläuterungen                                                                                     | Betrag    |\n|------------|---------------------------------------------------------------------------------------------------|-----------|\n| 02.09      | Lastschrift<br>Wert: 02.09.2024<br>DKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF<br>KV214899170 01.09.2024 - 30.09.2024<br>257240901R000501KV214899170 | 26,14-    |\n| 03.09      | Kartenzahlung<br>Wert: 03.09.2024<br>02 HANDELSHOF IN MOENCHENGL<br>ELV61498866 30.08 11.39 MEO 02 HAND<br>ELSHOF IN MOENCHENGL<br>IC-17438071681 | 14,90-    |\n\n---\n\n*(Fortsetzung folgt analog für alle weiteren Seiten mit korrigierter Struktur und Formatierung.)*```",
+    "warnings": [],
+    "normalized": {
+      "bic": "COBADEFFXXX",
+      "amount": 15463.12,
+      "summary": "Sammel-Kontoauszug der Stadtsparkasse Musterstadt für Hans und Maria Mustermann mit 2 Auszügen (11, 12) und 25 Buchungen vom 2024-08-19 bis 2024-09-03, Anfangssaldo 14.902,01 EUR, Endsaldo 15.463,12 EUR.",
+      "currency": "EUR",
+      "date_due": null,
+      "tax_rate": null,
+      "amount_tax": null,
+      "line_items": [
+        {
+          "text": "Lastschrift\nWert: 19.08.2024\nTelekom Deutschland GmbH\nMobilfunk Kundenkonto 0050104594 RG\n32110777000701/06.08.2024\nZahlbeleg 332719221717",
+          "datum": "2024-08-19",
+          "saldo": "14860.11",
+          "betrag": "-41.90",
+          "währung": "EUR"
+        },
+        {
+          "text": "Kartenzahlung\nWert: 20.08.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 16.08 12.00 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17359973092",
+          "datum": "2024-08-20",
+          "saldo": "14675.48",
+          "betrag": "-184.63",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 20.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036359637163/PP.8860.PP/. Trusted Shops AG, Ihr Einkauf bei Trusted Shops AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036359637163",
+          "datum": "2024-08-20",
+          "saldo": "14665.58",
+          "betrag": "-9.90",
+          "währung": "EUR"
+        },
+        {
+          "text": "Bargeldausz.Debitk.GA\nWert: 21.08.2024\nGA NR00002171 BLZ31050000 0 21.08/10.29UHR STATIONSW",
+          "datum": "2024-08-21",
+          "saldo": "14165.58",
+          "betrag": "-500.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Dauerauftrag entgf.\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-LOSE 01087036,01087119,02573483-02573492",
+          "datum": "2024-08-21",
+          "saldo": "14105.58",
+          "betrag": "-60.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "PS-Sparen\nWert: 21.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nPS-Sparen und Gewinnen",
+          "datum": "2024-08-21",
+          "saldo": "14153.58",
+          "betrag": "+48.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 201087049 / Musterstraße 42 /Strom/Gas/Wasser\nBelegnr 240621609103 NEW sagt Danke",
+          "datum": "2024-08-23",
+          "saldo": "13883.58",
+          "betrag": "-270.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093636 / Musterstraße 42 /Regenwasser/\nBelegnr 240221973690 NEW sagt Danke",
+          "datum": "2024-08-23",
+          "saldo": "13851.58",
+          "betrag": "-32.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 23.08.2024\nNEW Niederrhein Energie und Wasser GmbH\nVertragskonto 210093635 / Musterstraße 42 /Abwasser/\nBelegnr 240221973689 NEW sagt Danke",
+          "datum": "2024-08-23",
+          "saldo": "13820.58",
+          "betrag": "-31.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 26.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-4989206-2435548 AMZN Mktp DE 5B\nA2UVMSP1A0HHXX\n5BA2UVMSP1A0HHXX",
+          "datum": "2024-08-26",
+          "saldo": "13781.60",
+          "betrag": "-38.98",
+          "währung": "EUR"
+        },
+        {
+          "text": "PS-Sparen\nWert: 26.08.2024\nSTADTSPARKASSE MOENCHENGLADBACH\nHerzlichen Glückwunsch\nPS-Sparen und Gewinnen\nGewinn für Los-Nr. 02573492",
+          "datum": "2024-08-26",
+          "saldo": "13784.10",
+          "betrag": "+2.50",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 27.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-3324625-0694754 AMZN Mktp DE BJ\nRQZ4NI6L4JBEC9\nBJRQZ4NI6L4JBEC9",
+          "datum": "2024-08-27",
+          "saldo": "13759.72",
+          "betrag": "-24.38",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 28.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036524224511/PP.8860.PP/. DocMorris NV, Ihr Einkauf bei DocMorris NV\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036524224511",
+          "datum": "2024-08-28",
+          "saldo": "13667.40",
+          "betrag": "-92.32",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 28.08.2024\nAMAZON PAYMENTS EUROPE S.C.A.\n306-7487383-5517940 AMZN Mktp DE 11\nKQ61PE80PWMOX9\n11KQ61PE80PWMOX9",
+          "datum": "2024-08-28",
+          "saldo": "13640.41",
+          "betrag": "-26.99",
+          "währung": "EUR"
+        },
+        {
+          "text": "Gutschriftüberweisung\nWert: 28.08.2024\neBay S.a.r.l.\nP.6511955513\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\nNWTPQPPSSEQA56D",
+          "datum": "2024-08-28",
+          "saldo": "13670.38",
+          "betrag": "+29.97",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 29.08.2024\nPayPal (Europe) S.a.r.l. et Cie, S.C.A.\n1036541697066 PP.8860.PP . Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\n1036541697066 PP.8860.PP PAYPAL",
+          "datum": "2024-08-29",
+          "saldo": "13664.89",
+          "betrag": "-5.49",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541661685/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541661685",
+          "datum": "2024-08-29",
+          "saldo": "13659.40",
+          "betrag": "-5.49",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 29.08.2024\nPayPal Europe S.a.r.l. et Cie S.C.A\n1036541637290/PP.8860.PP/. Deutsche Post AG, Ihr Einkauf bei Deutsche Post AG\nAWV-MELDEPFLICHT BEACHTEN\nHOTLINE BUNDESBANK: (0800) 1234-111\n1036541637290",
+          "datum": "2024-08-29",
+          "saldo": "13653.91",
+          "betrag": "-5.49",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 30.08.2024\nHans und Maria Mustermann\nRechnung\nDarl.-Leistung 6000848587\nZinsen\n20240830-RL001-00022356711",
+          "datum": "2024-08-30",
+          "saldo": "13210.16",
+          "betrag": "-443.75",
+          "währung": "EUR"
+        },
+        {
+          "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, AW204,844 Monat 09/2024\n3007780284",
+          "datum": "2024-08-30",
+          "saldo": "13542.16",
+          "betrag": "+332.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Gutschriftüberweisung\nWert: 30.08.2024\nTechniker Krankenkasse Pflegeversicherung\nTK-Beleg 270824, BA672,844 Monat 09/2024\n4807846063",
+          "datum": "2024-08-30",
+          "saldo": "14115.16",
+          "betrag": "+573.00",
+          "währung": "EUR"
+        },
+        {
+          "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n12345678A12345 RV-RENTE 09.2024\n/KUHLEN MARLENE\nPANR12345678A12345",
+          "datum": "2024-08-30",
+          "saldo": "14738.07",
+          "betrag": "+622.91",
+          "währung": "EUR"
+        },
+        {
+          "text": "Gutschriftüberweisung\nWert: 30.08.2024\nRenten Service\n98765432B98765 RV-RENTE 09.2024\n/KUHLEN HANS\nPANR98765432B98765",
+          "datum": "2024-08-30",
+          "saldo": "15504.16",
+          "betrag": "+766.09",
+          "währung": "EUR"
+        },
+        {
+          "text": "Lastschrift\nWert: 02.09.2024\nDKV DEUTSCHE KRANKENVERS.AG 40198 DUESSELDORF\nKV214899170 01.09.2024 - 30.09.2024\n257240901R000501KV214899170",
+          "datum": "2024-09-02",
+          "saldo": "15478.02",
+          "betrag": "-26.14",
+          "währung": "EUR"
+        },
+        {
+          "text": "Kartenzahlung\nWert: 03.09.2024\n02 HANDELSHOF IN MOENCHENGL\nELV61498866 30.08 11.39 MEO 02 HAND\nELSHOF IN MOENCHENGL\nIC-17438071681",
+          "datum": "2024-09-03",
+          "saldo": "15463.12",
+          "betrag": "-14.90",
+          "währung": "EUR"
+        }
+      ],
+      "page_count": 52,
+      "date_issued": "2024-09-30",
+      "iban_vendor": "DE89370400440532013000",
+      "tax_country": "DE",
+      "vendor_name": "Stadtsparkasse Musterstadt",
+      "vendor_slug": "sparkasse-mg",
+      "auto_renewal": null,
+      "order_number": null,
+      "phone_number": null,
+      "tax_category": "special_expenses",
+      "tax_relevant": true,
+      "vendor_email": null,
+      "vendor_phone": null,
+      "quality_score": 0.576,
+      "vendor_tax_id": "DE120499145",
+      "_quality_score": 0.576,
+      "date_period_to": "2024-09-03",
+      "iban_recipient": "DE89370400440532013000",
+      "invoice_number": "11,12",
+      "payment_method": null,
+      "recipient_name": "Hans und Maria Mustermann",
+      "vendor_address": null,
+      "vendor_country": "DE",
+      "contract_number": null,
+      "date_period_from": "2024-08-19",
+      "line_items_count": 25,
+      "mandate_reference": null,
+      "payment_frequency": null,
+      "recipient_address": null,
+      "recipient_country": "DE",
+      "completeness_score": 0.576
+    },
+    "document_type": "bank_statement",
+    "quality_score": 0.7269,
+    "_quality_score": 0.7269
+  }
+}

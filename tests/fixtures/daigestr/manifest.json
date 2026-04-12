@@ -1,0 +1,17 @@
+[
+  {
+    "doc_id": 12421,
+    "file_name": "HMK 19752 Auszüge 1 06.07.25, 09_57 Microsoft Lens.pdf",
+    "fixture_path": "tests/fixtures/daigestr/12421-hmk-19752-auszuege-1-06-07-25-09-57-microsoft-lens-pdf.json"
+  },
+  {
+    "doc_id": 12513,
+    "file_name": "HMK 202402-B 04.11.24, 10_19 Microsoft Lens.pdf",
+    "fixture_path": "tests/fixtures/daigestr/12513-hmk-202402-b-04-11-24-10-19-microsoft-lens-pdf.json"
+  },
+  {
+    "doc_id": 12550,
+    "file_name": "HMK 202454 Rechnung-R-DE-118475690-2024-31001775.pdf",
+    "fixture_path": "tests/fixtures/daigestr/12550-hmk-202454-rechnung-r-de-118475690-2024-31001775-pdf.json"
+  }
+]
