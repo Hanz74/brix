@@ -71,6 +71,55 @@ def _canonical_daigestr_business_payloads(data: dict[str, Any]) -> tuple[dict[st
     return raw_payload, raw_extracted, raw_normalized
 
 
+def _attempt_history(meta: dict[str, Any], fallback_mode: str) -> list[dict[str, Any]]:
+    request_id = _first_mapping(meta, "request_id")
+    retry_applied = bool(_first_mapping(meta, "retry_applied"))
+    retry_reason = _first_mapping(meta, "retry_reason")
+    retry_threshold_used = _first_mapping(meta, "retry_threshold_used")
+    initial_mode = _first_mapping(meta, "initial_mode") or fallback_mode
+    final_mode = _first_mapping(meta, "final_mode") or _first_mapping(meta, "attempt_mode") or initial_mode
+    final_attempt = _first_mapping(meta, "attempt_number") or _first_mapping(meta, "attempt_count") or 1
+    attempt_count = _first_mapping(meta, "attempt_count") or final_attempt or 1
+    history: list[dict[str, Any]] = []
+
+    if initial_mode:
+        first_attempt = {
+            "attempt": 1,
+            "mode": initial_mode,
+            "quality_score": _first_mapping(meta, "initial_quality_score"),
+            "request_id": request_id,
+            "status": "retry_triggered" if retry_applied and final_mode and final_mode != initial_mode else "completed",
+        }
+        if retry_reason:
+            first_attempt["retry_reason"] = retry_reason
+        if retry_threshold_used not in (None, ""):
+            first_attempt["retry_threshold_used"] = retry_threshold_used
+        history.append(first_attempt)
+
+    final_attempt_entry = {
+        "attempt": int(final_attempt),
+        "mode": final_mode,
+        "quality_score": _first_mapping(meta, "final_quality_score") or _first_mapping(meta, "quality_score"),
+        "request_id": request_id,
+        "status": "completed",
+    }
+    if retry_reason:
+        final_attempt_entry["retry_reason"] = retry_reason
+    if retry_threshold_used not in (None, ""):
+        final_attempt_entry["retry_threshold_used"] = retry_threshold_used
+
+    if not history:
+        history.append(final_attempt_entry)
+    elif history[-1]["attempt"] != final_attempt_entry["attempt"] or history[-1]["mode"] != final_attempt_entry["mode"]:
+        history.append(final_attempt_entry)
+    else:
+        history[-1] = final_attempt_entry
+
+    for entry in history:
+        entry["attempt_count"] = int(attempt_count)
+    return sanitize_for_json(history)
+
+
 class DocumentPrepareExtractablePayloadRunner(BaseRunner):
     """Normalize file/base64 inputs into the document_extract_input contract."""
 
@@ -204,6 +253,20 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         if not endpoint.startswith("/"):
             endpoint = f"/{endpoint}"
         url = f"{base_url}{endpoint}"
+        retry_enabled = _coerce_bool(request_payload["retry_on_low_quality"])
+
+        if context is not None and hasattr(context, "update_step_progress"):
+            context.update_step_progress(
+                step.id,
+                {
+                    "stage": "request",
+                    "attempt_number": 1,
+                    "attempt_count": 1,
+                    "attempt_mode": request_payload["mode"],
+                    "retry_on_low_quality": retry_enabled,
+                    "message": "calling daigestr",
+                },
+            )
 
         try:
             async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
@@ -215,6 +278,8 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
 
         raw_payload, extracted, normalized = _canonical_daigestr_business_payloads(data)
         meta = raw_payload["meta"]
+        attempt_history = _attempt_history(meta, fallback_mode=request_payload["mode"])
+        raw_payload["meta"]["attempt_history"] = attempt_history
         if not normalized:
             normalized = extracted
 
@@ -225,6 +290,22 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
             or _first_mapping(meta, "initial_quality_score")
         )
         template_name = _first_mapping(meta, "template_used")
+        final_mode = _first_mapping(meta, "final_mode") or _first_mapping(meta, "attempt_mode") or request_payload["mode"]
+
+        if context is not None and hasattr(context, "update_step_progress"):
+            context.update_step_progress(
+                step.id,
+                {
+                    "stage": "result",
+                    "attempt_number": _first_mapping(meta, "attempt_number") or 1,
+                    "attempt_count": _first_mapping(meta, "attempt_count") or 1,
+                    "attempt_mode": final_mode,
+                    "retry_applied": _first_mapping(meta, "retry_applied"),
+                    "retry_reason": _first_mapping(meta, "retry_reason"),
+                    "request_id": _first_mapping(meta, "request_id"),
+                    "message": "daigestr response received",
+                },
+            )
 
         result = sanitize_for_json(
             {
@@ -249,8 +330,10 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     "attempt_count": _first_mapping(meta, "attempt_count"),
                     "attempt_mode": _first_mapping(meta, "attempt_mode"),
                     "pipeline_steps": meta.get("pipeline_steps") if isinstance(meta.get("pipeline_steps"), list) else None,
+                    "attempt_history": attempt_history,
                 },
                 "raw": raw_payload,
+                "attempt_history": attempt_history,
                 "warnings": data.get("warnings", []),
             }
         )

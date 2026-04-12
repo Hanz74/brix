@@ -98,6 +98,16 @@ def test_extract_document_with_daigestr_normalizes_response(monkeypatch, tmp_pat
     assert data["document_type"] == "receipt"
     assert data["quality_score"] == 0.91
     assert data["_meta"]["template"] == "receipt"
+    assert data["attempt_history"] == [
+        {
+            "attempt": 1,
+            "attempt_count": 1,
+            "mode": "default",
+            "quality_score": 0.91,
+            "request_id": None,
+            "status": "completed",
+        }
+    ]
 
 
 def test_prepare_extractable_payload_prefers_step_params(tmp_path):
@@ -449,6 +459,90 @@ def test_extract_document_with_daigestr_uses_meta_as_canonical_contract(monkeypa
     assert data["_meta"]["template"] == "bank_statement"
     assert data["_meta"]["final_quality_score"] == 0.8045
     assert data["_meta"]["pipeline_steps"] == ["ocr", "dual_pass_validation"]
+    assert data["attempt_history"] == [
+        {
+            "attempt": 1,
+            "attempt_count": 2,
+            "mode": "default",
+            "quality_score": 0.52,
+            "request_id": "req-123",
+            "retry_reason": "low_quality",
+            "retry_threshold_used": 0.75,
+            "status": "retry_triggered",
+        },
+        {
+            "attempt": 2,
+            "attempt_count": 2,
+            "mode": "full",
+            "quality_score": 0.8045,
+            "request_id": "req-123",
+            "retry_reason": "low_quality",
+            "retry_threshold_used": 0.75,
+            "status": "completed",
+        },
+    ]
+
+
+def test_extract_document_with_daigestr_updates_progress_with_attempt_metadata(monkeypatch, tmp_path):
+    file_path = tmp_path / "attempt-progress.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "invoice",
+                    "template_used": "invoice",
+                    "quality_score": 0.81,
+                    "request_id": "req-456",
+                    "attempt_number": 2,
+                    "attempt_count": 2,
+                    "attempt_mode": "full",
+                    "retry_applied": True,
+                    "retry_reason": "low_quality",
+                },
+                "normalized": {"invoice_number": "R-1"},
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    updates: list[dict] = []
+
+    class FakeContext:
+        def update_step_progress(self, step_id, payload):
+            updates.append({"step_id": step_id, **payload})
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=FakeContext()))
+
+    assert result["success"] is True
+    assert updates[0]["stage"] == "request"
+    assert updates[0]["attempt_mode"] == "default"
+    assert updates[1]["stage"] == "result"
+    assert updates[1]["attempt_number"] == 2
+    assert updates[1]["attempt_count"] == 2
+    assert updates[1]["attempt_mode"] == "full"
+    assert updates[1]["retry_applied"] is True
+    assert updates[1]["retry_reason"] == "low_quality"
+    assert updates[1]["request_id"] == "req-456"
 
 
 def test_extract_document_with_daigestr_ignores_noncanonical_top_level_mirrors(monkeypatch, tmp_path):
