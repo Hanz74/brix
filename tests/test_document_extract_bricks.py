@@ -121,6 +121,53 @@ def test_extract_document_with_daigestr_normalizes_response(monkeypatch, tmp_pat
     ]
 
 
+def test_extract_document_with_daigestr_fails_when_runtime_payload_reports_unsuccessful_result(monkeypatch, tmp_path):
+    file_path = tmp_path / "timeout.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        def json(self):
+            return {
+                "success": False,
+                "error": {
+                    "code": "TIMEOUT",
+                    "message": "Timeout nach 300 Sekunden bei convert_auto",
+                },
+                "meta": {
+                    "request_id": "req-timeout",
+                    "initial_mode": "default",
+                    "final_mode": "default",
+                    "retry_applied": False,
+                    "retry_threshold_used": 0.75,
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = SimpleNamespace(config={"file_bytes_path": str(file_path)}, timeout=None)
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is False
+    assert result["error"]["error_type"] == "external_job_runtime_error"
+    assert result["error"]["error"] == "Timeout nach 300 Sekunden bei convert_auto"
+    assert result["error"]["external_job"]["request_id"] == "req-timeout"
+
+
 def test_prepare_extractable_payload_prefers_step_params(tmp_path):
     file_path = tmp_path / "params.pdf"
     file_path.write_bytes(b"pdf-content")
@@ -1208,6 +1255,69 @@ steps:
     assert len(errors) == 1
     assert errors[0]["error_detail"]["external_job"]["request_id"] == "req-engine"
     assert errors[0]["error_detail"]["external_job"]["attempt_history"][1]["mode"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_engine_marks_daigestr_runtime_error_payload_as_failed_step(monkeypatch, tmp_path):
+    file_path = tmp_path / "engine-runtime-timeout.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        is_error = False
+
+        def json(self):
+            return {
+                "success": False,
+                "error": {
+                    "code": "TIMEOUT",
+                    "message": "Timeout nach 300 Sekunden bei convert_auto",
+                },
+                "meta": {
+                    "request_id": "req-engine-timeout",
+                    "initial_mode": "default",
+                    "final_mode": "default",
+                    "retry_applied": False,
+                    "retry_threshold_used": 0.75,
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    import brix.context as context_mod
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", tmp_path / "runs")
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    pipeline = PipelineLoader().load_from_string(
+        f"""
+name: runtime-daigestr-timeout
+steps:
+  - id: extract
+    type: extract.document_with_daigestr
+    params:
+      file_bytes_path: "{file_path}"
+"""
+    )
+
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert result.steps["extract"].status == "error"
+    assert result.steps["extract"].error_message == "Timeout nach 300 Sekunden bei convert_auto"
+    assert result.steps["extract"].error_detail["error_type"] == "external_job_runtime_error"
+    assert result.steps["extract"].error_detail["external_job"]["request_id"] == "req-engine-timeout"
 
 
 @pytest.mark.asyncio

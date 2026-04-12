@@ -306,6 +306,23 @@ def _structured_daigestr_error(
     }
 
 
+def _result_error_message(data: dict[str, Any]) -> str:
+    raw = data.get("raw")
+    raw_error = raw.get("error") if isinstance(raw, dict) else None
+    if isinstance(raw_error, dict):
+        message = raw_error.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    top_error = data.get("error")
+    if isinstance(top_error, dict):
+        message = top_error.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    if isinstance(top_error, str) and top_error.strip():
+        return top_error.strip()
+    return "Daigestr returned an unsuccessful extraction result"
+
+
 def _update_external_job_progress(context: Any, step_id: str, payload: dict[str, Any]) -> None:
     if context is None or not hasattr(context, "update_step_progress"):
         return
@@ -831,6 +848,43 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
             raw_payload["meta"]["replay"] = replay
         if not normalized:
             normalized = extracted
+
+        result_success = data.get("success")
+        result_error = data.get("error")
+        raw_success = raw_payload.get("success")
+        raw_error = raw_payload.get("error")
+        if (
+            result_success is False
+            or result_error not in (None, "", {})
+            or raw_success is False
+            or raw_error not in (None, "", {})
+        ):
+            error = _structured_daigestr_error(
+                message=_result_error_message(data),
+                error_type="external_job_runtime_error",
+                request_payload=request_payload,
+                url=url,
+                response_data=data,
+                artifacts=artifacts,
+                service_capabilities=service_capabilities,
+            )
+            _update_external_job_progress(
+                context,
+                step_id,
+                {
+                    "stage": "error",
+                    "status": "failed",
+                    "attempt_number": _first_mapping(meta, "attempt_number") or 1,
+                    "attempt_count": _first_mapping(meta, "attempt_count") or 1,
+                    "attempt_mode": _first_mapping(meta, "attempt_mode") or request_payload["mode"],
+                    "retry_state": "failed",
+                    "retry_reason": _first_mapping(meta, "retry_reason"),
+                    "request_id": _first_mapping(meta, "request_id"),
+                    "job_id": _first_mapping(meta, "job_id"),
+                    "message": error["error"],
+                },
+            )
+            return {"success": False, "error": error, "duration": time.monotonic() - start}
 
         document_type = _first_mapping(meta, "document_type") or ""
         quality_score = (
