@@ -1244,7 +1244,7 @@ SYSTEM_DOCUMENT_PERSIST_EXTRACTION_RESULT = BrickSchema(
     },
     input_type="none",
     output_type="db_mutation_result",
-    output_description='{"affected_rows": N, "success": true, "applied_fields": ["raw_structured", "..."]}',
+    output_description='{"affected_rows": N, "success": true, "applied_fields": ["raw_structured", "..."], "document_shape": {"is_bundle": false, "statement_count": 1, "statement_numbers": [], "period_from": null, "period_to": null}}',
 )
 
 SYSTEM_DOCUMENT_MARK_SPECIALIST_PROCESSED = BrickSchema(

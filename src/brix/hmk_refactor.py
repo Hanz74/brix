@@ -112,7 +112,40 @@ def promote_hmk_to_document_persistence_bricks(
     active_db = db if db is not None else BrixDB()
     rewrite_hmk_save_results_to_persistence_brick(db=active_db, pipeline_name=pipeline_name)
     rewrite_hmk_mark_processed_to_specialist_brick(db=active_db, pipeline_name=pipeline_name)
+    standardize_hmk_statement_output(db=active_db, pipeline_name=pipeline_name)
     return PipelineStore(db=active_db).load_raw(pipeline_name)
+
+
+def standardize_hmk_statement_output(
+    *,
+    db: BrixDB | None = None,
+    pipeline_name: str = "buddy-hmk-extract-single",
+) -> dict[str, Any]:
+    """Expose bundle-aware statement summary fields in the HMK pipeline output."""
+
+    active_db = db if db is not None else BrixDB()
+    store = PipelineStore(db=active_db)
+    raw = store.load_raw(pipeline_name)
+
+    output = raw.get("output")
+    if not isinstance(output, dict):
+        output = {}
+
+    desired_output = {
+        "doc_id": "{{ input.item.id }}",
+        "status": "{{ 'ok' if save_results.output is defined else 'marked_only' }}",
+        "is_statement_bundle": "{{ save_results.output.document_shape.is_bundle | default(false) }}",
+        "statement_count": "{{ save_results.output.document_shape.statement_count | default(1) }}",
+        "statement_numbers": "{{ save_results.output.document_shape.statement_numbers | default([]) }}",
+        "period_from": "{{ save_results.output.document_shape.period_from | default('') }}",
+        "period_to": "{{ save_results.output.document_shape.period_to | default('') }}",
+    }
+    if output == desired_output:
+        return raw
+
+    raw["output"] = desired_output
+    store.save(raw, name=pipeline_name)
+    return store.load_raw(pipeline_name)
 
 
 def standardize_hmk_extract_flow(

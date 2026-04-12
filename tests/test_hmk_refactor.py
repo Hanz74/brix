@@ -4,6 +4,7 @@ from brix.db import BrixDB
 from brix.hmk_refactor import (
     promote_hmk_to_document_persistence_bricks,
     register_hmk_prior_case_metadata,
+    standardize_hmk_statement_output,
     standardize_hmk_extract_flow,
     standardize_hmk_download_flow,
     rewrite_hmk_mark_processed_to_specialist_brick,
@@ -194,6 +195,15 @@ def test_promote_hmk_to_document_persistence_bricks(tmp_path):
 
     assert save_results["type"] == "document.persist_extraction_result"
     assert mark_processed["type"] == "document.mark_specialist_processed"
+    assert updated["output"] == {
+        "doc_id": "{{ input.item.id }}",
+        "status": "{{ 'ok' if save_results.output is defined else 'marked_only' }}",
+        "is_statement_bundle": "{{ save_results.output.document_shape.is_bundle | default(false) }}",
+        "statement_count": "{{ save_results.output.document_shape.statement_count | default(1) }}",
+        "statement_numbers": "{{ save_results.output.document_shape.statement_numbers | default([]) }}",
+        "period_from": "{{ save_results.output.document_shape.period_from | default('') }}",
+        "period_to": "{{ save_results.output.document_shape.period_to | default('') }}",
+    }
     assert not any(
         step["type"] == "db.exec" and step["id"] in {"save_results", "mark_processed"}
         for step in updated["steps"]
@@ -215,6 +225,25 @@ def test_promote_hmk_preserves_existing_connection_name(tmp_path):
     mark_processed = next(step for step in updated["steps"] if step["id"] == "mark_processed")
     assert save_results["config"]["connection"] == "custom-docs-db"
     assert mark_processed["config"]["connection"] == "custom-docs-db"
+
+
+def test_standardize_hmk_statement_output_is_idempotent(tmp_path):
+    db = BrixDB(db_path=tmp_path / "brix.db")
+    store = PipelineStore(pipelines_dir=tmp_path / "pipelines", db=db)
+    store.save(_hmk_single_pipeline())
+
+    standardize_hmk_statement_output(db=db)
+    updated = standardize_hmk_statement_output(db=db)
+
+    assert updated["output"] == {
+        "doc_id": "{{ input.item.id }}",
+        "status": "{{ 'ok' if save_results.output is defined else 'marked_only' }}",
+        "is_statement_bundle": "{{ save_results.output.document_shape.is_bundle | default(false) }}",
+        "statement_count": "{{ save_results.output.document_shape.statement_count | default(1) }}",
+        "statement_numbers": "{{ save_results.output.document_shape.statement_numbers | default([]) }}",
+        "period_from": "{{ save_results.output.document_shape.period_from | default('') }}",
+        "period_to": "{{ save_results.output.document_shape.period_to | default('') }}",
+    }
 
 
 def test_standardize_hmk_extract_flow(tmp_path):
