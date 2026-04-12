@@ -48,9 +48,12 @@ def test_extract_document_with_daigestr_normalizes_response(monkeypatch, tmp_pat
 
         def json(self):
             return {
+                "meta": {
+                    "document_type": "receipt",
+                    "quality_score": 0.91,
+                    "template_used": "receipt",
+                },
                 "normalized": {"vendor_name": "REWE"},
-                "document_type": "receipt",
-                "quality_score": 0.91,
                 "markdown": "# test",
             }
 
@@ -94,6 +97,7 @@ def test_extract_document_with_daigestr_normalizes_response(monkeypatch, tmp_pat
     assert data["normalized"]["vendor_name"] == "REWE"
     assert data["document_type"] == "receipt"
     assert data["quality_score"] == 0.91
+    assert data["_meta"]["template"] == "receipt"
 
 
 def test_prepare_extractable_payload_prefers_step_params(tmp_path):
@@ -131,9 +135,11 @@ def test_extract_document_with_daigestr_prefers_step_params(monkeypatch, tmp_pat
 
         def json(self):
             return {
+                "meta": {
+                    "document_type": "invoice",
+                    "quality_score": 0.77,
+                },
                 "normalized": {"vendor_name": "Params Vendor"},
-                "document_type": "invoice",
-                "quality_score": 0.77,
             }
 
     class FakeClient:
@@ -443,6 +449,64 @@ def test_extract_document_with_daigestr_uses_meta_as_canonical_contract(monkeypa
     assert data["_meta"]["template"] == "bank_statement"
     assert data["_meta"]["final_quality_score"] == 0.8045
     assert data["_meta"]["pipeline_steps"] == ["ocr", "dual_pass_validation"]
+
+
+def test_extract_document_with_daigestr_ignores_noncanonical_top_level_mirrors(monkeypatch, tmp_path):
+    file_path = tmp_path / "mirror-conflict.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "bank_statement",
+                    "template_used": "bank_statement",
+                    "quality_score": 0.81,
+                },
+                "document_type": "invoice",
+                "template": "invoice",
+                "quality_score": 0.12,
+                "_quality_score": 0.11,
+                "normalized": {
+                    "document_type": "receipt",
+                    "_quality_score": 0.25,
+                    "iban": "DE62...",
+                },
+                "extracted": {
+                    "document_type": "letter",
+                    "quality_score": 0.33,
+                },
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    data = result["data"]
+    assert data["document_type"] == "bank_statement"
+    assert data["quality_score"] == 0.81
+    assert data["_quality_score"] == 0.81
+    assert data["_meta"]["template"] == "bank_statement"
 
 
 def test_v90_runs_via_normal_migration_loop(tmp_path, monkeypatch):

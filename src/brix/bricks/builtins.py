@@ -1298,8 +1298,8 @@ SYSTEM_DOCUMENT_PREPARE_EXTRACTABLE_PAYLOAD = BrickSchema(
 SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR = BrickSchema(
     name="extract.document_with_daigestr",
     type="extract_document_with_daigestr",
-    description="Execute a Daigestr extraction call against a standard document_extract_input payload and normalize the result.",
-    when_to_use="Use when a staged document should be extracted through the reusable Daigestr contract instead of bespoke subpipeline glue.",
+    description="Execute a Daigestr extraction call against a standard document_extract_input payload and expose the canonical Daigestr contract.",
+    when_to_use="Use when a staged document should be extracted through the reusable Daigestr contract and Brix should consume metadata strictly from raw.meta plus business payloads from raw.extracted/raw.normalized.",
     when_NOT_to_use="Do not use for simple regex extraction or when markitdown.convert plus another standard brick already covers the task.",
     runner="extract_document_with_daigestr",
     system=True,
@@ -1330,7 +1330,7 @@ SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR = BrickSchema(
     },
     input_type="document_extract_input",
     output_type="document_extraction_result",
-    output_description='{"normalized": {...}, "document_type": "...", "quality_score": 0.0, "markdown": "..."}',
+    output_description='{"normalized": {...}, "document_type": "from raw.meta.document_type", "quality_score": "from raw.meta.quality_score", "_meta": {"template": "from raw.meta.template_used", "retry_applied": true}, "raw": {"meta": {...}, "extracted": {...}, "normalized": {...}}}',
 )
 
 SYSTEM_FLOW_SWITCH = BrickSchema(

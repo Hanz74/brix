@@ -46,6 +46,11 @@ def _normalize_payload(step: Any, context: Any) -> dict[str, Any]:
     return last_output if isinstance(last_output, dict) else {}
 
 
+def _canonical_daigestr_meta(data: dict[str, Any]) -> dict[str, Any]:
+    meta = data.get("meta")
+    return meta if isinstance(meta, dict) else {}
+
+
 class DocumentPrepareExtractablePayloadRunner(BaseRunner):
     """Normalize file/base64 inputs into the document_extract_input contract."""
 
@@ -188,29 +193,19 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         except Exception as exc:
             return {"success": False, "error": str(exc), "duration": time.monotonic() - start}
 
-        meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+        meta = _canonical_daigestr_meta(data)
         normalized = data.get("normalized") if isinstance(data.get("normalized"), dict) else {}
         extracted = data.get("extracted") if isinstance(data.get("extracted"), dict) else {}
         if not normalized:
             normalized = extracted
 
-        document_type = (
-            _first_mapping(meta, "document_type")
-            or _first_mapping(data, "document_type")
-            or _first_mapping(normalized, "document_type", "doc_type")
-            or _first_mapping(extracted, "document_type", "doc_type")
-            or ""
-        )
+        document_type = _first_mapping(meta, "document_type") or ""
         quality_score = (
-            _first_mapping(meta, "quality_score", "final_quality_score", "initial_quality_score")
-            or _first_mapping(data, "quality_score", "_quality_score")
-            or _first_mapping(normalized, "quality_score", "_quality_score")
-            or _first_mapping(extracted, "quality_score", "_quality_score")
+            _first_mapping(meta, "quality_score")
+            or _first_mapping(meta, "final_quality_score")
+            or _first_mapping(meta, "initial_quality_score")
         )
-        template_name = (
-            _first_mapping(meta, "template_used", "template")
-            or _first_mapping(data, "template")
-        )
+        template_name = _first_mapping(meta, "template_used")
 
         result = sanitize_for_json(
             {
