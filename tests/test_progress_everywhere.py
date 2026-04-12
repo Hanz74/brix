@@ -11,11 +11,9 @@ Covers:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import tempfile
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -338,7 +336,7 @@ async def test_specialist_runner_reports_per_rule_progress():
 
     runner.report_progress = track
 
-    result = await runner.execute(step, ctx)
+    await runner.execute(step, ctx)
 
     # 2 extract rules → start + 2 per-rule calls + final done call
     assert len(progress_calls) >= 3, f"Expected >=3 progress calls, got {progress_calls}"
@@ -360,7 +358,7 @@ async def test_specialist_runner_reports_per_rule_progress():
 async def test_repeat_runner_reports_iteration_progress():
     """RepeatRunner reports progress after each iteration."""
     from brix.runners.repeat import RepeatRunner
-    from brix.models import RunResult, Step
+    from brix.models import RunResult
 
     runner = RepeatRunner()
 
@@ -478,8 +476,6 @@ async def test_repeat_runner_until_stops_early():
 
 def test_db_update_step_progress_persists():
     """BrixDB.update_step_progress stores progress JSON in step_executions."""
-    import os
-    import sqlite3
     from brix.db import BrixDB
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -490,7 +486,7 @@ def test_db_update_step_progress_persists():
             now = "2026-01-01T00:00:00+00:00"
             with db._connect() as conn:
                 conn.execute(
-                    """INSERT INTO step_executions
+                    """INSERT INTO step_execution
                        (id, run_id, step_id, step_type, status, created_at)
                        VALUES (?,?,?,?,?,?)""",
                     ("row-1", "run-abc", "my_step", "http", "success", now),
@@ -502,7 +498,7 @@ def test_db_update_step_progress_persists():
             # Read it back
             with db._connect() as conn:
                 row = conn.execute(
-                    "SELECT last_progress FROM step_executions WHERE run_id=? AND step_id=?",
+                    "SELECT last_progress FROM step_execution WHERE run_id=? AND step_id=?",
                     ("run-abc", "my_step"),
                 ).fetchone()
 
@@ -526,13 +522,13 @@ def test_db_get_step_progress_returns_list():
             now = "2026-01-01T00:00:00+00:00"
             with db._connect() as conn:
                 conn.execute(
-                    """INSERT INTO step_executions
+                    """INSERT INTO step_execution
                        (id, run_id, step_id, step_type, status, created_at)
                        VALUES (?,?,?,?,?,?)""",
                     ("row-1", "run-xyz", "step_a", "http", "success", now),
                 )
                 conn.execute(
-                    """INSERT INTO step_executions
+                    """INSERT INTO step_execution
                        (id, run_id, step_id, step_type, status, created_at)
                        VALUES (?,?,?,?,?,?)""",
                     ("row-2", "run-xyz", "step_b", "mcp", "success", now),
@@ -542,8 +538,8 @@ def test_db_get_step_progress_returns_list():
             progress_b = json.dumps({"step_id": "step_b", "pct": 50.0, "msg": "halfway", "done": 1, "total": 2, "updated_at": now})
 
             with db._connect() as conn:
-                conn.execute("UPDATE step_executions SET last_progress=? WHERE id=?", (progress_a, "row-1"))
-                conn.execute("UPDATE step_executions SET last_progress=? WHERE id=?", (progress_b, "row-2"))
+                conn.execute("UPDATE step_execution SET last_progress=? WHERE id=?", (progress_a, "row-1"))
+                conn.execute("UPDATE step_execution SET last_progress=? WHERE id=?", (progress_b, "row-2"))
 
             entries = db.get_step_progress("run-xyz")
 
@@ -585,8 +581,6 @@ def test_db_update_step_progress_no_crash_when_no_row():
 @pytest.mark.asyncio
 async def test_engine_persists_runner_progress_to_db(tmp_path):
     """Engine calls update_step_progress on the DB after each step."""
-    from brix.models import Pipeline, Step
-
     # Build a minimal pipeline with one set step
     pipeline_yaml = """
 name: test-progress-persist

@@ -10,16 +10,11 @@ Covers:
 7. get_run_status step_progress injection
 """
 import json
-import sys
-import time
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
-
+from brix.external_job_progress import canonicalize_external_job_progress
 from brix.models import Step, StepProgress, StepStatus
-from brix.runners.python import PythonRunner, _parse_brix_progress_line, BRIX_PROGRESS_PREFIX
+from brix.runners.python import PythonRunner, _parse_brix_progress_line
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +157,8 @@ def test_step_progress_model_defaults():
     assert sp.percent == 0.0
     assert sp.eta_seconds is None
     assert sp.message is None
+    assert sp.progress_kind is None
+    assert sp.stage is None
 
 
 def test_step_progress_model_values():
@@ -172,6 +169,55 @@ def test_step_progress_model_values():
     assert sp.percent == 25.0
     assert sp.eta_seconds == 150.0
     assert sp.message == "halfway"
+
+
+def test_canonicalize_external_job_progress_item_progress():
+    """External-job item progress is normalized into the canonical shape."""
+    result = canonicalize_external_job_progress(
+        {
+            "processed": 2,
+            "total": 8,
+            "stage": "extract",
+            "attempt_number": 2,
+            "attempt_count": 3,
+            "attempt_mode": "full",
+            "retry_applied": True,
+            "retry_reason": "low_quality",
+            "request_id": "req-123",
+            "msg": "extracting",
+        }
+    )
+    assert result["processed"] == 2
+    assert result["total"] == 8
+    assert result["percent"] == 25.0
+    assert result["progress_kind"] == "item"
+    assert result["stage"] == "extract"
+    assert result["attempt"] == 2
+    assert result["attempt_count"] == 3
+    assert result["mode"] == "full"
+    assert result["retry_state"] == "applied"
+    assert result["retry_reason"] == "low_quality"
+    assert result["request_id"] == "req-123"
+    assert result["message"] == "extracting"
+
+
+def test_canonicalize_external_job_progress_page_progress():
+    """Page-based long-running progress maps to canonical page fields."""
+    result = canonicalize_external_job_progress(
+        {
+            "pipeline_step": "ocr",
+            "page": 26,
+            "pages_total": 52,
+            "percent": 13.0,
+            "retry_pending": True,
+        }
+    )
+    assert result["percent"] == 50.0
+    assert result["progress_kind"] == "page"
+    assert result["stage"] == "ocr"
+    assert result["page_current"] == 26
+    assert result["page_total"] == 52
+    assert result["retry_state"] == "pending"
 
 
 def test_step_status_has_step_progress_field():
@@ -242,6 +288,36 @@ def test_context_update_step_progress_with_message(tmp_path):
     ctx = PipelineContext(workdir=tmp_path)
     ctx.update_step_progress("step1", {"processed": 5, "total": 10, "message": "almost done"})
     assert ctx.step_progress["step1"]["message"] == "almost done"
+
+
+def test_context_update_step_progress_external_job_shape(tmp_path):
+    """update_step_progress normalizes external-job state into the canonical shape."""
+    from brix.context import PipelineContext
+
+    ctx = PipelineContext(workdir=tmp_path)
+    ctx.update_step_progress(
+        "extract",
+        {
+            "pipeline_step": "ocr",
+            "page": 11,
+            "pages_total": 52,
+            "attempt_number": 2,
+            "attempt_mode": "full",
+            "retry_applied": True,
+            "request_id": "req-42",
+        },
+    )
+
+    progress = ctx.step_progress["extract"]
+    assert progress["progress_kind"] == "page"
+    assert progress["stage"] == "ocr"
+    assert progress["attempt"] == 2
+    assert progress["mode"] == "full"
+    assert progress["retry_state"] == "applied"
+    assert progress["page_current"] == 11
+    assert progress["page_total"] == 52
+    assert progress["percent"] == 21.2
+    assert progress["request_id"] == "req-42"
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +670,54 @@ async def test_get_run_status_step_progress_percent_recalculated(tmp_path):
         result = await _handle_get_run_status({"run_id": run_id})
 
     assert result["step_progress"]["step1"]["percent"] == 25.0
+
+
+async def test_get_run_status_external_job_progress_is_canonicalized(tmp_path):
+    """_handle_get_run_status returns canonical external-job progress fields."""
+    run_id = "run-ext-progress"
+    run_dir = tmp_path / run_id
+    run_dir.mkdir()
+
+    import time as _time
+
+    run_meta = {
+        "run_id": run_id,
+        "pipeline": "test",
+        "status": "running",
+        "completed_steps": [],
+        "last_heartbeat": _time.time(),
+    }
+    (run_dir / "run.json").write_text(json.dumps(run_meta))
+    (run_dir / "step_progress.json").write_text(
+        json.dumps(
+            {
+                "extract": {
+                    "pipeline_step": "extract",
+                    "attempt_number": 2,
+                    "attempt_mode": "full",
+                    "retry_applied": True,
+                    "page": 38,
+                    "pages_total": 52,
+                    "request_id": "req-99",
+                }
+            }
+        )
+    )
+
+    with patch("brix.context.WORKDIR_BASE", tmp_path):
+        from brix.mcp_server import _handle_get_run_status
+
+        result = await _handle_get_run_status({"run_id": run_id})
+
+    progress = result["step_progress"]["extract"]
+    assert progress["stage"] == "extract"
+    assert progress["attempt"] == 2
+    assert progress["mode"] == "full"
+    assert progress["retry_state"] == "applied"
+    assert progress["page_current"] == 38
+    assert progress["page_total"] == 52
+    assert progress["percent"] == 73.1
+    assert progress["request_id"] == "req-99"
 
 
 # ---------------------------------------------------------------------------

@@ -609,6 +609,16 @@ class StepProgress(BaseModel):
     percent: float = 0.0
     eta_seconds: Optional[float] = None
     message: Optional[str] = None
+    progress_kind: Optional[str] = None
+    stage: Optional[str] = None
+    attempt: Optional[int] = None
+    attempt_count: Optional[int] = None
+    mode: Optional[str] = None
+    retry_state: Optional[str] = None
+    retry_reason: Optional[str] = None
+    request_id: Optional[str] = None
+    page_current: Optional[int] = None
+    page_total: Optional[int] = None
 
 
 class StepStatus(BaseModel):

@@ -7,6 +7,8 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import Any
 
+from brix.external_job_progress import canonicalize_external_job_progress
+
 
 def _coerce_bool(val: Any) -> bool:
     """Convert common string and scalar inputs to a predictable boolean."""
@@ -103,7 +105,11 @@ class BaseRunner(ABC):
             done:  Number of items processed so far
             total: Total number of items (0 = unknown)
         """
-        self._progress = {"pct": pct, "msg": msg, "done": done, "total": total}
+        self._progress = canonicalize_external_job_progress({"pct": pct, "msg": msg, "done": done, "total": total})
+
+    def report_external_job_progress(self, **progress: Any) -> None:
+        """Record canonical state for a long-running external job."""
+        self._progress = canonicalize_external_job_progress(progress)
 
     def validate_config(self, config: dict) -> list[str]:
         """Validate *config* against this runner's config_schema().

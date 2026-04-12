@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from brix.external_job_progress import canonicalize_external_job_progress
 from brix.models import Pipeline
 from brix.credential_store import CredentialStore, is_credential_uuid, CredentialNotFoundError
 from brix.config import config
@@ -246,14 +247,7 @@ class PipelineContext:
         read it for async / background runs.
         """
         import time as _time
-        entry = dict(progress)
-        # Compute derived fields
-        processed = entry.get("processed", 0)
-        total = entry.get("total", 0)
-        if total > 0:
-            entry["percent"] = round(processed / total * 100, 1)
-        else:
-            entry["percent"] = 0.0
+        entry = canonicalize_external_job_progress(progress)
         entry["_updated_at"] = _time.time()
         self.step_progress[step_id] = entry
         # Persist to disk for external polling

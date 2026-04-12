@@ -5,6 +5,7 @@ import json
 
 import yaml
 
+from brix.external_job_progress import canonicalize_external_job_progress
 from brix.mcp_handlers._shared import (
     _loader,
     _validator,
@@ -384,19 +385,7 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                             raw_sp = _json.load(spf)
                         enriched: dict = {}
                         for sid, sp in raw_sp.items():
-                            processed = sp.get("processed", 0)
-                            total_items = sp.get("total", 0)
-                            pct = round(processed / total_items * 100, 1) if total_items > 0 else 0.0
-                            entry: dict = {
-                                "processed": processed,
-                                "total": total_items,
-                                "percent": pct,
-                            }
-                            if sp.get("eta_seconds") is not None:
-                                entry["eta_seconds"] = sp["eta_seconds"]
-                            if sp.get("message"):
-                                entry["message"] = sp["message"]
-                            enriched[sid] = entry
+                            enriched[sid] = canonicalize_external_job_progress(sp)
                         live["step_progress"] = enriched
                     except (OSError, ValueError):
                         pass
