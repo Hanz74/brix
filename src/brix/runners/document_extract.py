@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -120,6 +121,52 @@ def _attempt_history(meta: dict[str, Any], fallback_mode: str) -> list[dict[str,
     return sanitize_for_json(history)
 
 
+def _persist_daigestr_artifacts(
+    context: Any,
+    step_id: str,
+    request_payload: dict[str, Any],
+    response_data: dict[str, Any],
+    attempt_history: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if context is None or not hasattr(context, "workdir"):
+        return {}
+    artifact_dir = Path(context.workdir) / "external_job_artifacts" / step_id
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    request_summary = dict(request_payload)
+    base64_content = str(request_summary.pop("base64", "") or "")
+    content = str(request_summary.pop("content", "") or "")
+    request_summary["base64_bytes"] = len(base64_content)
+    request_summary["content_bytes"] = len(content)
+    request_summary = sanitize_for_json(request_summary)
+
+    response_summary = dict(response_data)
+    markdown = str(response_summary.pop("markdown", "") or "")
+    response_summary = sanitize_for_json(response_summary)
+
+    request_path = artifact_dir / "request.json"
+    response_path = artifact_dir / "response.json"
+    attempt_history_path = artifact_dir / "attempt_history.json"
+    markdown_path = artifact_dir / "markdown.md"
+
+    request_path.write_text(json.dumps(request_summary, indent=2, ensure_ascii=True))
+    response_summary["markdown_path"] = str(markdown_path.relative_to(context.workdir)) if markdown else None
+    response_summary["markdown_chars"] = len(markdown)
+    response_path.write_text(json.dumps(response_summary, indent=2, ensure_ascii=True))
+    attempt_history_path.write_text(json.dumps(attempt_history, indent=2, ensure_ascii=True))
+    if markdown:
+        markdown_path.write_text(markdown, encoding="utf-8")
+
+    return sanitize_for_json(
+        {
+            "request_path": str(request_path.relative_to(context.workdir)),
+            "response_path": str(response_path.relative_to(context.workdir)),
+            "attempt_history_path": str(attempt_history_path.relative_to(context.workdir)),
+            "markdown_path": str(markdown_path.relative_to(context.workdir)) if markdown else None,
+        }
+    )
+
+
 class DocumentPrepareExtractablePayloadRunner(BaseRunner):
     """Normalize file/base64 inputs into the document_extract_input contract."""
 
@@ -214,6 +261,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
 
     async def execute(self, step: Any, context: Any) -> dict:
         start = time.monotonic()
+        step_id = str(getattr(step, "id", "extract") or "extract")
         payload = _normalize_payload(step, context)
         file_bytes_path = str(payload.get("file_bytes_path") or "").strip()
         if not file_bytes_path:
@@ -257,7 +305,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
 
         if context is not None and hasattr(context, "update_step_progress"):
             context.update_step_progress(
-                step.id,
+                step_id,
                 {
                     "stage": "request",
                     "attempt_number": 1,
@@ -280,6 +328,9 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         meta = raw_payload["meta"]
         attempt_history = _attempt_history(meta, fallback_mode=request_payload["mode"])
         raw_payload["meta"]["attempt_history"] = attempt_history
+        artifacts = _persist_daigestr_artifacts(context, step_id, request_payload, data, attempt_history)
+        if artifacts:
+            raw_payload["meta"]["artifacts"] = artifacts
         if not normalized:
             normalized = extracted
 
@@ -294,7 +345,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
 
         if context is not None and hasattr(context, "update_step_progress"):
             context.update_step_progress(
-                step.id,
+                step_id,
                 {
                     "stage": "result",
                     "attempt_number": _first_mapping(meta, "attempt_number") or 1,
@@ -331,9 +382,11 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     "attempt_mode": _first_mapping(meta, "attempt_mode"),
                     "pipeline_steps": meta.get("pipeline_steps") if isinstance(meta.get("pipeline_steps"), list) else None,
                     "attempt_history": attempt_history,
+                    "artifacts": artifacts or None,
                 },
                 "raw": raw_payload,
                 "attempt_history": attempt_history,
+                "artifacts": artifacts,
                 "warnings": data.get("warnings", []),
             }
         )

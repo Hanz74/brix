@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 from brix.bricks.builtins import ALL_BUILTINS
@@ -543,6 +544,75 @@ def test_extract_document_with_daigestr_updates_progress_with_attempt_metadata(m
     assert updates[1]["retry_applied"] is True
     assert updates[1]["retry_reason"] == "low_quality"
     assert updates[1]["request_id"] == "req-456"
+
+
+def test_extract_document_with_daigestr_persists_replay_artifacts(monkeypatch, tmp_path):
+    file_path = tmp_path / "artifact.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "receipt",
+                    "template_used": "receipt",
+                    "quality_score": 0.81,
+                    "request_id": "req-artifact",
+                },
+                "normalized": {"vendor_name": "Artifact Vendor"},
+                "markdown": "# artifact",
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    class FakeContext:
+        def __init__(self, workdir):
+            self.workdir = workdir
+
+        def update_step_progress(self, step_id, payload):
+            return None
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=FakeContext(tmp_path)))
+
+    assert result["success"] is True
+    artifacts = result["data"]["artifacts"]
+    assert artifacts["request_path"] == "external_job_artifacts/extract/request.json"
+    assert artifacts["response_path"] == "external_job_artifacts/extract/response.json"
+    assert artifacts["attempt_history_path"] == "external_job_artifacts/extract/attempt_history.json"
+    assert artifacts["markdown_path"] == "external_job_artifacts/extract/markdown.md"
+
+    request_json = json.loads((tmp_path / artifacts["request_path"]).read_text())
+    response_json = json.loads((tmp_path / artifacts["response_path"]).read_text())
+    attempt_history = json.loads((tmp_path / artifacts["attempt_history_path"]).read_text())
+    markdown = (tmp_path / artifacts["markdown_path"]).read_text()
+
+    assert "base64" not in request_json
+    assert "content" not in request_json
+    assert request_json["base64_bytes"] > 0
+    assert request_json["content_bytes"] > 0
+    assert response_json["markdown_path"] == artifacts["markdown_path"]
+    assert response_json["markdown_chars"] == len("# artifact")
+    assert attempt_history[0]["request_id"] == "req-artifact"
+    assert markdown == "# artifact"
 
 
 def test_extract_document_with_daigestr_ignores_noncanonical_top_level_mirrors(monkeypatch, tmp_path):
