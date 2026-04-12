@@ -161,3 +161,10 @@ def test_bundled_bank_statement_fixture_still_exposes_single_shape_without_bundl
         "BUNDLED_STATEMENT_MISSING_PERIOD",
         "BUNDLED_STATEMENT_MISSING_BOOKING_COVERAGE",
     }
+    quality_retry = result["data"]["quality_retry"]
+    assert quality_retry["document_type"] == "bank_statement"
+    assert quality_retry["template_used"] == "bank_statement"
+    assert quality_retry["retry_applied"] is True
+    assert quality_retry["initial_mode"] == "default"
+    assert quality_retry["final_mode"] == "full"
+    assert quality_retry["quality_score"] == fixture["extraction_result"]["raw"]["meta"]["quality_score"]

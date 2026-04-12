@@ -88,6 +88,19 @@ def test_document_persist_extraction_result_updates_document_row(tmp_path):
         "bundle_gate_pass": True,
         "bundle_findings": [],
     }
+    assert result["data"]["quality_retry"] == {
+        "document_type": "receipt",
+        "template_used": "receipt",
+        "quality_score": 0.85,
+        "quality_grade": None,
+        "retry_applied": None,
+        "retry_reason": None,
+        "initial_mode": None,
+        "final_mode": None,
+        "initial_quality_score": None,
+        "final_quality_score": None,
+        "retry_threshold_used": None,
+    }
     db = BrixDB(db_path=db_path)
     with db._connect() as conn:
         row = conn.execute("SELECT * FROM documents WHERE id = 1").fetchone()
@@ -256,6 +269,19 @@ def test_document_persist_extraction_result_reports_bundle_shape(tmp_path):
         "booking_count": 3,
         "bundle_gate_pass": True,
         "bundle_findings": [],
+    }
+    assert result["data"]["quality_retry"] == {
+        "document_type": "bank_statement",
+        "template_used": "bank_statement",
+        "quality_score": 0.91,
+        "quality_grade": None,
+        "retry_applied": None,
+        "retry_reason": None,
+        "initial_mode": None,
+        "final_mode": None,
+        "initial_quality_score": None,
+        "final_quality_score": None,
+        "retry_threshold_used": None,
     }
 
 

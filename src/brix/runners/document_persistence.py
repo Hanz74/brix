@@ -247,6 +247,24 @@ def _statement_bundle_summary(extraction_result: dict[str, Any]) -> dict[str, An
     }
 
 
+def _quality_retry_summary(extraction_result: dict[str, Any]) -> dict[str, Any]:
+    raw = extraction_result.get("raw")
+    meta = raw.get("meta") if isinstance(raw, dict) and isinstance(raw.get("meta"), dict) else {}
+    return {
+        "document_type": meta.get("document_type"),
+        "template_used": meta.get("template_used"),
+        "quality_score": meta.get("quality_score"),
+        "quality_grade": meta.get("quality_grade"),
+        "retry_applied": meta.get("retry_applied"),
+        "retry_reason": meta.get("retry_reason"),
+        "initial_mode": meta.get("initial_mode"),
+        "final_mode": meta.get("final_mode"),
+        "initial_quality_score": meta.get("initial_quality_score"),
+        "final_quality_score": meta.get("final_quality_score"),
+        "retry_threshold_used": meta.get("retry_threshold_used"),
+    }
+
+
 def _bundled_statement_findings(extraction_result: dict[str, Any], document_shape: dict[str, Any]) -> list[dict[str, str]]:
     if document_shape.get("document_type") != "bank_statement":
         return []
@@ -517,6 +535,7 @@ class DocumentPersistExtractionResultRunner(_BaseDocumentRunner):
 
         document_shape = _statement_bundle_summary(extraction_result)
         bundle_findings = _bundled_statement_findings(extraction_result, document_shape)
+        quality_retry = _quality_retry_summary(extraction_result)
 
         self.report_progress(100.0, f"{affected_rows} document rows updated")
         return {
@@ -532,6 +551,7 @@ class DocumentPersistExtractionResultRunner(_BaseDocumentRunner):
                         "bundle_gate_pass": not bundle_findings,
                         "bundle_findings": bundle_findings,
                     },
+                    "quality_retry": quality_retry,
                 }
             ),
             "duration": time.monotonic() - start,
