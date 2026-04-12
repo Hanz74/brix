@@ -245,3 +245,101 @@ async def test_get_run_status_polls_service_backed_external_progress(tmp_path, m
     assert status["current_progress"]["mode"] == "full"
     assert status["current_progress"]["page_current"] == 33
     assert status["current_progress"]["page_total"] == 52
+    assert status["external_job_progress"]["service"] == "daigestr"
+    assert status["external_job_progress"]["job_id"] == "job-123"
+    assert status["external_job_progress"]["attempt"] == 2
+    assert status["external_job_progress"]["page_current"] == 33
+
+
+@pytest.mark.asyncio
+async def test_get_run_status_unifies_attempt_retry_and_page_progress(tmp_path, monkeypatch):
+    import brix.context as context_mod
+
+    runs_base = tmp_path / "runs"
+    run_id = "run-external-unified-surface"
+    run_dir = runs_base / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", runs_base)
+
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "ext-unified",
+                "input": {},
+                "status": "running",
+                "completed_steps": [],
+                "last_heartbeat": time.time(),
+                "progress": {
+                    "step_id": "extract",
+                    "service": "daigestr",
+                    "job_id": "job-unified",
+                    "request_id": "req-unified",
+                    "status": "processing",
+                    "current_stage": "extract",
+                    "attempt_number": 2,
+                    "attempt_count": 2,
+                    "attempt_mode": "full",
+                    "retry_applied": True,
+                    "page_current": 41,
+                    "page_total": 52,
+                    "message": "extracting",
+                },
+            }
+        )
+    )
+    (run_dir / "step_progress_history.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "step_id": "extract",
+                        "service": "daigestr",
+                        "job_id": "job-unified",
+                        "request_id": "req-unified",
+                        "stage": "ocr",
+                        "attempt_number": 1,
+                        "attempt_count": 2,
+                        "attempt_mode": "default",
+                        "retry_state": "pending",
+                        "page_current": 20,
+                        "page_total": 52,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "step_id": "extract",
+                        "service": "daigestr",
+                        "job_id": "job-unified",
+                        "request_id": "req-unified",
+                        "stage": "extract",
+                        "attempt_number": 2,
+                        "attempt_count": 2,
+                        "attempt_mode": "full",
+                        "retry_state": "applied",
+                        "retry_reason": "low_quality",
+                        "page_current": 41,
+                        "page_total": 52,
+                    }
+                ),
+            ]
+        )
+        + "\n"
+    )
+
+    status = await _handle_get_run_status({"run_id": run_id})
+
+    surface = status["external_job_progress"]
+    assert surface["service"] == "daigestr"
+    assert surface["job_id"] == "job-unified"
+    assert surface["request_id"] == "req-unified"
+    assert surface["attempt"] == 2
+    assert surface["attempt_count"] == 2
+    assert surface["mode"] == "full"
+    assert surface["page_current"] == 41
+    assert surface["page_total"] == 52
+    assert surface["attempts"][0]["attempt"] == 1
+    assert surface["attempts"][0]["mode"] == "default"
+    assert surface["attempts"][1]["attempt"] == 2
+    assert surface["attempts"][1]["retry_reason"] == "low_quality"

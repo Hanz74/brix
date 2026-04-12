@@ -70,6 +70,101 @@ async def _poll_external_job_progress(progress: dict | None) -> dict | None:
         return None
 
 
+def _extract_external_job_surface(
+    current_progress: dict | None,
+    step_progress: dict | None,
+    progress_history: list[dict] | None,
+) -> dict | None:
+    latest = current_progress if isinstance(current_progress, dict) and current_progress.get("service") else None
+    if latest is None and isinstance(step_progress, dict):
+        for step_id, payload in step_progress.items():
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("service"):
+                latest = dict(payload)
+                latest.setdefault("step_id", step_id)
+                break
+    if latest is None:
+        return None
+
+    history = [entry for entry in (progress_history or []) if isinstance(entry, dict)]
+    step_id = latest.get("step_id")
+    job_id = latest.get("job_id")
+    request_id = latest.get("request_id")
+    filtered_history: list[dict] = []
+    for entry in history:
+        if step_id and entry.get("step_id") not in (None, step_id):
+            continue
+        if job_id and entry.get("job_id") not in (None, job_id):
+            continue
+        if request_id and entry.get("request_id") not in (None, request_id):
+            continue
+        filtered_history.append(entry)
+
+    attempts: list[dict] = []
+    seen_attempt_keys: set[tuple[object, object]] = set()
+    for entry in filtered_history:
+        attempt_key = (entry.get("attempt"), entry.get("mode"))
+        if attempt_key in seen_attempt_keys:
+            continue
+        seen_attempt_keys.add(attempt_key)
+        attempts.append(
+            {
+                key: entry.get(key)
+                for key in (
+                    "attempt",
+                    "attempt_count",
+                    "mode",
+                    "status",
+                    "retry_state",
+                    "retry_reason",
+                    "page_current",
+                    "page_total",
+                    "processed",
+                    "total",
+                    "percent",
+                    "stage",
+                    "request_id",
+                    "job_id",
+                )
+                if entry.get(key) not in (None, "")
+            }
+        )
+
+    surface = {
+        key: latest.get(key)
+        for key in (
+            "service",
+            "step_id",
+            "job_id",
+            "request_id",
+            "status",
+            "stage",
+            "current_stage",
+            "attempt",
+            "attempt_count",
+            "mode",
+            "retry_state",
+            "retry_reason",
+            "page_current",
+            "page_total",
+            "processed",
+            "total",
+            "percent",
+            "progress_kind",
+            "upstream_attempt",
+            "metadata",
+            "message",
+        )
+        if latest.get(key) not in (None, "")
+    }
+    if attempts:
+        surface["attempts"] = attempts
+    if filtered_history:
+        surface["history_count"] = len(filtered_history)
+    return surface
+
+
 def _load_current_progress(workdir: Path) -> dict | None:
     run_json_path = workdir / "run.json"
     if not run_json_path.exists():
@@ -497,6 +592,13 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                         live["live_progress"] = _live_progress
                 except Exception:
                     pass
+                external_job_progress = _extract_external_job_surface(
+                    live.get("current_progress"),
+                    live.get("step_progress"),
+                    live.get("step_progress_history"),
+                )
+                if external_job_progress:
+                    live["external_job_progress"] = external_job_progress
                 return {"success": True, "source": "live", **live}
         except (OSError, ValueError):
             pass
@@ -565,6 +667,14 @@ async def _handle_get_run_status(arguments: dict) -> dict:
             run_data["live_progress"] = _final_progress
     except Exception:
         pass  # Never break get_run_status over progress
+
+    external_job_progress = _extract_external_job_surface(
+        run_data.get("current_progress"),
+        run_data.get("step_progress"),
+        run_data.get("step_progress_history"),
+    )
+    if external_job_progress:
+        run_data["external_job_progress"] = external_job_progress
 
     return {
         "success": True,
