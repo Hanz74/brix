@@ -78,17 +78,23 @@ def canonicalize_external_job_progress(progress: Mapping[str, Any] | None) -> di
     }
 
     optional_fields = {
+        "service": _first(entry, "service"),
+        "status": _first(entry, "status"),
         "eta_seconds": _as_float(_first(entry, "eta_seconds")),
         "message": _first(entry, "message", "msg"),
-        "stage": _first(entry, "stage", "phase", "pipeline_step"),
+        "stage": _first(entry, "stage", "current_stage", "phase", "pipeline_step"),
+        "current_stage": _first(entry, "current_stage", "stage", "phase", "pipeline_step"),
         "attempt": _as_int(_first(entry, "attempt", "attempt_number", "attempt_index")),
         "attempt_count": _as_int(_first(entry, "attempt_count")),
         "mode": _first(entry, "mode", "attempt_mode"),
         "retry_state": _retry_state(entry),
         "retry_reason": _first(entry, "retry_reason"),
-        "request_id": _first(entry, "request_id", "job_id"),
+        "request_id": _first(entry, "request_id"),
+        "job_id": _first(entry, "job_id"),
         "page_current": page_current,
         "page_total": page_total,
+        "upstream_attempt": _as_int(_first(entry, "upstream_attempt")),
+        "metadata": entry.get("metadata") if isinstance(entry.get("metadata"), Mapping) else None,
     }
     for key, value in optional_fields.items():
         if value not in (None, ""):

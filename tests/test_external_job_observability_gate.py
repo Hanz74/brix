@@ -155,3 +155,93 @@ async def test_get_run_errors_surfaces_structured_external_retry_failure():
     assert result["count"] == 1
     assert result["errors"][0]["error_detail"]["external_job"]["request_id"] == "req-gate"
     assert result["errors"][0]["error_detail"]["external_job"]["attempt_history"][0]["status"] == "retry_triggered"
+
+
+@pytest.mark.asyncio
+async def test_get_run_status_polls_service_backed_external_progress(tmp_path, monkeypatch):
+    import brix.context as context_mod
+    from brix.config import config
+
+    runs_base = tmp_path / "runs"
+    run_id = "run-poll-external-service"
+    run_dir = runs_base / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", runs_base)
+    monkeypatch.setattr(config, "DAIGESTR_URL", "http://daigestr:8081", raising=False)
+    monkeypatch.setattr(config, "DAIGESTR_JOB_STATUS_ENDPOINT_TEMPLATE", "/v1/jobs/{job_id}", raising=False)
+
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "ext-poll",
+                "input": {},
+                "status": "running",
+                "completed_steps": [],
+                "last_heartbeat": time.time(),
+                "progress": {
+                    "step_id": "extract",
+                    "service": "daigestr",
+                    "job_id": "job-123",
+                    "status": "queued",
+                    "stage": "request",
+                    "message": "job queued",
+                },
+            }
+        )
+    )
+
+    class FakeResponse:
+        def __init__(self, payload: dict, *, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+            self.is_error = status_code >= 400
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url):
+            assert url == "http://daigestr:8081/v1/jobs/job-123"
+            return FakeResponse(
+                {
+                    "status": "processing",
+                    "progress": {
+                        "job_id": "job-123",
+                        "request_id": "req-123",
+                        "current_stage": "extract",
+                        "message": "extracting",
+                        "percent": 63,
+                        "attempt_number": 2,
+                        "attempt_count": 2,
+                        "attempt_mode": "full",
+                        "page_current": 33,
+                        "page_total": 52,
+                    },
+                }
+            )
+
+    monkeypatch.setattr("brix.mcp_handlers.runs.httpx.AsyncClient", FakeClient)
+
+    status = await _handle_get_run_status({"run_id": run_id})
+
+    assert status["success"] is True
+    assert status["source"] == "live"
+    assert status["current_progress"]["service"] == "daigestr"
+    assert status["current_progress"]["job_id"] == "job-123"
+    assert status["current_progress"]["status"] == "processing"
+    assert status["current_progress"]["stage"] == "extract"
+    assert status["current_progress"]["attempt"] == 2
+    assert status["current_progress"]["mode"] == "full"
+    assert status["current_progress"]["page_current"] == 33
+    assert status["current_progress"]["page_total"] == 52

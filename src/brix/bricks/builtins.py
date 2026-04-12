@@ -1314,6 +1314,10 @@ SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR = BrickSchema(
         "endpoint": BrickParam(type="string", description="Optional Daigestr endpoint override"),
         "template": BrickParam(type="string", description="Optional extraction template"),
         "mode": BrickParam(type="string", description="Optional Daigestr mode override"),
+        "use_async_jobs": BrickParam(
+            type="boolean",
+            description="Prefer the Daigestr async job contract when the service supports it",
+        ),
         "replay_fixture_path": BrickParam(
             type="string",
             description="Optional path to a persisted Daigestr fixture for offline replay",

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 import yaml
 
 from brix.external_job_progress import canonicalize_external_job_progress
@@ -23,6 +24,50 @@ from brix.mcp_pool import McpConnectionPool
 from brix.history import RunHistory
 from brix.db import BrixDB
 from brix.validator import PipelineValidator
+
+
+def _join_url(base_url: str, endpoint: str) -> str:
+    normalized_endpoint = str(endpoint or "").strip()
+    if not normalized_endpoint.startswith("/"):
+        normalized_endpoint = f"/{normalized_endpoint}"
+    return f"{base_url.rstrip('/')}{normalized_endpoint}"
+
+
+async def _poll_external_job_progress(progress: dict | None) -> dict | None:
+    if not isinstance(progress, dict):
+        return None
+    service = str(progress.get("service") or "").strip().lower()
+    job_id = str(progress.get("job_id") or "").strip()
+    if service != "daigestr" or not job_id:
+        return None
+
+    status_url = _join_url(
+        config.DAIGESTR_URL,
+        config.DAIGESTR_JOB_STATUS_ENDPOINT_TEMPLATE.format(job_id=job_id),
+    )
+    try:
+        async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
+            response = await client.get(status_url)
+        if getattr(response, "is_error", False):
+            return None
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        raw_progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else payload
+        canonical = canonicalize_external_job_progress(raw_progress if isinstance(raw_progress, dict) else {})
+        canonical["service"] = "daigestr"
+        canonical["job_id"] = job_id
+        status_value = payload.get("status")
+        if status_value not in (None, ""):
+            canonical["status"] = status_value
+        elif progress.get("status") not in (None, ""):
+            canonical["status"] = progress.get("status")
+        return canonical
+    except Exception:
+        return None
 
 
 def _load_current_progress(workdir: Path) -> dict | None:
@@ -425,7 +470,8 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                     )
                 current_progress = _load_current_progress(WORKDIR_BASE / run_id)
                 if current_progress:
-                    live["current_progress"] = current_progress
+                    polled_progress = await _poll_external_job_progress(current_progress)
+                    live["current_progress"] = polled_progress or current_progress
                 # Inject per-step intra-step progress (T-BRIX-V4-BUG-05)
                 step_progress_path = WORKDIR_BASE / run_id / "step_progress.json"
                 if step_progress_path.exists():
@@ -434,7 +480,9 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                             raw_sp = _json.load(spf)
                         enriched: dict = {}
                         for sid, sp in raw_sp.items():
-                            enriched[sid] = canonicalize_external_job_progress(sp)
+                            canonical = canonicalize_external_job_progress(sp)
+                            polled = await _poll_external_job_progress(canonical)
+                            enriched[sid] = polled or canonical
                         live["step_progress"] = enriched
                     except (OSError, ValueError):
                         pass

@@ -19,6 +19,11 @@ from brix.runners.document_extract import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _disable_async_daigestr_jobs(monkeypatch):
+    monkeypatch.setenv("BRIX_DAIGESTR_USE_ASYNC_JOBS", "false")
+
+
 def test_prepare_extractable_payload_reads_file_and_base64_encodes(tmp_path):
     file_path = tmp_path / "invoice.pdf"
     file_path.write_bytes(b"pdf-content")
@@ -384,6 +389,162 @@ def test_extract_document_with_daigestr_prefers_explicit_retry_settings(monkeypa
     assert captured["json"]["retry_on_low_quality"] is True
     assert captured["json"]["quality_retry_threshold"] == 0.8
     assert captured["json"]["quality_retry_mode"] == "full"
+
+
+def test_extract_document_with_daigestr_uses_async_job_contract_when_enabled(monkeypatch, tmp_path):
+    file_path = tmp_path / "async-job.pdf"
+    file_path.write_bytes(b"pdf-content")
+    captured: dict[str, list[tuple[str, str]]] = {"calls": []}
+    updates: list[dict] = []
+    poll_state = {"count": 0}
+
+    class FakeResponse:
+        def __init__(self, payload: dict, *, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+            self.is_error = status_code >= 400
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["calls"].append(("POST", url))
+            if url.endswith("/v1/convert/async"):
+                return FakeResponse({"job_id": "job-123", "status": "queued"})
+            raise AssertionError(f"unexpected post url: {url}")
+
+        async def get(self, url):
+            captured["calls"].append(("GET", url))
+            if url.endswith("/v1/jobs/job-123"):
+                poll_state["count"] += 1
+                return FakeResponse(
+                    {
+                        "status": "completed" if poll_state["count"] > 1 else "processing",
+                        "progress": {
+                            "job_id": "job-123",
+                            "request_id": "req-async",
+                            "current_stage": "extract",
+                            "message": "processing",
+                            "percent": 55,
+                            "attempt_number": 1,
+                            "attempt_count": 2,
+                            "attempt_mode": "default",
+                        },
+                    }
+                )
+            if url.endswith("/v1/jobs/job-123/result"):
+                return FakeResponse(
+                    {
+                        "meta": {
+                            "job_id": "job-123",
+                            "request_id": "req-async",
+                            "document_type": "invoice",
+                            "template_used": "invoice",
+                            "quality_score": 0.88,
+                            "attempt_number": 2,
+                            "attempt_count": 2,
+                            "attempt_mode": "full",
+                            "retry_applied": True,
+                            "retry_reason": "low_quality",
+                            "initial_mode": "default",
+                            "final_mode": "full",
+                            "initial_quality_score": 0.61,
+                            "final_quality_score": 0.88,
+                        },
+                        "normalized": {"invoice_number": "A-1"},
+                    }
+                )
+            raise AssertionError(f"unexpected get url: {url}")
+
+    class FakeContext:
+        def update_step_progress(self, step_id, payload):
+            updates.append({"step_id": step_id, **payload})
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+    monkeypatch.setenv("BRIX_DAIGESTR_USE_ASYNC_JOBS", "true")
+    monkeypatch.setenv("BRIX_DAIGESTR_JOB_POLL_INTERVAL_SECONDS", "0")
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={"file_bytes_path": str(file_path)},
+    )
+
+    result = asyncio.run(runner.execute(step, context=FakeContext()))
+
+    assert result["success"] is True
+    assert result["data"]["document_type"] == "invoice"
+    assert result["data"]["_meta"]["template"] == "invoice"
+    assert result["data"]["_meta"]["request_id"] == "req-async"
+    assert result["data"]["_meta"]["final_mode"] == "full"
+    assert result["data"]["_meta"]["attempt_mode"] == "full"
+    assert any(call == ("POST", "http://daigestr:8081/v1/convert/async") for call in captured["calls"])
+    assert any(call == ("GET", "http://daigestr:8081/v1/jobs/job-123") for call in captured["calls"])
+    assert any(call == ("GET", "http://daigestr:8081/v1/jobs/job-123/result") for call in captured["calls"])
+    assert any(update.get("job_id") == "job-123" for update in updates)
+
+
+def test_extract_document_with_daigestr_falls_back_to_sync_when_async_job_id_missing(monkeypatch, tmp_path):
+    file_path = tmp_path / "async-fallback.pdf"
+    file_path.write_bytes(b"pdf-content")
+    captured: list[tuple[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict, *, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+            self.is_error = status_code >= 400
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured.append(("POST", url))
+            if url.endswith("/v1/convert/async"):
+                return FakeResponse({"status": "accepted"})
+            if url.endswith("/v1/convert"):
+                return FakeResponse({"meta": {"document_type": "receipt", "quality_score": 0.8}, "normalized": {"vendor_name": "Fallback"}})
+            raise AssertionError(f"unexpected post url: {url}")
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+    monkeypatch.setenv("BRIX_DAIGESTR_USE_ASYNC_JOBS", "true")
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={"file_bytes_path": str(file_path)},
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    assert result["data"]["normalized"]["vendor_name"] == "Fallback"
+    assert captured == [
+        ("POST", "http://daigestr:8081/v1/convert/async"),
+        ("POST", "http://daigestr:8081/v1/convert"),
+    ]
 
 
 def test_document_extract_bricks_are_registered_in_builtins():

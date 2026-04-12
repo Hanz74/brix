@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 import httpx
 
 from brix.config import BrixConfig, config
+from brix.external_job_progress import canonicalize_external_job_progress
 from brix.runners.base import BaseRunner, _coerce_bool
 from brix.serialization import sanitize_for_json
 
@@ -22,8 +24,37 @@ def _daigestr_default_endpoint() -> str:
     return BrixConfig.reload().DAIGESTR_CONVERT_ENDPOINT
 
 
+def _daigestr_async_start_endpoint() -> str:
+    return BrixConfig.reload().DAIGESTR_ASYNC_CONVERT_ENDPOINT
+
+
+def _daigestr_use_async_jobs() -> bool:
+    return BrixConfig.reload().DAIGESTR_USE_ASYNC_JOBS
+
+
+def _daigestr_job_status_endpoint(job_id: str) -> str:
+    template = BrixConfig.reload().DAIGESTR_JOB_STATUS_ENDPOINT_TEMPLATE
+    return template.format(job_id=job_id)
+
+
+def _daigestr_job_result_endpoint(job_id: str) -> str:
+    template = BrixConfig.reload().DAIGESTR_JOB_RESULT_ENDPOINT_TEMPLATE
+    return template.format(job_id=job_id)
+
+
+def _daigestr_job_poll_interval_seconds() -> float:
+    return BrixConfig.reload().DAIGESTR_JOB_POLL_INTERVAL_SECONDS
+
+
 def _daigestr_default_mode() -> str:
     return BrixConfig.reload().DAIGESTR_MODE
+
+
+def _join_url(base_url: str, endpoint: str) -> str:
+    normalized_endpoint = str(endpoint or "").strip()
+    if not normalized_endpoint.startswith("/"):
+        normalized_endpoint = f"/{normalized_endpoint}"
+    return f"{base_url.rstrip('/')}{normalized_endpoint}"
 
 
 def _first_mapping(mapping: Any, *keys: str) -> Any:
@@ -272,6 +303,24 @@ def _structured_daigestr_error(
     }
 
 
+def _update_external_job_progress(context: Any, step_id: str, payload: dict[str, Any]) -> None:
+    if context is None or not hasattr(context, "update_step_progress"):
+        return
+    progress = dict(payload)
+    progress["service"] = "daigestr"
+    context.update_step_progress(step_id, progress)
+
+
+def _service_backed_progress(progress_payload: dict[str, Any], *, request_payload: dict[str, Any], job_id: str) -> dict[str, Any]:
+    progress = canonicalize_external_job_progress(progress_payload)
+    progress["service"] = "daigestr"
+    progress["job_id"] = job_id
+    progress["attempt_mode"] = progress.get("mode") or request_payload.get("mode")
+    if progress.get("request_id") in (None, ""):
+        progress["request_id"] = _first_mapping(progress_payload, "request_id")
+    return sanitize_for_json(progress)
+
+
 class DocumentPrepareExtractablePayloadRunner(BaseRunner):
     """Normalize file/base64 inputs into the document_extract_input contract."""
 
@@ -341,6 +390,10 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                 "endpoint": {"type": "string", "description": "Optional Daigestr endpoint override"},
                 "template": {"type": "string", "description": "Optional extraction template"},
                 "mode": {"type": "string", "description": "Optional Daigestr mode override"},
+                "use_async_jobs": {
+                    "type": "boolean",
+                    "description": "Prefer the Daigestr async job contract when the service supports it",
+                },
                 "replay_fixture_path": {
                     "type": "string",
                     "description": "Optional path to a persisted Daigestr fixture for offline replay",
@@ -413,71 +466,226 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
 
         base_url = _daigestr_base_url().rstrip("/")
         endpoint = str(payload.get("endpoint") or _daigestr_default_endpoint())
-        if not endpoint.startswith("/"):
-            endpoint = f"/{endpoint}"
-        url = f"{base_url}{endpoint}"
+        url = _join_url(base_url, endpoint)
+        async_start_url = _join_url(base_url, _daigestr_async_start_endpoint())
         retry_enabled = _coerce_bool(request_payload["retry_on_low_quality"])
+        use_async_jobs = _coerce_bool(payload.get("use_async_jobs"))
+        if "use_async_jobs" not in payload:
+            use_async_jobs = _daigestr_use_async_jobs()
 
-        if context is not None and hasattr(context, "update_step_progress"):
-            context.update_step_progress(
+        _update_external_job_progress(
+            context,
+            step_id,
+            {
+                "stage": "request",
+                "status": "running",
+                "attempt_number": 1,
+                "attempt_count": 1,
+                "attempt_mode": request_payload["mode"],
+                "retry_on_low_quality": retry_enabled,
+                "message": "calling daigestr",
+            },
+        )
+
+        async_job_id: str | None = None
+        replay, data = _load_replay_response(payload, context, step_id)
+        if replay is not None:
+            _update_external_job_progress(
+                context,
                 step_id,
                 {
-                    "stage": "request",
+                    "stage": "replay",
+                    "status": "running",
                     "attempt_number": 1,
                     "attempt_count": 1,
                     "attempt_mode": request_payload["mode"],
-                    "retry_on_low_quality": retry_enabled,
-                    "message": "calling daigestr",
+                    "message": f"replaying daigestr response from {replay['source_type']}",
                 },
             )
-
-        replay, data = _load_replay_response(payload, context, step_id)
-        if replay is not None:
-            if context is not None and hasattr(context, "update_step_progress"):
-                context.update_step_progress(
-                    step_id,
-                    {
-                        "stage": "replay",
-                        "attempt_number": 1,
-                        "attempt_count": 1,
-                        "attempt_mode": request_payload["mode"],
-                        "message": f"replaying daigestr response from {replay['source_type']}",
-                    },
-                )
         else:
             try:
                 async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
-                    response = await client.post(url, json=request_payload, headers={"Content-Type": "application/json"})
-                    try:
-                        data = response.json()
-                    except ValueError:
-                        response_text = getattr(response, "text", "")
-                        data = {"response_text": response_text[:4000]} if response_text else {}
-                    if getattr(response, "is_error", False):
-                        artifacts = _persist_daigestr_artifacts(
-                            context,
-                            step_id,
-                            request_payload,
-                            data if isinstance(data, dict) else {"response_text": str(data)},
-                            _attempt_history(
-                                _canonical_daigestr_meta(data if isinstance(data, dict) else {}),
-                                fallback_mode=request_payload["mode"],
-                            ),
+                    if use_async_jobs:
+                        async_response = await client.post(
+                            async_start_url,
+                            json=request_payload,
+                            headers={"Content-Type": "application/json"},
                         )
-                        error = _structured_daigestr_error(
-                            message=f"Daigestr request failed with HTTP {getattr(response, 'status_code', 'unknown')}",
-                            error_type="external_job_http_error",
-                            request_payload=request_payload,
-                            url=url,
-                            response_data=data if isinstance(data, dict) else None,
-                            status_code=getattr(response, "status_code", None),
-                            artifacts=artifacts,
-                        )
-                        if context is not None and hasattr(context, "update_step_progress"):
-                            context.update_step_progress(
+                        async_payload: dict[str, Any]
+                        try:
+                            parsed_async = async_response.json()
+                            async_payload = parsed_async if isinstance(parsed_async, dict) else {}
+                        except ValueError:
+                            async_payload = {}
+                        if not getattr(async_response, "is_error", False):
+                            async_job_id = str(async_payload.get("job_id") or "").strip() or None
+                        if async_job_id:
+                            _update_external_job_progress(
+                                context,
+                                step_id,
+                                {
+                                    **_service_backed_progress(
+                                        async_payload.get("progress") if isinstance(async_payload.get("progress"), dict) else async_payload,
+                                        request_payload=request_payload,
+                                        job_id=async_job_id,
+                                    ),
+                                    "status": async_payload.get("status") or "queued",
+                                    "stage": _first_mapping(
+                                        async_payload.get("progress") if isinstance(async_payload.get("progress"), dict) else async_payload,
+                                        "current_stage",
+                                        "stage",
+                                    )
+                                    or "queued",
+                                    "message": _first_mapping(
+                                        async_payload.get("progress") if isinstance(async_payload.get("progress"), dict) else async_payload,
+                                        "message",
+                                        "msg",
+                                    )
+                                    or "daigestr async job started",
+                                },
+                            )
+                            terminal_status = ""
+                            while True:
+                                status_response = await client.get(_join_url(base_url, _daigestr_job_status_endpoint(async_job_id)))
+                                try:
+                                    parsed_status = status_response.json()
+                                    status_payload = parsed_status if isinstance(parsed_status, dict) else {}
+                                except ValueError:
+                                    status_payload = {}
+                                if getattr(status_response, "is_error", False):
+                                    artifacts = _persist_daigestr_artifacts(
+                                        context,
+                                        step_id,
+                                        request_payload,
+                                        status_payload if isinstance(status_payload, dict) else {"response_text": str(status_payload)},
+                                        _attempt_history(
+                                            _canonical_daigestr_meta(status_payload if isinstance(status_payload, dict) else {}),
+                                            fallback_mode=request_payload["mode"],
+                                        ),
+                                    )
+                                    error = _structured_daigestr_error(
+                                        message=f"Daigestr status poll failed with HTTP {getattr(status_response, 'status_code', 'unknown')}",
+                                        error_type="external_job_http_error",
+                                        request_payload=request_payload,
+                                        url=_join_url(base_url, _daigestr_job_status_endpoint(async_job_id)),
+                                        response_data=status_payload if isinstance(status_payload, dict) else None,
+                                        status_code=getattr(status_response, "status_code", None),
+                                        artifacts=artifacts,
+                                    )
+                                    _update_external_job_progress(
+                                        context,
+                                        step_id,
+                                        {
+                                            "job_id": async_job_id,
+                                            "stage": "error",
+                                            "status": "failed",
+                                            "attempt_number": _first_mapping(error["external_job"], "attempt_number") or 1,
+                                            "attempt_count": _first_mapping(error["external_job"], "attempt_count") or 1,
+                                            "attempt_mode": _first_mapping(error["external_job"], "attempt_mode") or request_payload["mode"],
+                                            "retry_state": "failed",
+                                            "retry_reason": _first_mapping(error["external_job"], "retry_reason"),
+                                            "request_id": _first_mapping(error["external_job"], "request_id"),
+                                            "message": error["error"],
+                                        },
+                                    )
+                                    return {"success": False, "error": error, "duration": time.monotonic() - start}
+                                polled_progress = status_payload.get("progress") if isinstance(status_payload.get("progress"), dict) else status_payload
+                                terminal_status = str(status_payload.get("status") or _first_mapping(polled_progress if isinstance(polled_progress, dict) else {}, "status") or "").strip().lower()
+                                _update_external_job_progress(
+                                    context,
+                                    step_id,
+                                    {
+                                        **_service_backed_progress(
+                                            polled_progress if isinstance(polled_progress, dict) else {},
+                                            request_payload=request_payload,
+                                            job_id=async_job_id,
+                                        ),
+                                        "status": terminal_status or "processing",
+                                    },
+                                )
+                                if terminal_status in {"completed", "done", "success", "succeeded"}:
+                                    result_response = await client.get(_join_url(base_url, _daigestr_job_result_endpoint(async_job_id)))
+                                    try:
+                                        parsed_result = result_response.json()
+                                        data = parsed_result if isinstance(parsed_result, dict) else {}
+                                    except ValueError:
+                                        data = {}
+                                    if getattr(result_response, "is_error", False):
+                                        artifacts = _persist_daigestr_artifacts(
+                                            context,
+                                            step_id,
+                                            request_payload,
+                                            data if isinstance(data, dict) else {"response_text": str(data)},
+                                            _attempt_history(
+                                                _canonical_daigestr_meta(data if isinstance(data, dict) else {}),
+                                                fallback_mode=request_payload["mode"],
+                                            ),
+                                        )
+                                        error = _structured_daigestr_error(
+                                            message=f"Daigestr result fetch failed with HTTP {getattr(result_response, 'status_code', 'unknown')}",
+                                            error_type="external_job_http_error",
+                                            request_payload=request_payload,
+                                            url=_join_url(base_url, _daigestr_job_result_endpoint(async_job_id)),
+                                            response_data=data if isinstance(data, dict) else None,
+                                            status_code=getattr(result_response, "status_code", None),
+                                            artifacts=artifacts,
+                                        )
+                                        return {"success": False, "error": error, "duration": time.monotonic() - start}
+                                    break
+                                if terminal_status in {"failed", "error", "cancelled", "canceled"}:
+                                    artifacts = _persist_daigestr_artifacts(
+                                        context,
+                                        step_id,
+                                        request_payload,
+                                        status_payload if isinstance(status_payload, dict) else {"response_text": str(status_payload)},
+                                        _attempt_history(
+                                            _canonical_daigestr_meta(status_payload if isinstance(status_payload, dict) else {}),
+                                            fallback_mode=request_payload["mode"],
+                                        ),
+                                    )
+                                    error = _structured_daigestr_error(
+                                        message=f"Daigestr async job failed with status {terminal_status or 'unknown'}",
+                                        error_type="external_job_runtime_error",
+                                        request_payload=request_payload,
+                                        url=_join_url(base_url, _daigestr_job_status_endpoint(async_job_id)),
+                                        response_data=status_payload if isinstance(status_payload, dict) else None,
+                                        artifacts=artifacts,
+                                    )
+                                    return {"success": False, "error": error, "duration": time.monotonic() - start}
+                                await asyncio.sleep(_daigestr_job_poll_interval_seconds())
+                    if async_job_id is None:
+                        response = await client.post(url, json=request_payload, headers={"Content-Type": "application/json"})
+                        try:
+                            data = response.json()
+                        except ValueError:
+                            response_text = getattr(response, "text", "")
+                            data = {"response_text": response_text[:4000]} if response_text else {}
+                        if getattr(response, "is_error", False):
+                            artifacts = _persist_daigestr_artifacts(
+                                context,
+                                step_id,
+                                request_payload,
+                                data if isinstance(data, dict) else {"response_text": str(data)},
+                                _attempt_history(
+                                    _canonical_daigestr_meta(data if isinstance(data, dict) else {}),
+                                    fallback_mode=request_payload["mode"],
+                                ),
+                            )
+                            error = _structured_daigestr_error(
+                                message=f"Daigestr request failed with HTTP {getattr(response, 'status_code', 'unknown')}",
+                                error_type="external_job_http_error",
+                                request_payload=request_payload,
+                                url=url,
+                                response_data=data if isinstance(data, dict) else None,
+                                status_code=getattr(response, "status_code", None),
+                                artifacts=artifacts,
+                            )
+                            _update_external_job_progress(
+                                context,
                                 step_id,
                                 {
                                     "stage": "error",
+                                    "status": "failed",
                                     "attempt_number": _first_mapping(error["external_job"], "attempt_number") or 1,
                                     "attempt_count": _first_mapping(error["external_job"], "attempt_count") or 1,
                                     "attempt_mode": _first_mapping(error["external_job"], "attempt_mode")
@@ -488,7 +696,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                                     "message": error["error"],
                                 },
                             )
-                        return {"success": False, "error": error, "duration": time.monotonic() - start}
+                            return {"success": False, "error": error, "duration": time.monotonic() - start}
             except Exception as exc:
                 artifacts = _persist_daigestr_artifacts(
                     context,
@@ -511,19 +719,25 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     url=url,
                     artifacts=artifacts,
                 )
-                if context is not None and hasattr(context, "update_step_progress"):
-                    context.update_step_progress(
-                        step_id,
-                        {
-                            "stage": "error",
-                            "attempt_number": 1,
-                            "attempt_count": 1,
-                            "attempt_mode": request_payload["mode"],
-                            "retry_state": "failed",
-                            "message": str(exc),
-                        },
-                    )
+                _update_external_job_progress(
+                    context,
+                    step_id,
+                    {
+                        "stage": "error",
+                        "status": "failed",
+                        "attempt_number": 1,
+                        "attempt_count": 1,
+                        "attempt_mode": request_payload["mode"],
+                        "retry_state": "failed",
+                        "message": str(exc),
+                    },
+                )
                 return {"success": False, "error": error, "duration": time.monotonic() - start}
+
+        if isinstance(data, dict):
+            meta = data.get("meta")
+            if isinstance(meta, dict) and async_job_id and meta.get("job_id") in (None, ""):
+                meta["job_id"] = async_job_id
 
         raw_payload, extracted, normalized = _canonical_daigestr_business_payloads(data)
         meta = raw_payload["meta"]
@@ -546,20 +760,22 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         template_name = _first_mapping(meta, "template_used")
         final_mode = _first_mapping(meta, "final_mode") or _first_mapping(meta, "attempt_mode") or request_payload["mode"]
 
-        if context is not None and hasattr(context, "update_step_progress"):
-            context.update_step_progress(
-                step_id,
-                {
-                    "stage": "result",
-                    "attempt_number": _first_mapping(meta, "attempt_number") or 1,
-                    "attempt_count": _first_mapping(meta, "attempt_count") or 1,
-                    "attempt_mode": final_mode,
-                    "retry_applied": _first_mapping(meta, "retry_applied"),
-                    "retry_reason": _first_mapping(meta, "retry_reason"),
-                    "request_id": _first_mapping(meta, "request_id"),
-                    "message": "daigestr response received",
-                },
-            )
+        _update_external_job_progress(
+            context,
+            step_id,
+            {
+                "stage": "result",
+                "status": "completed",
+                "attempt_number": _first_mapping(meta, "attempt_number") or 1,
+                "attempt_count": _first_mapping(meta, "attempt_count") or 1,
+                "attempt_mode": final_mode,
+                "retry_applied": _first_mapping(meta, "retry_applied"),
+                "retry_reason": _first_mapping(meta, "retry_reason"),
+                "request_id": _first_mapping(meta, "request_id"),
+                "job_id": _first_mapping(meta, "job_id"),
+                "message": "daigestr response received",
+            },
+        )
 
         result = sanitize_for_json(
             {

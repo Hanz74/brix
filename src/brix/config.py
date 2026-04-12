@@ -69,6 +69,31 @@ class BrixConfig:
             "BRIX_DAIGESTR_CONVERT_ENDPOINT", "/v1/convert"
         )
 
+        #: Async Daigestr start endpoint for pollable conversion jobs
+        self.DAIGESTR_ASYNC_CONVERT_ENDPOINT: str = os.environ.get(
+            "BRIX_DAIGESTR_ASYNC_CONVERT_ENDPOINT", "/v1/convert/async"
+        )
+
+        #: Whether Brix should prefer Daigestr async jobs when available
+        self.DAIGESTR_USE_ASYNC_JOBS: bool = os.environ.get(
+            "BRIX_DAIGESTR_USE_ASYNC_JOBS", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
+        #: Daigestr job status endpoint template
+        self.DAIGESTR_JOB_STATUS_ENDPOINT_TEMPLATE: str = os.environ.get(
+            "BRIX_DAIGESTR_JOB_STATUS_ENDPOINT_TEMPLATE", "/v1/jobs/{job_id}"
+        )
+
+        #: Daigestr job result endpoint template
+        self.DAIGESTR_JOB_RESULT_ENDPOINT_TEMPLATE: str = os.environ.get(
+            "BRIX_DAIGESTR_JOB_RESULT_ENDPOINT_TEMPLATE", "/v1/jobs/{job_id}/result"
+        )
+
+        #: Polling interval for Daigestr async job progress checks
+        self.DAIGESTR_JOB_POLL_INTERVAL_SECONDS: float = float(
+            os.environ.get("BRIX_DAIGESTR_JOB_POLL_INTERVAL_SECONDS", "2")
+        )
+
         #: Default Daigestr endpoint for extraction-style requests
         self.DAIGESTR_EXTRACT_ENDPOINT: str = os.environ.get(
             "BRIX_DAIGESTR_EXTRACT_ENDPOINT", "/v1/extract"
