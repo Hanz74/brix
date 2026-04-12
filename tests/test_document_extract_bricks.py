@@ -425,6 +425,24 @@ def test_extract_document_with_daigestr_uses_async_job_contract_when_enabled(mon
 
         async def get(self, url):
             captured["calls"].append(("GET", url))
+            if url.endswith("/v1/health"):
+                return FakeResponse({"status": "ok", "version": "13.6.2"})
+            if url.endswith("/v1/tips"):
+                return FakeResponse(
+                    {
+                        "response_contract": {
+                            "job_progress_endpoints": {
+                                "start": "POST /v1/convert/async returns {job_id, status}.",
+                                "status": "GET /v1/jobs/{id} returns canonical progress under progress.",
+                                "result": "GET /v1/jobs/{id}/result returns the final ConvertResponse after completion.",
+                            },
+                            "job_progress_fields": {
+                                "progress.status": "status",
+                                "progress.job_id": "job id",
+                            },
+                        }
+                    }
+                )
             if url.endswith("/v1/jobs/job-123"):
                 poll_state["count"] += 1
                 return FakeResponse(
@@ -521,11 +539,17 @@ def test_extract_document_with_daigestr_falls_back_to_sync_when_async_job_id_mis
 
         async def post(self, url, json, headers):
             captured.append(("POST", url))
-            if url.endswith("/v1/convert/async"):
-                return FakeResponse({"status": "accepted"})
             if url.endswith("/v1/convert"):
                 return FakeResponse({"meta": {"document_type": "receipt", "quality_score": 0.8}, "normalized": {"vendor_name": "Fallback"}})
             raise AssertionError(f"unexpected post url: {url}")
+
+        async def get(self, url):
+            captured.append(("GET", url))
+            if url.endswith("/v1/health"):
+                return FakeResponse({"status": "ok", "version": "13.6.2"})
+            if url.endswith("/v1/tips"):
+                return FakeResponse({"response_contract": {}})
+            raise AssertionError(f"unexpected get url: {url}")
 
     monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
     monkeypatch.setenv("BRIX_DAIGESTR_USE_ASYNC_JOBS", "true")
@@ -542,7 +566,8 @@ def test_extract_document_with_daigestr_falls_back_to_sync_when_async_job_id_mis
     assert result["success"] is True
     assert result["data"]["normalized"]["vendor_name"] == "Fallback"
     assert captured == [
-        ("POST", "http://daigestr:8081/v1/convert/async"),
+        ("GET", "http://daigestr:8081/v1/health"),
+        ("GET", "http://daigestr:8081/v1/tips"),
         ("POST", "http://daigestr:8081/v1/convert"),
     ]
 

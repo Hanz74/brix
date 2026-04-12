@@ -99,6 +99,16 @@ class BrixConfig:
             "BRIX_DAIGESTR_EXTRACT_ENDPOINT", "/v1/extract"
         )
 
+        #: Daigestr health endpoint used for capability/version handshakes
+        self.DAIGESTR_HEALTH_ENDPOINT: str = os.environ.get(
+            "BRIX_DAIGESTR_HEALTH_ENDPOINT", "/v1/health"
+        )
+
+        #: Daigestr tips/contract endpoint used for capability handshakes
+        self.DAIGESTR_TIPS_ENDPOINT: str = os.environ.get(
+            "BRIX_DAIGESTR_TIPS_ENDPOINT", "/v1/tips"
+        )
+
         #: Default named DB connection for document persistence flows
         self.DEFAULT_DOCUMENT_CONNECTION: str = os.environ.get(
             "BRIX_DEFAULT_DOCUMENT_CONNECTION", "buddy-db"

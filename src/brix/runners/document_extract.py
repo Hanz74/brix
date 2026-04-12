@@ -12,6 +12,7 @@ import httpx
 
 from brix.config import BrixConfig, config
 from brix.external_job_progress import canonicalize_external_job_progress
+from brix.external_service_capabilities import fetch_daigestr_capabilities
 from brix.runners.base import BaseRunner, _coerce_bool
 from brix.serialization import sanitize_for_json
 
@@ -488,6 +489,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         )
 
         async_job_id: str | None = None
+        service_capabilities: dict[str, Any] | None = None
         replay, data = _load_replay_response(payload, context, step_id)
         if replay is not None:
             _update_external_job_progress(
@@ -505,6 +507,24 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         else:
             try:
                 async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
+                    if use_async_jobs:
+                        capabilities = await fetch_daigestr_capabilities(base_url=base_url, client=client)
+                        service_capabilities = capabilities.to_dict()
+                        if not capabilities.supports_async_jobs:
+                            use_async_jobs = False
+                            _update_external_job_progress(
+                                context,
+                                step_id,
+                                {
+                                    "stage": "request",
+                                    "status": "running",
+                                    "message": "daigestr async job contract unavailable, falling back to sync",
+                                    "metadata": {
+                                        "service_version": capabilities.version,
+                                        "supports_async_jobs": capabilities.supports_async_jobs,
+                                    },
+                                },
+                            )
                     if use_async_jobs:
                         async_response = await client.post(
                             async_start_url,
@@ -803,11 +823,13 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     "attempt_history": attempt_history,
                     "artifacts": artifacts or None,
                     "replay": replay,
+                    "service_capabilities": service_capabilities,
                 },
                 "raw": raw_payload,
                 "attempt_history": attempt_history,
                 "artifacts": artifacts,
                 "replay": replay,
+                "service_capabilities": service_capabilities,
                 "warnings": data.get("warnings", []),
             }
         )
