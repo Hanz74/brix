@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -706,6 +707,89 @@ def test_extract_document_with_daigestr_surfaces_structured_http_failure(monkeyp
     assert error["external_job"]["artifacts"]["response_path"] == "external_job_artifacts/extract/response.json"
     assert context.progress_updates[-1]["stage"] == "error"
     assert context.progress_updates[-1]["retry_state"] == "failed"
+
+
+def test_extract_document_with_daigestr_replays_persisted_fixture(monkeypatch, tmp_path):
+    file_path = tmp_path / "replay-fixture.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("live HTTP call must not happen during fixture replay")
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={
+            "file_bytes_path": str(file_path),
+            "replay_fixture_path": str(
+                (Path.cwd() / "tests/fixtures/daigestr/12513-hmk-202402-b-04-11-24-10-19-microsoft-lens-pdf.json")
+            ),
+        },
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    assert result["data"]["document_type"] == "receipt"
+    assert result["data"]["_meta"]["template"] == "receipt"
+    assert result["data"]["replay"]["source_type"] == "fixture"
+    assert result["data"]["raw"]["meta"]["replay"]["source_type"] == "fixture"
+
+
+def test_extract_document_with_daigestr_replays_response_artifact_relative_to_workdir(monkeypatch, tmp_path):
+    file_path = tmp_path / "replay-artifact.pdf"
+    file_path.write_bytes(b"pdf-content")
+    artifact_dir = tmp_path / "external_job_artifacts" / "extract"
+    artifact_dir.mkdir(parents=True)
+    response_path = artifact_dir / "response.json"
+    response_path.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "document_type": "invoice",
+                    "template_used": "invoice",
+                    "quality_score": 0.81,
+                    "request_id": "req-replay-artifact",
+                },
+                "normalized": {"invoice_number": "R-2"},
+            }
+        )
+    )
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("live HTTP call must not happen during artifact replay")
+
+    class FakeContext:
+        def __init__(self, workdir):
+            self.workdir = workdir
+
+        def update_step_progress(self, step_id, payload):
+            return None
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={
+            "file_bytes_path": str(file_path),
+            "replay_response_path": "external_job_artifacts/extract/response.json",
+        },
+    )
+
+    result = asyncio.run(runner.execute(step, context=FakeContext(tmp_path)))
+
+    assert result["success"] is True
+    assert result["data"]["document_type"] == "invoice"
+    assert result["data"]["normalized"]["invoice_number"] == "R-2"
+    assert result["data"]["replay"]["source_type"] == "artifact"
+    assert result["data"]["replay"]["source_path"] == str(response_path)
 
 
 @pytest.mark.asyncio

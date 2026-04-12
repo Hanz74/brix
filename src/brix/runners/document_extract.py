@@ -49,7 +49,11 @@ def _normalize_payload(step: Any, context: Any) -> dict[str, Any]:
 
 def _canonical_daigestr_meta(data: dict[str, Any]) -> dict[str, Any]:
     meta = data.get("meta")
-    return meta if isinstance(meta, dict) else {}
+    if isinstance(meta, dict):
+        return meta
+    raw = data.get("raw")
+    raw_meta = raw.get("meta") if isinstance(raw, dict) else None
+    return raw_meta if isinstance(raw_meta, dict) else {}
 
 
 def _canonical_daigestr_business_payloads(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -164,6 +168,43 @@ def _persist_daigestr_artifacts(
             "attempt_history_path": str(attempt_history_path.relative_to(context.workdir)),
             "markdown_path": str(markdown_path.relative_to(context.workdir)) if markdown else None,
         }
+    )
+
+
+def _resolve_replay_path(path_value: str, context: Any) -> Path:
+    raw = Path(path_value)
+    if raw.is_absolute():
+        return raw
+    if context is not None and hasattr(context, "workdir"):
+        candidate = Path(context.workdir) / raw
+        if candidate.exists():
+            return candidate
+    return Path.cwd() / raw
+
+
+def _load_replay_response(payload: dict[str, Any], context: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    fixture_path = str(payload.get("replay_fixture_path") or "").strip()
+    artifact_path = str(payload.get("replay_response_path") or "").strip()
+    if not fixture_path and not artifact_path:
+        return None, None
+
+    source_type = "fixture" if fixture_path else "artifact"
+    source_path = _resolve_replay_path(fixture_path or artifact_path, context)
+    raw_payload = json.loads(source_path.read_text())
+    if not isinstance(raw_payload, dict):
+        raise ValueError(f"Replay source must contain a JSON object: {source_path}")
+
+    extraction_result = raw_payload.get("extraction_result")
+    response_data = extraction_result if isinstance(extraction_result, dict) else raw_payload
+    if not isinstance(response_data, dict):
+        raise ValueError(f"Replay source does not contain a usable extraction payload: {source_path}")
+
+    return (
+        {
+            "source_type": source_type,
+            "source_path": str(source_path),
+        },
+        response_data,
     )
 
 
@@ -288,6 +329,14 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                 "endpoint": {"type": "string", "description": "Optional Daigestr endpoint override"},
                 "template": {"type": "string", "description": "Optional extraction template"},
                 "mode": {"type": "string", "description": "Optional Daigestr mode override"},
+                "replay_fixture_path": {
+                    "type": "string",
+                    "description": "Optional path to a persisted Daigestr fixture for offline replay",
+                },
+                "replay_response_path": {
+                    "type": "string",
+                    "description": "Optional path to a persisted response.json artifact for offline replay",
+                },
                 "retry_on_low_quality": {
                     "type": "boolean",
                     "description": "Retry extraction with a stronger mode when quality is below threshold",
@@ -370,85 +419,99 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                 },
             )
 
-        try:
-            async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
-                response = await client.post(url, json=request_payload, headers={"Content-Type": "application/json"})
-                try:
-                    data = response.json()
-                except ValueError:
-                    response_text = getattr(response, "text", "")
-                    data = {"response_text": response_text[:4000]} if response_text else {}
-                if getattr(response, "is_error", False):
-                    artifacts = _persist_daigestr_artifacts(
-                        context,
-                        step_id,
-                        request_payload,
-                        data if isinstance(data, dict) else {"response_text": str(data)},
-                        _attempt_history(
-                            _canonical_daigestr_meta(data if isinstance(data, dict) else {}),
-                            fallback_mode=request_payload["mode"],
-                        ),
-                    )
-                    error = _structured_daigestr_error(
-                        message=f"Daigestr request failed with HTTP {getattr(response, 'status_code', 'unknown')}",
-                        error_type="external_job_http_error",
-                        request_payload=request_payload,
-                        url=url,
-                        response_data=data if isinstance(data, dict) else None,
-                        status_code=getattr(response, "status_code", None),
-                        artifacts=artifacts,
-                    )
-                    if context is not None and hasattr(context, "update_step_progress"):
-                        context.update_step_progress(
-                            step_id,
-                            {
-                                "stage": "error",
-                                "attempt_number": _first_mapping(error["external_job"], "attempt_number") or 1,
-                                "attempt_count": _first_mapping(error["external_job"], "attempt_count") or 1,
-                                "attempt_mode": _first_mapping(error["external_job"], "attempt_mode")
-                                or request_payload["mode"],
-                                "retry_state": "failed",
-                                "retry_reason": _first_mapping(error["external_job"], "retry_reason"),
-                                "request_id": _first_mapping(error["external_job"], "request_id"),
-                                "message": error["error"],
-                            },
-                        )
-                    return {"success": False, "error": error, "duration": time.monotonic() - start}
-        except Exception as exc:
-            artifacts = _persist_daigestr_artifacts(
-                context,
-                step_id,
-                request_payload,
-                {"transport_error": str(exc)},
-                [
-                    {
-                        "attempt": 1,
-                        "attempt_count": 1,
-                        "mode": request_payload["mode"],
-                        "status": "failed",
-                    }
-                ],
-            )
-            error = _structured_daigestr_error(
-                message=str(exc),
-                error_type="external_job_transport_error",
-                request_payload=request_payload,
-                url=url,
-                artifacts=artifacts,
-            )
+        replay, data = _load_replay_response(payload, context)
+        if replay is not None:
             if context is not None and hasattr(context, "update_step_progress"):
                 context.update_step_progress(
                     step_id,
                     {
-                        "stage": "error",
+                        "stage": "replay",
                         "attempt_number": 1,
                         "attempt_count": 1,
                         "attempt_mode": request_payload["mode"],
-                        "retry_state": "failed",
-                        "message": str(exc),
+                        "message": f"replaying daigestr response from {replay['source_type']}",
                     },
                 )
-            return {"success": False, "error": error, "duration": time.monotonic() - start}
+        else:
+            try:
+                async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
+                    response = await client.post(url, json=request_payload, headers={"Content-Type": "application/json"})
+                    try:
+                        data = response.json()
+                    except ValueError:
+                        response_text = getattr(response, "text", "")
+                        data = {"response_text": response_text[:4000]} if response_text else {}
+                    if getattr(response, "is_error", False):
+                        artifacts = _persist_daigestr_artifacts(
+                            context,
+                            step_id,
+                            request_payload,
+                            data if isinstance(data, dict) else {"response_text": str(data)},
+                            _attempt_history(
+                                _canonical_daigestr_meta(data if isinstance(data, dict) else {}),
+                                fallback_mode=request_payload["mode"],
+                            ),
+                        )
+                        error = _structured_daigestr_error(
+                            message=f"Daigestr request failed with HTTP {getattr(response, 'status_code', 'unknown')}",
+                            error_type="external_job_http_error",
+                            request_payload=request_payload,
+                            url=url,
+                            response_data=data if isinstance(data, dict) else None,
+                            status_code=getattr(response, "status_code", None),
+                            artifacts=artifacts,
+                        )
+                        if context is not None and hasattr(context, "update_step_progress"):
+                            context.update_step_progress(
+                                step_id,
+                                {
+                                    "stage": "error",
+                                    "attempt_number": _first_mapping(error["external_job"], "attempt_number") or 1,
+                                    "attempt_count": _first_mapping(error["external_job"], "attempt_count") or 1,
+                                    "attempt_mode": _first_mapping(error["external_job"], "attempt_mode")
+                                    or request_payload["mode"],
+                                    "retry_state": "failed",
+                                    "retry_reason": _first_mapping(error["external_job"], "retry_reason"),
+                                    "request_id": _first_mapping(error["external_job"], "request_id"),
+                                    "message": error["error"],
+                                },
+                            )
+                        return {"success": False, "error": error, "duration": time.monotonic() - start}
+            except Exception as exc:
+                artifacts = _persist_daigestr_artifacts(
+                    context,
+                    step_id,
+                    request_payload,
+                    {"transport_error": str(exc)},
+                    [
+                        {
+                            "attempt": 1,
+                            "attempt_count": 1,
+                            "mode": request_payload["mode"],
+                            "status": "failed",
+                        }
+                    ],
+                )
+                error = _structured_daigestr_error(
+                    message=str(exc),
+                    error_type="external_job_transport_error",
+                    request_payload=request_payload,
+                    url=url,
+                    artifacts=artifacts,
+                )
+                if context is not None and hasattr(context, "update_step_progress"):
+                    context.update_step_progress(
+                        step_id,
+                        {
+                            "stage": "error",
+                            "attempt_number": 1,
+                            "attempt_count": 1,
+                            "attempt_mode": request_payload["mode"],
+                            "retry_state": "failed",
+                            "message": str(exc),
+                        },
+                    )
+                return {"success": False, "error": error, "duration": time.monotonic() - start}
 
         raw_payload, extracted, normalized = _canonical_daigestr_business_payloads(data)
         meta = raw_payload["meta"]
@@ -457,6 +520,8 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         artifacts = _persist_daigestr_artifacts(context, step_id, request_payload, data, attempt_history)
         if artifacts:
             raw_payload["meta"]["artifacts"] = artifacts
+        if replay is not None:
+            raw_payload["meta"]["replay"] = replay
         if not normalized:
             normalized = extracted
 
@@ -509,10 +574,12 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                     "pipeline_steps": meta.get("pipeline_steps") if isinstance(meta.get("pipeline_steps"), list) else None,
                     "attempt_history": attempt_history,
                     "artifacts": artifacts or None,
+                    "replay": replay,
                 },
                 "raw": raw_payload,
                 "attempt_history": attempt_history,
                 "artifacts": artifacts,
+                "replay": replay,
                 "warnings": data.get("warnings", []),
             }
         )

@@ -1314,6 +1314,14 @@ SYSTEM_EXTRACT_DOCUMENT_WITH_DAIGESTR = BrickSchema(
         "endpoint": BrickParam(type="string", description="Optional Daigestr endpoint override"),
         "template": BrickParam(type="string", description="Optional extraction template"),
         "mode": BrickParam(type="string", description="Optional Daigestr mode override"),
+        "replay_fixture_path": BrickParam(
+            type="string",
+            description="Optional path to a persisted Daigestr fixture for offline replay",
+        ),
+        "replay_response_path": BrickParam(
+            type="string",
+            description="Optional path to a persisted response.json artifact for offline replay",
+        ),
         "retry_on_low_quality": BrickParam(
             type="boolean",
             description="Retry with a stronger Daigestr mode when the initial quality is below threshold",
