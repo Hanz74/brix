@@ -261,6 +261,7 @@ def _structured_daigestr_error(
     response_data: dict[str, Any] | None = None,
     status_code: int | None = None,
     artifacts: dict[str, Any] | None = None,
+    service_capabilities: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     response_payload = response_data if isinstance(response_data, dict) else {}
     meta = _canonical_daigestr_meta(response_payload)
@@ -295,6 +296,7 @@ def _structured_daigestr_error(
             "retry_threshold_used": _first_mapping(meta, "retry_threshold_used"),
             "attempt_history": attempt_history,
             "artifacts": artifacts or None,
+            "service_capabilities": service_capabilities or None,
         }
     )
     return {
@@ -471,6 +473,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         async_start_url = _join_url(base_url, _daigestr_async_start_endpoint())
         retry_enabled = _coerce_bool(request_payload["retry_on_low_quality"])
         use_async_jobs = _coerce_bool(payload.get("use_async_jobs"))
+        explicit_use_async_jobs = "use_async_jobs" in payload
         if "use_async_jobs" not in payload:
             use_async_jobs = _daigestr_use_async_jobs()
 
@@ -511,6 +514,35 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                         capabilities = await fetch_daigestr_capabilities(base_url=base_url, client=client)
                         service_capabilities = capabilities.to_dict()
                         if not capabilities.supports_async_jobs:
+                            if explicit_use_async_jobs:
+                                error = _structured_daigestr_error(
+                                    message=(
+                                        "Daigestr async job contract is not supported by the connected service. "
+                                        "Disable 'use_async_jobs' or upgrade the service."
+                                    ),
+                                    error_type="external_job_capability_error",
+                                    request_payload=request_payload,
+                                    url=async_start_url,
+                                    service_capabilities=service_capabilities,
+                                )
+                                _update_external_job_progress(
+                                    context,
+                                    step_id,
+                                    {
+                                        "stage": "compatibility",
+                                        "status": "failed",
+                                        "attempt_number": 1,
+                                        "attempt_count": 1,
+                                        "attempt_mode": request_payload["mode"],
+                                        "retry_state": "none",
+                                        "message": error["error"],
+                                        "metadata": {
+                                            "service_version": capabilities.version,
+                                            "supports_async_jobs": capabilities.supports_async_jobs,
+                                        },
+                                    },
+                                )
+                                return {"success": False, "error": error, "duration": time.monotonic() - start}
                             use_async_jobs = False
                             _update_external_job_progress(
                                 context,

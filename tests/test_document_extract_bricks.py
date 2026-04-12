@@ -572,6 +572,62 @@ def test_extract_document_with_daigestr_falls_back_to_sync_when_async_job_id_mis
     ]
 
 
+def test_extract_document_with_daigestr_fails_fast_when_async_is_explicitly_required(monkeypatch, tmp_path):
+    file_path = tmp_path / "async-required.pdf"
+    file_path.write_bytes(b"pdf-content")
+    captured: list[tuple[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, payload: dict, *, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+            self.is_error = status_code >= 400
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url):
+            captured.append(("GET", url))
+            if url.endswith("/v1/health"):
+                return FakeResponse({"status": "ok", "version": "13.5.0"})
+            if url.endswith("/v1/tips"):
+                return FakeResponse({"response_contract": {}})
+            raise AssertionError(f"unexpected get url: {url}")
+
+        async def post(self, url, json, headers):
+            raise AssertionError(f"unexpected post url: {url}")
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+    monkeypatch.setenv("BRIX_DAIGESTR_USE_ASYNC_JOBS", "false")
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(
+        id="extract",
+        type="extract.document_with_daigestr",
+        params={"file_bytes_path": str(file_path), "use_async_jobs": True},
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is False
+    assert result["error"]["error_type"] == "external_job_capability_error"
+    assert result["error"]["external_job"]["service_capabilities"]["supports_async_jobs"] is False
+    assert captured == [
+        ("GET", "http://daigestr:8081/v1/health"),
+        ("GET", "http://daigestr:8081/v1/tips"),
+    ]
+
+
 def test_document_extract_bricks_are_registered_in_builtins():
     names = {brick.name for brick in ALL_BUILTINS}
     assert "document.prepare_extractable_payload" in names
