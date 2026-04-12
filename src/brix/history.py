@@ -7,7 +7,6 @@ new instances write to brix.db by default.
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -123,6 +122,18 @@ def _root_cause(step_id: str, error_message: str) -> str | None:
         match = re.search(r"\broot_exception=([^\n]+)", error_message)
         if match:
             return match.group(1).strip()
+    return None
+
+
+def _error_message_from_detail(error_detail: object) -> str | None:
+    """Extract a human-readable error message from structured error detail."""
+    if isinstance(error_detail, str):
+        return error_detail
+    if not isinstance(error_detail, dict):
+        return None
+    raw = error_detail.get("error") or error_detail.get("message")
+    if isinstance(raw, str) and raw:
+        return raw
     return None
 
 
@@ -332,7 +343,7 @@ class RunHistory:
         If *pipeline* is given (and no *run_id*), return errors from the last
         *last* failed runs of that pipeline.
 
-        Each entry has: run_id, step_id, error_message, hint.
+        Each entry has: run_id, step_id, error_message, hint, and optional error_detail.
         """
         if run_id:
             runs_data = []
@@ -364,17 +375,26 @@ class RunHistory:
             for step_id, data in steps.items():
                 if data.get("status") != "error":
                     continue
-                err_msg = data.get("error_message") or data.get("errors") or "unknown error"
+                err_detail = data.get("error_detail")
+                err_msg = (
+                    _error_message_from_detail(err_detail)
+                    or data.get("error_message")
+                    or data.get("errors")
+                    or "unknown error"
+                )
                 if not isinstance(err_msg, str):
                     err_msg = str(err_msg)
-                errors.append({
+                entry = {
                     "run_id": rid,
                     "step_id": step_id,
                     "error_message": err_msg,
                     "hint": _error_hint(step_id, err_msg),
                     "phase": _error_phase(step_id, err_msg),
                     "root_cause": _root_cause(step_id, err_msg),
-                })
+                }
+                if isinstance(err_detail, dict):
+                    entry["error_detail"] = err_detail
+                errors.append(entry)
         return errors
 
     def get_run_log(self, run_id: str) -> list[dict]:
@@ -405,6 +425,8 @@ class RunHistory:
             }
             if data.get("error_message"):
                 entry["error_message"] = data["error_message"]
+            if isinstance(data.get("error_detail"), dict):
+                entry["error_detail"] = data["error_detail"]
             log.append(entry)
         return log
 

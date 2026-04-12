@@ -1,5 +1,4 @@
 """Tests for SQLite run history."""
-import pytest
 from brix.history import RunHistory
 
 
@@ -74,7 +73,7 @@ def test_cleanup(tmp_path):
 
 def test_db_created_automatically(tmp_path):
     db_path = tmp_path / "subdir" / "test.db"
-    h = RunHistory(db_path=db_path)
+    RunHistory(db_path=db_path)
     assert db_path.exists()
 
 
@@ -247,6 +246,39 @@ def test_get_run_errors_by_pipeline(tmp_path):
     assert len(errors) == 2
 
 
+def test_get_run_errors_includes_structured_external_job_detail(tmp_path):
+    """Structured retry/failure context should survive into get_run_errors."""
+    h = RunHistory(db_path=tmp_path / "test.db")
+    h.record_start("r-structured-1", "ext-pipe")
+    h.record_finish("r-structured-1", False, 1.0, {
+        "extract": {
+            "status": "error",
+            "duration": 1.0,
+            "errors": 1,
+            "error_message": "Daigestr request failed with HTTP 502",
+            "error_detail": {
+                "error": "Daigestr request failed with HTTP 502",
+                "error_type": "external_job_http_error",
+                "external_job": {
+                    "request_id": "req-1",
+                    "retry_reason": "low_quality",
+                    "attempt_history": [
+                        {"attempt": 1, "attempt_count": 2, "mode": "default", "status": "retry_triggered"},
+                        {"attempt": 2, "attempt_count": 2, "mode": "full", "status": "completed"},
+                    ],
+                },
+            },
+        },
+    })
+
+    errors = h.get_run_errors(run_id="r-structured-1")
+    assert len(errors) == 1
+    err = errors[0]
+    assert err["error_message"] == "Daigestr request failed with HTTP 502"
+    assert err["error_detail"]["external_job"]["request_id"] == "req-1"
+    assert err["error_detail"]["external_job"]["attempt_history"][0]["status"] == "retry_triggered"
+
+
 def test_get_run_errors_no_match(tmp_path):
     """get_run_errors returns empty list when no errors found."""
     h = RunHistory(db_path=tmp_path / "test.db")
@@ -302,6 +334,28 @@ def test_get_run_log_basic(tmp_path):
 
     assert by_id["process"]["status"] == "error"
     assert by_id["process"]["error_message"] == "KeyError: 'id'"
+
+
+def test_get_run_log_includes_structured_error_detail(tmp_path):
+    """get_run_log keeps machine-readable retry/failure detail when present."""
+    h = RunHistory(db_path=tmp_path / "test.db")
+    h.record_start("r-log-structured", "log-pipeline")
+    h.record_finish("r-log-structured", False, 1.0, {
+        "extract": {
+            "status": "error",
+            "duration": 1.0,
+            "errors": 1,
+            "error_message": "Daigestr request failed with HTTP 502",
+            "error_detail": {
+                "error_type": "external_job_http_error",
+                "external_job": {"retry_reason": "low_quality"},
+            },
+        },
+    })
+
+    log = h.get_run_log("r-log-structured")
+    assert log[0]["error_detail"]["error_type"] == "external_job_http_error"
+    assert log[0]["error_detail"]["external_job"]["retry_reason"] == "low_quality"
 
 
 def test_get_run_log_not_found(tmp_path):
@@ -374,8 +428,6 @@ def test_get_result_not_found(tmp_path):
 
 def test_get_result_truncated(tmp_path):
     """get_result returns (raw_str, True) when result_summary exceeds 10 KB."""
-    import json as _json
-
     h = RunHistory(db_path=tmp_path / "test.db")
     # Build a payload that is >10KB when JSON-serialized
     large_result = {"data": "x" * 12000}

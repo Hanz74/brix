@@ -4,8 +4,12 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import pytest
 from brix.bricks.builtins import ALL_BUILTINS
 from brix.db import BrixDB
+from brix.engine import PipelineEngine
+from brix.history import RunHistory
+from brix.loader import PipelineLoader
 from brix.migrations import MIGRATIONS, _register_document_extract_bricks_v90, run_pending_migrations
 from brix.models import Step
 from brix.runners.document_extract import (
@@ -613,6 +617,168 @@ def test_extract_document_with_daigestr_persists_replay_artifacts(monkeypatch, t
     assert response_json["markdown_chars"] == len("# artifact")
     assert attempt_history[0]["request_id"] == "req-artifact"
     assert markdown == "# artifact"
+
+
+def test_extract_document_with_daigestr_surfaces_structured_http_failure(monkeypatch, tmp_path):
+    file_path = tmp_path / "http-failure.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        is_error = True
+        status_code = 502
+        text = '{"meta":{"request_id":"req-fail"}}'
+
+        def json(self):
+            return {
+                "meta": {
+                    "request_id": "req-fail",
+                    "retry_applied": True,
+                    "retry_reason": "low_quality",
+                    "initial_mode": "default",
+                    "final_mode": "full",
+                    "initial_quality_score": 0.41,
+                    "final_quality_score": 0.44,
+                    "attempt_number": 2,
+                    "attempt_count": 2,
+                    "attempt_mode": "full",
+                    "retry_threshold_used": 0.75,
+                },
+                "warnings": ["upstream retry exhausted"],
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    class FakeContext:
+        def __init__(self, workdir):
+            self.workdir = workdir
+            self.progress_updates: list[dict] = []
+
+        def update_step_progress(self, step_id, payload):
+            self.progress_updates.append({"step_id": step_id, **payload})
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    context = FakeContext(tmp_path)
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=context))
+
+    assert result["success"] is False
+    error = result["error"]
+    assert error["error"] == "Daigestr request failed with HTTP 502"
+    assert error["error_type"] == "external_job_http_error"
+    assert error["external_job"]["request_id"] == "req-fail"
+    assert error["external_job"]["retry_reason"] == "low_quality"
+    assert error["external_job"]["attempt_history"] == [
+        {
+            "attempt": 1,
+            "attempt_count": 2,
+            "mode": "default",
+            "quality_score": 0.41,
+            "request_id": "req-fail",
+            "retry_reason": "low_quality",
+            "retry_threshold_used": 0.75,
+            "status": "retry_triggered",
+        },
+        {
+            "attempt": 2,
+            "attempt_count": 2,
+            "mode": "full",
+            "quality_score": 0.44,
+            "request_id": "req-fail",
+            "retry_reason": "low_quality",
+            "retry_threshold_used": 0.75,
+            "status": "completed",
+        },
+    ]
+    assert error["external_job"]["artifacts"]["response_path"] == "external_job_artifacts/extract/response.json"
+    assert context.progress_updates[-1]["stage"] == "error"
+    assert context.progress_updates[-1]["retry_state"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_engine_persists_structured_daigestr_failure_history(monkeypatch, tmp_path):
+    file_path = tmp_path / "engine-http-failure.pdf"
+    file_path.write_bytes(b"pdf-content")
+
+    class FakeResponse:
+        is_error = True
+        status_code = 502
+        text = '{"meta":{"request_id":"req-engine"}}'
+
+        def json(self):
+            return {
+                "meta": {
+                    "request_id": "req-engine",
+                    "retry_applied": True,
+                    "retry_reason": "low_quality",
+                    "initial_mode": "default",
+                    "final_mode": "full",
+                    "initial_quality_score": 0.51,
+                    "final_quality_score": 0.55,
+                    "attempt_number": 2,
+                    "attempt_count": 2,
+                    "attempt_mode": "full",
+                    "retry_threshold_used": 0.75,
+                }
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    import brix.context as context_mod
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", tmp_path / "runs")
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    pipeline = PipelineLoader().load_from_string(
+        f"""
+name: structured-daigestr-failure
+steps:
+  - id: extract
+    type: extract.document_with_daigestr
+    params:
+      file_bytes_path: "{file_path}"
+"""
+    )
+
+    engine = PipelineEngine()
+    result = await engine.run(pipeline)
+
+    assert result.success is False
+    assert result.steps["extract"].status == "error"
+    assert result.steps["extract"].error_message == "Daigestr request failed with HTTP 502"
+    assert result.steps["extract"].error_detail["error_type"] == "external_job_http_error"
+    assert result.steps["extract"].error_detail["external_job"]["attempt_history"][0]["status"] == "retry_triggered"
+
+    history = RunHistory()
+    errors = history.get_run_errors(run_id=result.run_id)
+
+    assert len(errors) == 1
+    assert errors[0]["error_detail"]["external_job"]["request_id"] == "req-engine"
+    assert errors[0]["error_detail"]["external_job"]["attempt_history"][1]["mode"] == "full"
 
 
 def test_extract_document_with_daigestr_ignores_noncanonical_top_level_mirrors(monkeypatch, tmp_path):

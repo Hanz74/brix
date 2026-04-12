@@ -507,16 +507,22 @@ class StepExecutor:
 
             if self.engine._run_db is not None:
                 try:
-                    self.engine._run_db.record_foreach_item(
-                        run_id=context.run_id,
-                        step_id=step.id,
-                        item_index=i,
-                        item_input=item,
-                        item_output=result.get("data"),
-                        status="success" if result.get("success") else "error",
-                        error_detail={"error": result.get("error")} if result.get("error") else None,
-                        duration_ms=item_duration_ms,
-                    )
+                        self.engine._run_db.record_foreach_item(
+                            run_id=context.run_id,
+                            step_id=step.id,
+                            item_index=i,
+                            item_input=item,
+                            item_output=result.get("data"),
+                            status="success" if result.get("success") else "error",
+                            error_detail=(
+                                result.get("error")
+                                if isinstance(result.get("error"), dict)
+                                else {"error": result.get("error")}
+                                if result.get("error")
+                                else None
+                            ),
+                            duration_ms=item_duration_ms,
+                        )
                 except Exception:
                     pass
 
@@ -594,7 +600,13 @@ class StepExecutor:
                             item_input=item,
                             item_output=result.get("data"),
                             status="success" if result.get("success") else "error",
-                            error_detail={"error": result.get("error")} if result.get("error") else None,
+                            error_detail=(
+                                result.get("error")
+                                if isinstance(result.get("error"), dict)
+                                else {"error": result.get("error")}
+                                if result.get("error")
+                                else None
+                            ),
                             duration_ms=item_duration_ms,
                         )
                     except Exception:
@@ -1351,6 +1363,11 @@ class StepExecutor:
             return StepResult(status="ok", output=output, cost=cost)
 
         error_msg = result.get("error", "unknown error")
+        error_detail = error_msg if isinstance(error_msg, dict) else ({"error": str(error_msg)} if error_msg else None)
+        if isinstance(error_msg, dict):
+            human_error = str(error_msg.get("error") or error_msg.get("message") or "unknown error")
+        else:
+            human_error = str(error_msg) if error_msg else None
         if cb_instance is not None:
             try:
                 cb_instance.on_failure()
@@ -1360,10 +1377,11 @@ class StepExecutor:
             status="error",
             duration=step_duration,
             errors=1,
-            error_message=str(error_msg) if error_msg else None,
+            error_message=human_error,
+            error_detail=error_detail if isinstance(error_detail, dict) else None,
             resource_usage=resource_usage,
         )
-        self.engine.progress.step_error(step.id, error_msg, step_duration)
+        self.engine.progress.step_error(step.id, human_error, step_duration)
         if self._should_persist(step):
             self._persist_step_output(
                 context.run_id,
@@ -1381,7 +1399,7 @@ class StepExecutor:
                 status="error",
                 input_data=_redact_secret_values(rendered_params, secret_vals) if persist_data_flag else None,
                 output_data=None,
-                error_detail={"error": str(error_msg)} if error_msg else None,
+                error_detail=error_detail,
                 data_source="",
                 started_at=step_started_at,
                 ended_at=step_ended_at,

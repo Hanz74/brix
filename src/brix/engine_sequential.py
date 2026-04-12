@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -69,6 +68,8 @@ async def finalize_run(
             }
             if d.get("error_message") is not None:
                 entry["error_message"] = d["error_message"]
+            if d.get("error_detail") is not None:
+                entry["error_detail"] = d["error_detail"]
             if d.get("resource_usage") is not None:
                 entry["resource_usage"] = d["resource_usage"]
             steps_summary[k] = entry

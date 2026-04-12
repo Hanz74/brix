@@ -574,7 +574,7 @@ class StepResult(BaseModel):
     data: Any = None
     duration: float = 0.0
     items_count: Optional[int] = None
-    error: Optional[str] = None
+    error: Any = None
 
 
 class ForeachItem(BaseModel):
@@ -630,6 +630,7 @@ class StepStatus(BaseModel):
     errors: Optional[int] = None
     reason: Optional[str] = None  # for skipped steps
     error_message: Optional[str] = None  # human-readable error detail for failed steps
+    error_detail: Optional[dict] = None  # structured machine-readable error context
     step_progress: Optional["StepProgress"] = None  # intra-step progress (T-BRIX-V4-BUG-05)
     resource_usage: Optional[dict] = None  # {rss_mb, duration} — T-BRIX-V7-07
 

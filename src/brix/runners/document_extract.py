@@ -167,6 +167,58 @@ def _persist_daigestr_artifacts(
     )
 
 
+def _structured_daigestr_error(
+    *,
+    message: str,
+    error_type: str,
+    request_payload: dict[str, Any],
+    url: str,
+    response_data: dict[str, Any] | None = None,
+    status_code: int | None = None,
+    artifacts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    response_payload = response_data if isinstance(response_data, dict) else {}
+    meta = _canonical_daigestr_meta(response_payload)
+    attempt_history = _attempt_history(meta, fallback_mode=str(request_payload.get("mode") or _daigestr_default_mode()))
+    if not attempt_history:
+        attempt_history = sanitize_for_json(
+            [
+                {
+                    "attempt": 1,
+                    "attempt_count": 1,
+                    "mode": str(request_payload.get("mode") or _daigestr_default_mode()),
+                    "status": "failed",
+                }
+            ]
+        )
+    external_job = sanitize_for_json(
+        {
+            "service": "daigestr",
+            "url": url,
+            "http_status": status_code,
+            "request_id": _first_mapping(meta, "request_id"),
+            "stage": _first_mapping(meta, "stage"),
+            "attempt_number": _first_mapping(meta, "attempt_number"),
+            "attempt_count": _first_mapping(meta, "attempt_count"),
+            "attempt_mode": _first_mapping(meta, "attempt_mode"),
+            "retry_applied": _first_mapping(meta, "retry_applied"),
+            "retry_reason": _first_mapping(meta, "retry_reason"),
+            "initial_mode": _first_mapping(meta, "initial_mode"),
+            "final_mode": _first_mapping(meta, "final_mode"),
+            "initial_quality_score": _first_mapping(meta, "initial_quality_score"),
+            "final_quality_score": _first_mapping(meta, "final_quality_score"),
+            "retry_threshold_used": _first_mapping(meta, "retry_threshold_used"),
+            "attempt_history": attempt_history,
+            "artifacts": artifacts or None,
+        }
+    )
+    return {
+        "error": message,
+        "error_type": error_type,
+        "external_job": external_job,
+    }
+
+
 class DocumentPrepareExtractablePayloadRunner(BaseRunner):
     """Normalize file/base64 inputs into the document_extract_input contract."""
 
@@ -274,6 +326,14 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         if not base64_content:
             base64_content = base64.b64encode(path.read_bytes()).decode("ascii")
 
+        retry_on_low_quality = payload.get("retry_on_low_quality")
+        if retry_on_low_quality is None:
+            retry_on_low_quality = BrixConfig.reload().DAIGESTR_RETRY_ON_LOW_QUALITY
+        quality_retry_threshold = payload.get("quality_retry_threshold")
+        if quality_retry_threshold in (None, ""):
+            quality_retry_threshold = BrixConfig.reload().DAIGESTR_QUALITY_RETRY_THRESHOLD
+        quality_retry_mode = payload.get("quality_retry_mode") or BrixConfig.reload().DAIGESTR_QUALITY_RETRY_MODE
+
         request_payload = {
             "content": base64_content,
             "base64": base64_content,
@@ -283,15 +343,9 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
             "metadata": payload.get("metadata") or {},
             "mode": payload.get("mode") or _daigestr_default_mode(),
             "auto_extract": True,
-            "retry_on_low_quality": _coerce_bool(
-                payload.get("retry_on_low_quality", BrixConfig.reload().DAIGESTR_RETRY_ON_LOW_QUALITY)
-            ),
-            "quality_retry_threshold": float(
-                payload.get("quality_retry_threshold", BrixConfig.reload().DAIGESTR_QUALITY_RETRY_THRESHOLD)
-            ),
-            "quality_retry_mode": str(
-                payload.get("quality_retry_mode") or BrixConfig.reload().DAIGESTR_QUALITY_RETRY_MODE
-            ),
+            "retry_on_low_quality": _coerce_bool(retry_on_low_quality),
+            "quality_retry_threshold": float(quality_retry_threshold),
+            "quality_retry_mode": str(quality_retry_mode),
         }
         if payload.get("template"):
             request_payload["template"] = payload["template"]
@@ -319,10 +373,82 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
         try:
             async with httpx.AsyncClient(timeout=config.BRIX_DEFAULT_TIMEOUT) as client:
                 response = await client.post(url, json=request_payload, headers={"Content-Type": "application/json"})
-                response.raise_for_status()
-                data = response.json()
+                try:
+                    data = response.json()
+                except ValueError:
+                    response_text = getattr(response, "text", "")
+                    data = {"response_text": response_text[:4000]} if response_text else {}
+                if getattr(response, "is_error", False):
+                    artifacts = _persist_daigestr_artifacts(
+                        context,
+                        step_id,
+                        request_payload,
+                        data if isinstance(data, dict) else {"response_text": str(data)},
+                        _attempt_history(
+                            _canonical_daigestr_meta(data if isinstance(data, dict) else {}),
+                            fallback_mode=request_payload["mode"],
+                        ),
+                    )
+                    error = _structured_daigestr_error(
+                        message=f"Daigestr request failed with HTTP {getattr(response, 'status_code', 'unknown')}",
+                        error_type="external_job_http_error",
+                        request_payload=request_payload,
+                        url=url,
+                        response_data=data if isinstance(data, dict) else None,
+                        status_code=getattr(response, "status_code", None),
+                        artifacts=artifacts,
+                    )
+                    if context is not None and hasattr(context, "update_step_progress"):
+                        context.update_step_progress(
+                            step_id,
+                            {
+                                "stage": "error",
+                                "attempt_number": _first_mapping(error["external_job"], "attempt_number") or 1,
+                                "attempt_count": _first_mapping(error["external_job"], "attempt_count") or 1,
+                                "attempt_mode": _first_mapping(error["external_job"], "attempt_mode")
+                                or request_payload["mode"],
+                                "retry_state": "failed",
+                                "retry_reason": _first_mapping(error["external_job"], "retry_reason"),
+                                "request_id": _first_mapping(error["external_job"], "request_id"),
+                                "message": error["error"],
+                            },
+                        )
+                    return {"success": False, "error": error, "duration": time.monotonic() - start}
         except Exception as exc:
-            return {"success": False, "error": str(exc), "duration": time.monotonic() - start}
+            artifacts = _persist_daigestr_artifacts(
+                context,
+                step_id,
+                request_payload,
+                {"transport_error": str(exc)},
+                [
+                    {
+                        "attempt": 1,
+                        "attempt_count": 1,
+                        "mode": request_payload["mode"],
+                        "status": "failed",
+                    }
+                ],
+            )
+            error = _structured_daigestr_error(
+                message=str(exc),
+                error_type="external_job_transport_error",
+                request_payload=request_payload,
+                url=url,
+                artifacts=artifacts,
+            )
+            if context is not None and hasattr(context, "update_step_progress"):
+                context.update_step_progress(
+                    step_id,
+                    {
+                        "stage": "error",
+                        "attempt_number": 1,
+                        "attempt_count": 1,
+                        "attempt_mode": request_payload["mode"],
+                        "retry_state": "failed",
+                        "message": str(exc),
+                    },
+                )
+            return {"success": False, "error": error, "duration": time.monotonic() - start}
 
         raw_payload, extracted, normalized = _canonical_daigestr_business_payloads(data)
         meta = raw_payload["meta"]
