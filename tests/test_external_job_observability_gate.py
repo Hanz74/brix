@@ -343,3 +343,111 @@ async def test_get_run_status_unifies_attempt_retry_and_page_progress(tmp_path, 
     assert surface["attempts"][0]["mode"] == "default"
     assert surface["attempts"][1]["attempt"] == 2
     assert surface["attempts"][1]["retry_reason"] == "low_quality"
+
+
+@pytest.mark.asyncio
+async def test_stale_heartbeat_with_active_service_progress_is_not_marked_hung(tmp_path, monkeypatch):
+    import brix.context as context_mod
+    from brix.config import config
+
+    runs_base = tmp_path / "runs"
+    run_id = "run-active-service-not-hung"
+    run_dir = runs_base / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", runs_base)
+    monkeypatch.setattr(config, "DAIGESTR_URL", "http://daigestr:8081", raising=False)
+    monkeypatch.setattr(config, "DAIGESTR_JOB_STATUS_ENDPOINT_TEMPLATE", "/v1/jobs/{job_id}", raising=False)
+
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "ext-active",
+                "input": {},
+                "status": "running",
+                "completed_steps": [],
+                "last_heartbeat": time.time() - 900,
+                "progress": {
+                    "step_id": "extract",
+                    "service": "daigestr",
+                    "job_id": "job-active",
+                    "status": "queued",
+                    "stage": "request",
+                },
+            }
+        )
+    )
+
+    class FakeResponse:
+        def __init__(self, payload: dict, *, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+            self.is_error = status_code >= 400
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url):
+            assert url == "http://daigestr:8081/v1/jobs/job-active"
+            return FakeResponse(
+                {
+                    "status": "processing",
+                    "progress": {
+                        "job_id": "job-active",
+                        "request_id": "req-active",
+                        "current_stage": "extract",
+                        "message": "still working",
+                        "percent": 67,
+                    },
+                }
+            )
+
+    monkeypatch.setattr("brix.mcp_handlers.runs.httpx.AsyncClient", FakeClient)
+
+    status = await _handle_get_run_status({"run_id": run_id})
+
+    assert status["success"] is True
+    assert status["suspected_hang"] is False
+    assert "external service still reports active work" in status["hint"]
+
+
+@pytest.mark.asyncio
+async def test_stale_heartbeat_without_service_progress_is_still_marked_hung(tmp_path, monkeypatch):
+    import brix.context as context_mod
+
+    runs_base = tmp_path / "runs"
+    run_id = "run-no-service-hung"
+    run_dir = runs_base / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", runs_base)
+
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "ext-plain",
+                "input": {},
+                "status": "running",
+                "completed_steps": [],
+                "last_heartbeat": time.time() - 900,
+            }
+        )
+    )
+
+    status = await _handle_get_run_status({"run_id": run_id})
+
+    assert status["success"] is True
+    assert status["suspected_hang"] is True
+    assert "appears to be hung" in status["hint"]

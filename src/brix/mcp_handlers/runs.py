@@ -165,6 +165,27 @@ def _extract_external_job_surface(
     return surface
 
 
+def _suspected_hang_state(*, heartbeat_age_seconds: float, external_job_progress: dict | None) -> tuple[bool, str | None]:
+    if heartbeat_age_seconds <= 300:
+        return False, None
+    if isinstance(external_job_progress, dict):
+        status = str(external_job_progress.get("status") or "").strip().lower()
+        stage = str(external_job_progress.get("stage") or external_job_progress.get("current_stage") or "").strip()
+        if status in {"queued", "processing", "running", "retrying"}:
+            return False, (
+                "Heartbeat is stale, but external service still reports active work"
+                + (f" at stage '{stage}'." if stage else ".")
+            )
+        if status in {"completed", "done", "success", "succeeded"}:
+            return False, "Heartbeat is stale, but external service already reports completion."
+        if status in {"failed", "error", "cancelled", "canceled"}:
+            return False, f"Heartbeat is stale, but external service reports terminal status '{status}'."
+    return True, (
+        "Run appears to be hung (no heartbeat for >5 minutes). "
+        "Check container logs or use brix__cancel_run to abort."
+    )
+
+
 def _load_current_progress(workdir: Path) -> dict | None:
     run_json_path = workdir / "run.json"
     if not run_json_path.exists():
@@ -553,16 +574,8 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                             "Result is empty. Set persist_output: true on steps to capture outputs."
                         )
                     return {"success": True, "source": "history", **run_data}
-                # Hang detection: no heartbeat for >5 minutes
                 heartbeat = live.get("last_heartbeat", 0)
                 age = _time.time() - heartbeat if heartbeat else 0
-                is_suspected_hang = age > 300
-                live["suspected_hang"] = is_suspected_hang
-                if is_suspected_hang:
-                    live["hint"] = (
-                        "Run appears to be hung (no heartbeat for >5 minutes). "
-                        "Check container logs or use brix__cancel_run to abort."
-                    )
                 current_progress = _load_current_progress(WORKDIR_BASE / run_id)
                 if current_progress:
                     polled_progress = await _poll_external_job_progress(current_progress)
@@ -599,6 +612,13 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                 )
                 if external_job_progress:
                     live["external_job_progress"] = external_job_progress
+                is_suspected_hang, hang_hint = _suspected_hang_state(
+                    heartbeat_age_seconds=age,
+                    external_job_progress=external_job_progress,
+                )
+                live["suspected_hang"] = is_suspected_hang
+                if hang_hint:
+                    live["hint"] = hang_hint
                 return {"success": True, "source": "live", **live}
         except (OSError, ValueError):
             pass
