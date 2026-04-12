@@ -155,3 +155,9 @@ def test_bundled_bank_statement_fixture_still_exposes_single_shape_without_bundl
     assert shape["statement_numbers"] == []
     assert shape["period_from"] is None
     assert shape["period_to"] is None
+    assert shape["bundle_gate_pass"] is False
+    assert {finding["code"] for finding in shape["bundle_findings"]} == {
+        "BUNDLED_STATEMENT_MISSING_ARRAY",
+        "BUNDLED_STATEMENT_MISSING_PERIOD",
+        "BUNDLED_STATEMENT_MISSING_BOOKING_COVERAGE",
+    }

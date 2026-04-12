@@ -85,6 +85,8 @@ def test_document_persist_extraction_result_updates_document_row(tmp_path):
         "period_from": None,
         "period_to": None,
         "booking_count": None,
+        "bundle_gate_pass": True,
+        "bundle_findings": [],
     }
     db = BrixDB(db_path=db_path)
     with db._connect() as conn:
@@ -252,6 +254,8 @@ def test_document_persist_extraction_result_reports_bundle_shape(tmp_path):
         "period_from": "2024-08-19",
         "period_to": "2024-09-03",
         "booking_count": 3,
+        "bundle_gate_pass": True,
+        "bundle_findings": [],
     }
 
 

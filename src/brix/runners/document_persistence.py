@@ -16,6 +16,7 @@ from brix.runners.db_query import _strip_sqlite_prefix
 from brix.serialization import sanitize_for_json
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_BUNDLED_STATEMENT_PATTERN = re.compile(r"Kontoauszug\s+\d+")
 
 
 def _ensure_identifier(value: str, field_name: str) -> str:
@@ -246,6 +247,53 @@ def _statement_bundle_summary(extraction_result: dict[str, Any]) -> dict[str, An
     }
 
 
+def _bundled_statement_findings(extraction_result: dict[str, Any], document_shape: dict[str, Any]) -> list[dict[str, str]]:
+    if document_shape.get("document_type") != "bank_statement":
+        return []
+
+    raw = extraction_result.get("raw")
+    raw_markdown = raw.get("markdown") if isinstance(raw, dict) else ""
+    markdown = extraction_result.get("markdown") or raw_markdown or ""
+    normalized = raw.get("normalized") if isinstance(raw, dict) and isinstance(raw.get("normalized"), dict) else {}
+    summary = ""
+    if isinstance(normalized, dict):
+        summary_value = normalized.get("summary")
+        if isinstance(summary_value, str):
+            summary = summary_value
+
+    expected_bundle = len(_BUNDLED_STATEMENT_PATTERN.findall(markdown)) >= 2 or bool(re.search(r"\bmit\s+\d+\s+Auszügen\b", summary))
+    if not expected_bundle:
+        return []
+
+    findings: list[dict[str, str]] = []
+    statement_rows = normalized.get("kontoauszuege")
+    period = normalized.get("zeitraum")
+
+    if not isinstance(statement_rows, list) or not statement_rows:
+        findings.append({
+            "code": "BUNDLED_STATEMENT_MISSING_ARRAY",
+            "field": "raw.normalized.kontoauszuege",
+            "message": "Bundled bank statement symptoms detected, but raw.normalized.kontoauszuege is missing or empty.",
+        })
+
+    if not isinstance(period, dict) or not _is_nonempty_string(period.get("von")) or not _is_nonempty_string(period.get("bis")):
+        findings.append({
+            "code": "BUNDLED_STATEMENT_MISSING_PERIOD",
+            "field": "raw.normalized.zeitraum",
+            "message": "Bundled bank statement symptoms detected, but raw.normalized.zeitraum is incomplete.",
+        })
+
+    booking_count = document_shape.get("booking_count")
+    if booking_count in (None, 0, ""):
+        findings.append({
+            "code": "BUNDLED_STATEMENT_MISSING_BOOKING_COVERAGE",
+            "field": "raw.normalized.kontoauszuege[*].buchungen",
+            "message": "Bundled bank statement symptoms detected, but no bundled booking coverage is available.",
+        })
+
+    return findings
+
+
 def _db_placeholder(driver: str) -> str:
     return "?" if driver in {"sqlite", "duckdb"} else "%s"
 
@@ -467,6 +515,9 @@ class DocumentPersistExtractionResultRunner(_BaseDocumentRunner):
         finally:
             conn.close()
 
+        document_shape = _statement_bundle_summary(extraction_result)
+        bundle_findings = _bundled_statement_findings(extraction_result, document_shape)
+
         self.report_progress(100.0, f"{affected_rows} document rows updated")
         return {
             "success": True,
@@ -476,7 +527,11 @@ class DocumentPersistExtractionResultRunner(_BaseDocumentRunner):
                     "success": True,
                     "applied_fields": applied_fields,
                     "document_id": document_id,
-                    "document_shape": _statement_bundle_summary(extraction_result),
+                    "document_shape": {
+                        **document_shape,
+                        "bundle_gate_pass": not bundle_findings,
+                        "bundle_findings": bundle_findings,
+                    },
                 }
             ),
             "duration": time.monotonic() - start,
