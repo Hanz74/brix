@@ -76,6 +76,21 @@ That means:
 - missing canonical fields may become empty or `null`
 - Brix must not silently recover the value from deprecated top-level mirrors
 
+## Persistence Gate
+
+When Brix persists Daigestr outputs through `document.persist_extraction_result`, the payload must already satisfy
+the canonical contract.
+
+At minimum, the persisted result must contain:
+- `raw.meta.document_type`
+- `raw.meta.template_used`
+- `raw.meta.quality_score`
+- `raw.extracted`
+- `raw.normalized`
+
+If those fields are missing, persistence must fail explicitly with contract violations instead of storing an
+underspecified payload in `documents.raw_structured`.
+
 ## Rationale
 
 This prevents:

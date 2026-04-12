@@ -10,6 +10,7 @@ from brix.migrations import MIGRATIONS, _register_document_persistence_bricks_v8
 from brix.runners.document_persistence import (
     DocumentMarkSpecialistProcessedRunner,
     DocumentPersistExtractionResultRunner,
+    validate_canonical_extraction_result,
 )
 
 
@@ -51,6 +52,15 @@ def test_document_persist_extraction_result_updates_document_row(tmp_path):
             "connection": str(db_path),
             "document_id": 1,
             "extraction_result": {
+                "raw": {
+                    "meta": {
+                        "document_type": "receipt",
+                        "template_used": "receipt",
+                        "quality_score": 0.85,
+                    },
+                    "extracted": {"vendor_name": "REWE"},
+                    "normalized": {"vendor_name": "REWE"},
+                },
                 "normalized": {"vendor_name": "REWE"},
                 "document_type": "receipt",
                 "quality_score": 0.85,
@@ -76,6 +86,105 @@ def test_document_persist_extraction_result_updates_document_row(tmp_path):
     assert row[3] == "hash-123"
     assert row[4] == "/tmp/test.pdf"
     assert json.loads(row[5]) == ["hmk_extracted"]
+
+
+def test_validate_canonical_extraction_result_reports_missing_meta_fields():
+    issues = validate_canonical_extraction_result(
+        {
+            "raw": {
+                "meta": {"document_type": "receipt"},
+                "extracted": {"vendor_name": "REWE"},
+                "normalized": {"vendor_name": "REWE"},
+            },
+            "normalized": {"vendor_name": "REWE"},
+        }
+    )
+
+    fields = {issue["field"] for issue in issues}
+    assert "raw.meta.template_used" in fields
+    assert "raw.meta.quality_score" in fields
+
+
+def test_validate_canonical_extraction_result_accepts_minimal_canonical_payload():
+    issues = validate_canonical_extraction_result(
+        {
+            "raw": {
+                "meta": {
+                    "document_type": "receipt",
+                    "template_used": "receipt",
+                    "quality_score": 0.82,
+                },
+                "extracted": {"vendor_name": "REWE"},
+                "normalized": {"vendor_name": "REWE"},
+            }
+        }
+    )
+
+    assert issues == []
+
+
+def test_document_persist_extraction_result_rejects_noncanonical_payload(tmp_path):
+    db_path = _sqlite_documents_db(tmp_path)
+    runner = DocumentPersistExtractionResultRunner()
+    step = SimpleNamespace(
+        config={
+            "connection": str(db_path),
+            "document_id": 1,
+            "extraction_result": {
+                "normalized": {"vendor_name": "REWE"},
+                "document_type": "receipt",
+                "quality_score": 0.85,
+            },
+        },
+        timeout=None,
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is False
+    assert "canonical Daigestr contract" in result["error"]
+    violations = result["data"]["violations"]
+    assert {entry["field"] for entry in violations} >= {"raw",}
+
+    db = BrixDB(db_path=db_path)
+    with db._connect() as conn:
+        row = conn.execute("SELECT raw_structured, doc_type FROM documents WHERE id = 1").fetchone()
+    assert row[0] is None
+    assert row[1] is None
+
+
+def test_document_persist_extraction_result_uses_raw_meta_doc_type_over_conflicting_mirrors(tmp_path):
+    db_path = _sqlite_documents_db(tmp_path)
+    runner = DocumentPersistExtractionResultRunner()
+    step = SimpleNamespace(
+        config={
+            "connection": str(db_path),
+            "document_id": 1,
+            "extraction_result": {
+                "raw": {
+                    "meta": {
+                        "document_type": "invoice",
+                        "template_used": "invoice",
+                        "quality_score": 0.93,
+                    },
+                    "extracted": {"invoice_number": "R-1"},
+                    "normalized": {"document_type": "receipt", "invoice_number": "R-1"},
+                },
+                "document_type": "receipt",
+                "normalized": {"document_type": "receipt", "invoice_number": "R-1"},
+            },
+        },
+        timeout=None,
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    db = BrixDB(db_path=db_path)
+    with db._connect() as conn:
+        row = conn.execute("SELECT raw_structured, doc_type FROM documents WHERE id = 1").fetchone()
+    assert row[1] == "invoice"
+    assert json.loads(row[0])["raw"]["meta"]["document_type"] == "invoice"
 
 
 def test_document_mark_specialist_processed_is_idempotent(tmp_path):
@@ -164,7 +273,20 @@ def test_postgresql_uses_jsonb_cast_for_custom_raw_field(monkeypatch):
             "connection": "buddy-db",
             "document_id": 7,
             "raw_field": "payload_json",
-            "extraction_result": {"document_type": "invoice"},
+            "extraction_result": {
+                "raw": {
+                    "meta": {
+                        "document_type": "invoice",
+                        "template_used": "invoice",
+                        "quality_score": 0.92,
+                    },
+                    "extracted": {"invoice_number": "R-1"},
+                    "normalized": {"invoice_number": "R-1"},
+                },
+                "normalized": {"invoice_number": "R-1"},
+                "document_type": "invoice",
+                "quality_score": 0.92,
+            },
         },
         timeout=None,
     )

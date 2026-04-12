@@ -42,6 +42,81 @@ def _normalize_extraction_result(value: Any) -> dict[str, Any]:
     raise ValueError("'extraction_result' must be an object or JSON object string")
 
 
+def _is_nonempty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def validate_canonical_extraction_result(extraction_result: dict[str, Any]) -> list[dict[str, str]]:
+    """Validate the canonical Daigestr contract expected by persistence bricks.
+
+    The authoritative contract is:
+    - raw.meta for technical/document metadata
+    - raw.extracted for extracted business fields
+    - raw.normalized for normalized business fields
+    """
+
+    issues: list[dict[str, str]] = []
+    raw = extraction_result.get("raw")
+    if not isinstance(raw, dict):
+        return [{
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw",
+            "message": "Missing canonical 'raw' object in extraction_result.",
+        }]
+
+    meta = raw.get("meta")
+    if not isinstance(meta, dict):
+        issues.append({
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw.meta",
+            "message": "Missing canonical 'raw.meta' object.",
+        })
+        meta = {}
+
+    extracted = raw.get("extracted")
+    if not isinstance(extracted, dict):
+        issues.append({
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw.extracted",
+            "message": "Missing canonical 'raw.extracted' object.",
+        })
+
+    normalized = raw.get("normalized")
+    if not isinstance(normalized, dict):
+        issues.append({
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw.normalized",
+            "message": "Missing canonical 'raw.normalized' object.",
+        })
+
+    if not _is_nonempty_string(meta.get("document_type")):
+        issues.append({
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw.meta.document_type",
+            "message": "Missing canonical document type in raw.meta.document_type.",
+        })
+
+    if not _is_nonempty_string(meta.get("template_used")):
+        issues.append({
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw.meta.template_used",
+            "message": "Missing canonical template in raw.meta.template_used.",
+        })
+
+    if not _is_number(meta.get("quality_score")):
+        issues.append({
+            "code": "EXTRACTION_RESULT_CANONICAL_CONTRACT",
+            "field": "raw.meta.quality_score",
+            "message": "Missing canonical quality score in raw.meta.quality_score.",
+        })
+
+    return issues
+
+
 def _decode_specialists(value: Any) -> list[str]:
     if value is None:
         return []
@@ -79,15 +154,13 @@ def _json_or_none(value: Any) -> str | None:
 
 
 def _extract_doc_type(extraction_result: dict[str, Any]) -> str:
-    for key in ("document_type", "doc_type"):
-        value = extraction_result.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    normalized = extraction_result.get("normalized")
-    if isinstance(normalized, dict):
-        value = normalized.get("document_type") or normalized.get("doc_type")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    raw = extraction_result.get("raw")
+    if isinstance(raw, dict):
+        meta = raw.get("meta")
+        if isinstance(meta, dict):
+            value = meta.get("document_type")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     return ""
 
 
@@ -251,6 +324,17 @@ class DocumentPersistExtractionResultRunner(_BaseDocumentRunner):
         file_path_field = _ensure_identifier(str(cfg.get("file_path_field") or "file_path"), "file_path_field")
         specialists_field = self._specialists_field(step)
         extraction_result = _normalize_extraction_result(cfg.get("extraction_result"))
+        contract_issues = validate_canonical_extraction_result(extraction_result)
+        if contract_issues:
+            return {
+                "success": False,
+                "error": (
+                    "Extraction result violates canonical Daigestr contract: "
+                    + "; ".join(issue["field"] for issue in contract_issues)
+                ),
+                "data": sanitize_for_json({"violations": contract_issues}),
+                "duration": time.monotonic() - start,
+            }
         specialist_name = str(cfg.get("specialist_name") or "").strip()
         content_hash = str(cfg.get("content_hash") or "").strip()
         file_path = str(cfg.get("file_path") or "").strip()
