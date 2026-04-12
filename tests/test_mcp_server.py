@@ -2224,6 +2224,52 @@ class TestGetRunLog:
         finally:
             hist_mod.HISTORY_DB_PATH = orig
 
+    @pytest.mark.asyncio
+    async def test_get_run_log_uses_live_progress_for_running_run(self, tmp_path, monkeypatch):
+        """Falls back to progress.jsonl for a running run when steps_data is not persisted yet."""
+        import json
+
+        from brix import context as context_mod
+        from brix import history as hist_mod
+
+        orig_history = hist_mod.HISTORY_DB_PATH
+        orig_runs_base = context_mod.WORKDIR_BASE
+        hist_mod.HISTORY_DB_PATH = tmp_path / "test.db"
+        context_mod.WORKDIR_BASE = tmp_path / "runs"
+        try:
+            h = hist_mod.RunHistory(db_path=tmp_path / "test.db")
+            h.record_start("log-run-live-1", "sample-pipeline")
+
+            workdir = context_mod.WORKDIR_BASE / "log-run-live-1"
+            workdir.mkdir(parents=True)
+            (workdir / "run.json").write_text(json.dumps({
+                "run_id": "log-run-live-1",
+                "status": "running",
+                "completed_steps": ["fetch", "save"],
+                "last_heartbeat": 123.0,
+            }))
+            (workdir / "progress.jsonl").write_text(
+                "\n".join([
+                    json.dumps({"event": "step_start", "step": "fetch", "type": "mcp.call"}),
+                    json.dumps({"event": "step_ok", "step": "fetch", "duration": 1.0, "items": 12}),
+                    json.dumps({"event": "step_start", "step": "save", "type": "db.exec"}),
+                    json.dumps({"event": "step_ok", "step": "save", "duration": 2.0, "items": None}),
+                    json.dumps({"event": "step_start", "step": "extract", "type": "extract.document_with_daigestr"}),
+                ])
+            )
+
+            result = await _handle_get_run_log({"run_id": "log-run-live-1"})
+            assert result["success"] is True
+            assert result["source"] == "live"
+            assert result["total_steps"] == 3
+            by_id = {s["step_id"]: s for s in result["steps"]}
+            assert by_id["fetch"]["status"] == "ok"
+            assert by_id["save"]["status"] == "ok"
+            assert by_id["extract"]["status"] == "running"
+        finally:
+            hist_mod.HISTORY_DB_PATH = orig_history
+            context_mod.WORKDIR_BASE = orig_runs_base
+
 
 # ---------------------------------------------------------------------------
 # T-BRIX-V5-13: Rename Pipeline + Rename Helper + test_pipeline MCP tool

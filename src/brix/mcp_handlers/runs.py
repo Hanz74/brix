@@ -231,6 +231,67 @@ def _load_step_progress_history(workdir: Path, limit: int = 50) -> list[dict]:
     return result
 
 
+def _load_live_run_log(workdir: Path) -> list[dict]:
+    progress_log = workdir / "progress.jsonl"
+    if not progress_log.exists():
+        return []
+    try:
+        lines = progress_log.read_text().splitlines()
+    except OSError:
+        return []
+
+    entries_by_step: dict[str, dict] = {}
+    order: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        event = str(payload.get("event") or "")
+        step_id = str(payload.get("step") or "")
+        if not step_id:
+            continue
+        if step_id not in entries_by_step:
+            entries_by_step[step_id] = {
+                "step_id": step_id,
+                "status": "running",
+                "duration": None,
+                "items": None,
+                "errors": 0,
+            }
+            order.append(step_id)
+        entry = entries_by_step[step_id]
+        if event == "step_start":
+            entry["status"] = "running"
+            if payload.get("type") is not None:
+                entry["type"] = payload.get("type")
+        elif event == "step_ok":
+            entry["status"] = "ok"
+            entry["duration"] = payload.get("duration")
+            entry["items"] = payload.get("items")
+            entry["errors"] = 0
+        elif event == "step_error":
+            entry["status"] = "error"
+            entry["duration"] = payload.get("duration")
+            entry["errors"] = 1
+            if payload.get("error") is not None:
+                entry["error_message"] = payload.get("error")
+        elif event == "step_skipped":
+            entry["status"] = "skipped"
+            entry["duration"] = payload.get("duration")
+        elif event == "step_dry_run":
+            entry["status"] = "dry_run"
+            entry["duration"] = payload.get("duration")
+
+    return [entries_by_step[step_id] for step_id in order]
+
+
 async def _handle_run_pipeline(arguments: dict) -> dict:
     """Execute a pipeline and return results with dual-layer error schema."""
     import asyncio
@@ -890,6 +951,19 @@ async def _handle_get_run_log(arguments: dict) -> dict:
     log = history.get_run_log(run_id)
 
     if not log:
+        from brix.context import WORKDIR_BASE
+
+        workdir = WORKDIR_BASE / run_id
+        live_log = _load_live_run_log(workdir)
+        if live_log:
+            return {
+                "success": True,
+                "run_id": run_id,
+                "steps": live_log,
+                "total_steps": len(live_log),
+                "source": "live",
+            }
+
         # Check if run exists at all
         run = history.get_run(run_id)
         if run is None:
