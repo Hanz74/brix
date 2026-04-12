@@ -747,6 +747,70 @@ async def test_get_run_status_external_job_progress_is_canonicalized(tmp_path):
     assert progress["request_id"] == "req-99"
 
 
+async def test_get_run_status_includes_current_progress_and_history(tmp_path):
+    """get_run_status exposes latest progress and recent snapshot history."""
+    run_id = "run-progress-history"
+    run_dir = tmp_path / run_id
+    run_dir.mkdir()
+
+    import time as _time
+
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "test",
+                "status": "running",
+                "completed_steps": [],
+                "last_heartbeat": _time.time(),
+                "progress": {
+                    "step_id": "extract",
+                    "pipeline_step": "validate",
+                    "attempt_number": 2,
+                    "attempt_mode": "full",
+                    "retry_applied": True,
+                    "page": 52,
+                    "pages_total": 52,
+                },
+            }
+        )
+    )
+    (run_dir / "step_progress_history.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"step_id": "extract", "pipeline_step": "ocr", "page": 11, "pages_total": 52}),
+                json.dumps(
+                    {
+                        "step_id": "extract",
+                        "pipeline_step": "extract",
+                        "attempt_number": 2,
+                        "attempt_mode": "full",
+                        "retry_applied": True,
+                        "page": 38,
+                        "pages_total": 52,
+                    }
+                ),
+            ]
+        )
+        + "\n"
+    )
+
+    with patch("brix.context.WORKDIR_BASE", tmp_path):
+        from brix.mcp_server import _handle_get_run_status
+
+        result = await _handle_get_run_status({"run_id": run_id})
+
+    assert result["current_progress"]["step_id"] == "extract"
+    assert result["current_progress"]["stage"] == "validate"
+    assert result["current_progress"]["attempt"] == 2
+    assert result["current_progress"]["mode"] == "full"
+    assert result["current_progress"]["percent"] == 100.0
+    assert len(result["step_progress_history"]) == 2
+    assert result["step_progress_history"][0]["stage"] == "ocr"
+    assert result["step_progress_history"][1]["stage"] == "extract"
+    assert result["step_progress_history"][1]["attempt"] == 2
+
+
 # ---------------------------------------------------------------------------
 # 10. Version bump
 # ---------------------------------------------------------------------------

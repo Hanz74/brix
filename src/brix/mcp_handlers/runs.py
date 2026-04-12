@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import yaml
 
@@ -22,6 +23,51 @@ from brix.mcp_pool import McpConnectionPool
 from brix.history import RunHistory
 from brix.db import BrixDB
 from brix.validator import PipelineValidator
+
+
+def _load_current_progress(workdir: Path) -> dict | None:
+    run_json_path = workdir / "run.json"
+    if not run_json_path.exists():
+        return None
+    try:
+        run_data = json.loads(run_json_path.read_text())
+    except (OSError, ValueError, TypeError):
+        return None
+    progress = run_data.get("progress")
+    if not isinstance(progress, dict):
+        return None
+    step_id = progress.get("step_id")
+    current = canonicalize_external_job_progress(progress)
+    if step_id:
+        current["step_id"] = step_id
+    return current
+
+
+def _load_step_progress_history(workdir: Path, limit: int = 50) -> list[dict]:
+    history_path = workdir / "step_progress_history.jsonl"
+    if not history_path.exists():
+        return []
+    try:
+        lines = history_path.read_text().splitlines()
+    except OSError:
+        return []
+    result: list[dict] = []
+    for raw_line in lines[-limit:]:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        step_id = payload.get("step_id")
+        entry = canonicalize_external_job_progress(payload)
+        if step_id:
+            entry["step_id"] = step_id
+        result.append(entry)
+    return result
 
 
 async def _handle_run_pipeline(arguments: dict) -> dict:
@@ -377,6 +423,9 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                         "Run appears to be hung (no heartbeat for >5 minutes). "
                         "Check container logs or use brix__cancel_run to abort."
                     )
+                current_progress = _load_current_progress(WORKDIR_BASE / run_id)
+                if current_progress:
+                    live["current_progress"] = current_progress
                 # Inject per-step intra-step progress (T-BRIX-V4-BUG-05)
                 step_progress_path = WORKDIR_BASE / run_id / "step_progress.json"
                 if step_progress_path.exists():
@@ -389,6 +438,9 @@ async def _handle_get_run_status(arguments: dict) -> dict:
                         live["step_progress"] = enriched
                     except (OSError, ValueError):
                         pass
+                progress_history = _load_step_progress_history(WORKDIR_BASE / run_id)
+                if progress_history:
+                    live["step_progress_history"] = progress_history
                 # Inject live_progress from DB (T-BRIX-DB-14)
                 try:
                     _db = BrixDB()
@@ -431,6 +483,15 @@ async def _handle_get_run_status(arguments: dict) -> dict:
     # Hint: if run failed, suggest get_run_errors for detailed error info
     if not run_data.get("success"):
         run_data["hint"] = "Use get_run_errors(run_id) for detailed error info with auto-hints"
+
+    completed_workdir = Path(config.RUNS_BASE_DIR) / run_id if getattr(config, "RUNS_BASE_DIR", None) else None
+    if completed_workdir and completed_workdir.exists():
+        current_progress = _load_current_progress(completed_workdir)
+        if current_progress:
+            run_data["current_progress"] = current_progress
+        progress_history = _load_step_progress_history(completed_workdir)
+        if progress_history:
+            run_data["step_progress_history"] = progress_history
 
     # Attach deprecation warnings for this pipeline (T-BRIX-DB-05d)
     try:

@@ -20,6 +20,7 @@ from brix.engine import PipelineEngine
 from brix.history import RunHistory
 from brix.context import WORKDIR_BASE
 from brix.config import config
+from brix.external_job_progress import canonicalize_external_job_progress
 
 API_KEY = os.environ.get("BRIX_API_KEY", "")
 VERSION = "2.3.0"
@@ -368,7 +369,10 @@ async def _stream_run_events(run_id: str) -> AsyncGenerator[str, None]:
         sp_snapshot = _json.dumps(sp_data, sort_keys=True)
         if sp_data and sp_snapshot != last_progress_snapshot:
             last_progress_snapshot = sp_snapshot
-            yield _sse_event("progress", {"run_id": run_id, "step_progress": sp_data})
+            canonical_progress = {}
+            for step_id, payload in sp_data.items():
+                canonical_progress[step_id] = canonicalize_external_job_progress(payload)
+            yield _sse_event("progress", {"run_id": run_id, "step_progress": canonical_progress})
 
         # Emit status event on every tick so the client can track heartbeats
         yield _sse_event("status", {"run_id": run_id, "status": status, **run_data})

@@ -569,7 +569,7 @@ class TestSecurityFix02TimingAttack:
             api_module.API_KEY = ""
             try:
                 client = TestClient(app)
-                resp = client.post(
+                client.post(
                     "/webhook/my-pipeline",
                     json={},
                     headers={"X-Webhook-Secret": "supersecret"},
@@ -583,7 +583,6 @@ class TestSecurityFix02TimingAttack:
     def test_api_key_uses_hmac_compare_digest(self):
         """Verify that hmac.compare_digest is called for API key validation."""
         import brix.api as api_module
-        mock_result = _make_run_result(success=True)
 
         with patch("brix.api.hmac.compare_digest", wraps=api_module.hmac.compare_digest) as mock_cd, \
              patch("brix.api.PipelineStore") as MockStore:
@@ -782,7 +781,17 @@ class TestStreamRunEndpoint:
         run_id = "run-sse-test-04"
         run_dir = tmp_path / run_id
         run_dir.mkdir()
-        step_progress = {"fetch": {"processed": 5, "total": 10, "percent": 50.0}}
+        step_progress = {
+            "fetch": {
+                "processed": 5,
+                "total": 10,
+                "percent": 50.0,
+                "pipeline_step": "fetch",
+                "attempt_number": 2,
+                "attempt_mode": "full",
+                "retry_applied": True,
+            }
+        }
         (run_dir / "step_progress.json").write_text(json.dumps(step_progress))
         (run_dir / "run.json").write_text(json.dumps({
             "run_id": run_id,
@@ -798,6 +807,10 @@ class TestStreamRunEndpoint:
         assert len(progress_events) >= 1
         assert "step_progress" in progress_events[0]["data"]
         assert progress_events[0]["data"]["step_progress"]["fetch"]["percent"] == 50.0
+        assert progress_events[0]["data"]["step_progress"]["fetch"]["stage"] == "fetch"
+        assert progress_events[0]["data"]["step_progress"]["fetch"]["attempt"] == 2
+        assert progress_events[0]["data"]["step_progress"]["fetch"]["mode"] == "full"
+        assert progress_events[0]["data"]["step_progress"]["fetch"]["retry_state"] == "applied"
 
     def test_stream_done_event_on_failed_run(self, client, tmp_path):
         """A run with status 'failed' still gets a 'done' event."""
