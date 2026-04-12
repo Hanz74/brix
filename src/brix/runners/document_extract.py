@@ -182,14 +182,26 @@ def _resolve_replay_path(path_value: str, context: Any) -> Path:
     return Path.cwd() / raw
 
 
-def _load_replay_response(payload: dict[str, Any], context: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def _load_replay_response(
+    payload: dict[str, Any],
+    context: Any,
+    step_id: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     fixture_path = str(payload.get("replay_fixture_path") or "").strip()
     artifact_path = str(payload.get("replay_response_path") or "").strip()
-    if not fixture_path and not artifact_path:
+    source_type = "fixture" if fixture_path else "artifact"
+    source_path: Path | None = None
+    if fixture_path or artifact_path:
+        source_path = _resolve_replay_path(fixture_path or artifact_path, context)
+    elif getattr(context, "_resume_from", None) and context is not None and hasattr(context, "workdir"):
+        candidate = Path(context.workdir) / "external_job_artifacts" / step_id / "response.json"
+        if candidate.exists():
+            source_type = "resume_artifact"
+            source_path = candidate
+
+    if source_path is None:
         return None, None
 
-    source_type = "fixture" if fixture_path else "artifact"
-    source_path = _resolve_replay_path(fixture_path or artifact_path, context)
     raw_payload = json.loads(source_path.read_text())
     if not isinstance(raw_payload, dict):
         raise ValueError(f"Replay source must contain a JSON object: {source_path}")
@@ -419,7 +431,7 @@ class ExtractDocumentWithDaigestrRunner(BaseRunner):
                 },
             )
 
-        replay, data = _load_replay_response(payload, context)
+        replay, data = _load_replay_response(payload, context, step_id)
         if replay is not None:
             if context is not None and hasattr(context, "update_step_progress"):
                 context.update_step_progress(

@@ -792,6 +792,109 @@ def test_extract_document_with_daigestr_replays_response_artifact_relative_to_wo
     assert result["data"]["replay"]["source_path"] == str(response_path)
 
 
+def test_extract_document_with_daigestr_resume_uses_completed_response_artifact(monkeypatch, tmp_path):
+    file_path = tmp_path / "resume-complete.pdf"
+    file_path.write_bytes(b"pdf-content")
+    artifact_dir = tmp_path / "external_job_artifacts" / "extract"
+    artifact_dir.mkdir(parents=True)
+    response_path = artifact_dir / "response.json"
+    response_path.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "document_type": "receipt",
+                    "template_used": "receipt",
+                    "quality_score": 0.88,
+                    "request_id": "req-resume",
+                },
+                "normalized": {"vendor_name": "Resume Vendor"},
+            }
+        )
+    )
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("resume with response artifact must not hit live HTTP")
+
+    class FakeContext:
+        def __init__(self, workdir):
+            self.workdir = workdir
+            self._resume_from = "run-resume"
+
+        def update_step_progress(self, step_id, payload):
+            return None
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=FakeContext(tmp_path)))
+
+    assert result["success"] is True
+    assert result["data"]["normalized"]["vendor_name"] == "Resume Vendor"
+    assert result["data"]["replay"]["source_type"] == "resume_artifact"
+    assert result["data"]["replay"]["source_path"] == str(response_path)
+
+
+def test_extract_document_with_daigestr_resume_restarts_when_only_partial_artifacts_exist(monkeypatch, tmp_path):
+    file_path = tmp_path / "resume-partial.pdf"
+    file_path.write_bytes(b"pdf-content")
+    artifact_dir = tmp_path / "external_job_artifacts" / "extract"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "request.json").write_text(json.dumps({"mode": "default"}))
+
+    class FakeResponse:
+        is_error = False
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "invoice",
+                    "template_used": "invoice",
+                    "quality_score": 0.77,
+                    "request_id": "req-restart",
+                },
+                "normalized": {"invoice_number": "R-3"},
+            }
+
+    calls = {"count": 0}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            calls["count"] += 1
+            return FakeResponse()
+
+    class FakeContext:
+        def __init__(self, workdir):
+            self.workdir = workdir
+            self._resume_from = "run-resume"
+
+        def update_step_progress(self, step_id, payload):
+            return None
+
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    runner = ExtractDocumentWithDaigestrRunner()
+    step = Step(id="extract", type="extract.document_with_daigestr", params={"file_bytes_path": str(file_path)})
+
+    result = asyncio.run(runner.execute(step, context=FakeContext(tmp_path)))
+
+    assert result["success"] is True
+    assert calls["count"] == 1
+    assert result["data"]["normalized"]["invoice_number"] == "R-3"
+    assert result["data"]["replay"] is None
+
+
 @pytest.mark.asyncio
 async def test_engine_persists_structured_daigestr_failure_history(monkeypatch, tmp_path):
     file_path = tmp_path / "engine-http-failure.pdf"
@@ -863,6 +966,148 @@ steps:
     assert len(errors) == 1
     assert errors[0]["error_detail"]["external_job"]["request_id"] == "req-engine"
     assert errors[0]["error_detail"]["external_job"]["attempt_history"][1]["mode"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_engine_resume_reuses_completed_external_response_artifact(monkeypatch, tmp_path):
+    file_path = tmp_path / "resume-engine-complete.pdf"
+    file_path.write_bytes(b"pdf-content")
+    run_id = "run-resume-external-complete"
+
+    import brix.context as context_mod
+
+    run_dir = tmp_path / "runs" / run_id
+    artifact_dir = run_dir / "external_job_artifacts" / "extract"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "resume-complete",
+                "input": {"seed": "value"},
+                "status": "failed",
+                "completed_steps": [],
+            }
+        )
+    )
+    response_path = artifact_dir / "response.json"
+    response_path.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    "document_type": "invoice",
+                    "template_used": "invoice",
+                    "quality_score": 0.83,
+                    "request_id": "req-resume-engine",
+                },
+                "normalized": {"invoice_number": "R-RESUME"},
+            }
+        )
+    )
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("resume with completed response.json must not call upstream")
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", tmp_path / "runs")
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    pipeline = PipelineLoader().load_from_string(
+        f"""
+name: resume-complete
+steps:
+  - id: extract
+    type: extract.document_with_daigestr
+    params:
+      file_bytes_path: "{file_path}"
+"""
+    )
+
+    engine = PipelineEngine()
+    result = await engine.run(pipeline, run_id=run_id)
+
+    assert result.success is True
+    assert result.steps["extract"].status == "ok"
+    assert result.result["normalized"]["invoice_number"] == "R-RESUME"
+    assert result.result["replay"]["source_type"] == "resume_artifact"
+    assert result.result["replay"]["source_path"] == str(response_path)
+
+
+@pytest.mark.asyncio
+async def test_engine_resume_restarts_external_step_when_only_partial_artifacts_exist(monkeypatch, tmp_path):
+    file_path = tmp_path / "resume-engine-partial.pdf"
+    file_path.write_bytes(b"pdf-content")
+    run_id = "run-resume-external-partial"
+
+    import brix.context as context_mod
+
+    run_dir = tmp_path / "runs" / run_id
+    artifact_dir = run_dir / "external_job_artifacts" / "extract"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "pipeline": "resume-partial",
+                "input": {},
+                "status": "failed",
+                "completed_steps": [],
+            }
+        )
+    )
+    (artifact_dir / "request.json").write_text(json.dumps({"mode": "default"}))
+
+    class FakeResponse:
+        is_error = False
+
+        def json(self):
+            return {
+                "meta": {
+                    "document_type": "receipt",
+                    "template_used": "receipt",
+                    "quality_score": 0.79,
+                    "request_id": "req-resume-restart",
+                },
+                "normalized": {"vendor_name": "Restart Vendor"},
+            }
+
+    calls = {"count": 0}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            calls["count"] += 1
+            return FakeResponse()
+
+    monkeypatch.setattr(context_mod, "WORKDIR_BASE", tmp_path / "runs")
+    monkeypatch.setattr("brix.runners.document_extract.httpx.AsyncClient", FakeClient)
+
+    pipeline = PipelineLoader().load_from_string(
+        f"""
+name: resume-partial
+steps:
+  - id: extract
+    type: extract.document_with_daigestr
+    params:
+      file_bytes_path: "{file_path}"
+"""
+    )
+
+    engine = PipelineEngine()
+    result = await engine.run(pipeline, run_id=run_id)
+
+    assert result.success is True
+    assert calls["count"] == 1
+    assert result.result["normalized"]["vendor_name"] == "Restart Vendor"
+    assert result.result["replay"] is None
 
 
 def test_extract_document_with_daigestr_ignores_noncanonical_top_level_mirrors(monkeypatch, tmp_path):

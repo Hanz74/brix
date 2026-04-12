@@ -265,6 +265,19 @@ class PipelineEngine:
 
         start_time = time.monotonic()
         context = PipelineContext.from_pipeline(pipeline, user_input, run_id=run_id, profile=profile)
+        if run_id:
+            try:
+                resumed = PipelineContext.from_resume(run_id)
+            except FileNotFoundError:
+                resumed = None
+            if resumed is not None:
+                context.workdir = resumed.workdir
+                context.run_id = resumed.run_id
+                context._resume_from = resumed._resume_from
+                context.step_outputs = dict(resumed.step_outputs)
+                context.step_progress = dict(resumed.step_progress)
+                context.input = {**resumed.input, **(user_input or {})}
+                context._jinja_cache = None
         context.pipeline_name = pipeline.name
         context._run_db = self._run_db
         # Propagate parent input into the sub-context so {{ input.* }} templates
