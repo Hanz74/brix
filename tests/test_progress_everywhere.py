@@ -511,6 +511,54 @@ def test_db_update_step_progress_persists():
             assert progress["total"] == 4
 
 
+def test_db_update_step_progress_persists_canonical_payload():
+    """update_step_progress stores richer canonical payloads when provided."""
+    from brix.db import BrixDB
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        with patch("brix.db.BRIX_DB_PATH", db_path):
+            db = BrixDB()
+            now = "2026-01-01T00:00:00+00:00"
+            with db._connect() as conn:
+                conn.execute(
+                    """INSERT INTO step_execution
+                       (id, run_id, step_id, step_type, status, created_at)
+                       VALUES (?,?,?,?,?,?)""",
+                    ("row-1", "run-canon", "extract", "http", "running", now),
+                )
+
+            payload = {
+                "step_id": "extract",
+                "pct": 73.1,
+                "msg": "extract",
+                "done": 0,
+                "total": 0,
+                "stage": "extract",
+                "attempt": 2,
+                "mode": "full",
+                "retry_state": "applied",
+                "page_current": 38,
+                "page_total": 52,
+                "updated_at": now,
+            }
+            db.update_step_progress("run-canon", "extract", pct=73.1, msg="extract", payload=payload)
+
+            with db._connect() as conn:
+                row = conn.execute(
+                    "SELECT last_progress FROM step_execution WHERE run_id=? AND step_id=?",
+                    ("run-canon", "extract"),
+                ).fetchone()
+
+            progress = json.loads(row[0])
+            assert progress["stage"] == "extract"
+            assert progress["attempt"] == 2
+            assert progress["mode"] == "full"
+            assert progress["retry_state"] == "applied"
+            assert progress["page_current"] == 38
+            assert progress["page_total"] == 52
+
+
 def test_db_get_step_progress_returns_list():
     """BrixDB.get_step_progress returns list of progress entries."""
     from brix.db import BrixDB

@@ -1898,6 +1898,7 @@ class BrixDB:
         msg: str = "",
         done: int = 0,
         total: int = 0,
+        payload: dict | None = None,
     ) -> None:
         """Persist the latest progress snapshot for a step execution (T-BRIX-DB-14).
 
@@ -1905,14 +1906,18 @@ class BrixDB:
         Best-effort — never raises.
         """
         now = _now_iso()
-        progress_payload = json.dumps({
-            "step_id": step_id,
-            "pct": pct,
-            "msg": msg,
-            "done": done,
-            "total": total,
-            "updated_at": now,
-        })
+        progress_payload = json.dumps(
+            payload
+            if isinstance(payload, dict) and payload
+            else {
+                "step_id": step_id,
+                "pct": pct,
+                "msg": msg,
+                "done": done,
+                "total": total,
+                "updated_at": now,
+            }
+        )
         try:
             with self._connect() as conn:
                 conn.execute(

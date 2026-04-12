@@ -265,6 +265,8 @@ class PipelineEngine:
 
         start_time = time.monotonic()
         context = PipelineContext.from_pipeline(pipeline, user_input, run_id=run_id, profile=profile)
+        context.pipeline_name = pipeline.name
+        context._run_db = self._run_db
         # Propagate parent input into the sub-context so {{ input.* }} templates
         # resolve inside sub-pipelines that have no declared input spec (T-BRIX-V4-BUG-INPUT).
         if _inherit_input:

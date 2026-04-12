@@ -320,6 +320,33 @@ def test_context_update_step_progress_external_job_shape(tmp_path):
     assert progress["request_id"] == "req-42"
 
 
+def test_context_update_step_progress_persists_history_and_run_metadata(tmp_path):
+    """External-job progress snapshots are appended and reflected in run.json."""
+    from brix.context import PipelineContext
+
+    ctx = PipelineContext(workdir=tmp_path)
+    ctx.pipeline_name = "progress-pipeline"
+    ctx.update_step_progress("extract", {"stage": "ocr", "page": 10, "pages_total": 52})
+    ctx.update_step_progress("extract", {"stage": "extract", "attempt_number": 2, "attempt_mode": "full"})
+
+    history_path = tmp_path / "step_progress_history.jsonl"
+    assert history_path.exists()
+    history_lines = history_path.read_text().strip().splitlines()
+    assert len(history_lines) == 2
+    first = json.loads(history_lines[0])
+    second = json.loads(history_lines[1])
+    assert first["step_id"] == "extract"
+    assert first["stage"] == "ocr"
+    assert second["stage"] == "extract"
+    assert second["attempt"] == 2
+    assert second["mode"] == "full"
+
+    run_meta = json.loads((tmp_path / "run.json").read_text())
+    assert run_meta["progress"]["step_id"] == "extract"
+    assert run_meta["progress"]["stage"] == "extract"
+    assert run_meta["progress"]["attempt"] == 2
+
+
 # ---------------------------------------------------------------------------
 # 6. PythonRunner with progress=True
 # ---------------------------------------------------------------------------

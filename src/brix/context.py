@@ -118,6 +118,8 @@ class PipelineContext:
         self._jinja_cache: dict | None = None
         self._secret_values: set[str] = set()  # plaintext secret variable values (T-BRIX-DB-26)
         self.last_output: Any = None  # most recent step output (T-BRIX-BUG-10)
+        self.pipeline_name: str | None = None
+        self._run_db: Any = None
 
     @classmethod
     def from_pipeline(
@@ -252,10 +254,35 @@ class PipelineContext:
         self.step_progress[step_id] = entry
         # Persist to disk for external polling
         sp_path = self.workdir / "step_progress.json"
+        history_path = self.workdir / "step_progress_history.jsonl"
         try:
             sp_path.write_text(json_dumps(self.step_progress))
         except (OSError, TypeError, ValueError):
             pass  # Non-fatal: progress won't be visible via polling but run continues
+        try:
+            history_entry = {"step_id": step_id, **entry}
+            with history_path.open("a", encoding="utf-8") as history_file:
+                history_file.write(json_dumps(history_entry) + "\n")
+        except (OSError, TypeError, ValueError):
+            pass  # Non-fatal: snapshot history is best-effort only
+        if self.pipeline_name:
+            try:
+                self.save_run_metadata(self.pipeline_name, "running", progress={"step_id": step_id, **entry})
+            except Exception:
+                pass
+        if self._run_db is not None:
+            try:
+                self._run_db.update_step_progress(
+                    run_id=self.run_id,
+                    step_id=step_id,
+                    pct=entry.get("pct", 0.0),
+                    msg=entry.get("msg", ""),
+                    done=entry.get("done", 0),
+                    total=entry.get("total", 0),
+                    payload=entry,
+                )
+            except Exception:
+                pass
 
     def validate_output_schema(self, step_id: str, output: Any, output_schema: dict) -> None:
         """Warn (non-blocking) when output is missing fields declared in output_schema.

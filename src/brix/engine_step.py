@@ -1278,6 +1278,7 @@ class StepExecutor:
                     msg=runner_progress.get("msg", ""),
                     done=runner_progress.get("done", 0),
                     total=runner_progress.get("total", 0),
+                    payload=runner_progress,
                 )
             except Exception:
                 pass
