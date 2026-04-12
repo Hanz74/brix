@@ -164,6 +164,88 @@ def _extract_doc_type(extraction_result: dict[str, Any]) -> str:
     return ""
 
 
+def _normalize_statement_numbers(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return []
+
+
+def _statement_bundle_summary(extraction_result: dict[str, Any]) -> dict[str, Any]:
+    raw = extraction_result.get("raw")
+    normalized = raw.get("normalized") if isinstance(raw, dict) else None
+    if not isinstance(normalized, dict):
+        normalized = extraction_result.get("normalized")
+    if not isinstance(normalized, dict):
+        return {
+            "is_bundle": False,
+            "document_type": _extract_doc_type(extraction_result),
+            "statement_count": 0,
+            "statement_numbers": [],
+            "period_from": None,
+            "period_to": None,
+            "booking_count": None,
+        }
+
+    statement_rows = normalized.get("kontoauszuege")
+    period = normalized.get("zeitraum") if isinstance(normalized.get("zeitraum"), dict) else {}
+    booking_count = normalized.get("booking_count")
+    statement_numbers = _normalize_statement_numbers(normalized.get("auszugsnummer"))
+
+    if isinstance(statement_rows, list) and statement_rows:
+        aggregated_statement_numbers: list[str] = []
+        aggregated_booking_count = 0
+        derived_from: list[str] = []
+        derived_to: list[str] = []
+
+        for statement in statement_rows:
+            if not isinstance(statement, dict):
+                continue
+            aggregated_statement_numbers.extend(_normalize_statement_numbers(statement.get("auszugsnummer")))
+            buchungen = statement.get("buchungen")
+            if isinstance(buchungen, list):
+                aggregated_booking_count += len(buchungen)
+            statement_period = statement.get("zeitraum")
+            if isinstance(statement_period, dict):
+                if _is_nonempty_string(statement_period.get("von")):
+                    derived_from.append(str(statement_period["von"]).strip())
+                if _is_nonempty_string(statement_period.get("bis")):
+                    derived_to.append(str(statement_period["bis"]).strip())
+
+        if not statement_numbers:
+            statement_numbers = aggregated_statement_numbers
+        if booking_count in (None, "") and aggregated_booking_count:
+            booking_count = aggregated_booking_count
+
+        period_from = period.get("von") if isinstance(period, dict) else None
+        period_to = period.get("bis") if isinstance(period, dict) else None
+        if not _is_nonempty_string(period_from) and derived_from:
+            period_from = min(derived_from)
+        if not _is_nonempty_string(period_to) and derived_to:
+            period_to = max(derived_to)
+
+        return {
+            "is_bundle": True,
+            "document_type": _extract_doc_type(extraction_result),
+            "statement_count": len([item for item in statement_rows if isinstance(item, dict)]),
+            "statement_numbers": statement_numbers,
+            "period_from": period_from,
+            "period_to": period_to,
+            "booking_count": booking_count,
+        }
+
+    return {
+        "is_bundle": False,
+        "document_type": _extract_doc_type(extraction_result),
+        "statement_count": 1,
+        "statement_numbers": statement_numbers,
+        "period_from": period.get("von") if isinstance(period, dict) else None,
+        "period_to": period.get("bis") if isinstance(period, dict) else None,
+        "booking_count": booking_count,
+    }
+
+
 def _db_placeholder(driver: str) -> str:
     return "?" if driver in {"sqlite", "duckdb"} else "%s"
 
@@ -394,6 +476,7 @@ class DocumentPersistExtractionResultRunner(_BaseDocumentRunner):
                     "success": True,
                     "applied_fields": applied_fields,
                     "document_id": document_id,
+                    "document_shape": _statement_bundle_summary(extraction_result),
                 }
             ),
             "duration": time.monotonic() - start,

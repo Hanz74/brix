@@ -130,3 +130,28 @@ def test_bundled_bank_statement_fixture_contains_multiple_statements():
     normalized = payload["raw"]["normalized"]
     assert not normalized.get("kontoauszuege")
     assert not normalized.get("zeitraum")
+
+
+def test_bundled_bank_statement_fixture_still_exposes_single_shape_without_bundle_fields(tmp_path):
+    db_path = _sqlite_documents_db(tmp_path)
+    runner = DocumentPersistExtractionResultRunner()
+    fixture = _load_fixture(12421)
+    step = SimpleNamespace(
+        config={
+            "connection": str(db_path),
+            "document_id": 12421,
+            "extraction_result": fixture["extraction_result"],
+        },
+        timeout=None,
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    shape = result["data"]["document_shape"]
+    assert shape["is_bundle"] is False
+    assert shape["document_type"] == "bank_statement"
+    assert shape["statement_count"] == 1
+    assert shape["statement_numbers"] == []
+    assert shape["period_from"] is None
+    assert shape["period_to"] is None

@@ -77,6 +77,15 @@ def test_document_persist_extraction_result_updates_document_row(tmp_path):
     assert result["success"] is True
     assert result["data"]["affected_rows"] == 1
     assert "raw_structured" in result["data"]["applied_fields"]
+    assert result["data"]["document_shape"] == {
+        "is_bundle": False,
+        "document_type": "receipt",
+        "statement_count": 1,
+        "statement_numbers": [],
+        "period_from": None,
+        "period_to": None,
+        "booking_count": None,
+    }
     db = BrixDB(db_path=db_path)
     with db._connect() as conn:
         row = conn.execute("SELECT * FROM documents WHERE id = 1").fetchone()
@@ -185,6 +194,65 @@ def test_document_persist_extraction_result_uses_raw_meta_doc_type_over_conflict
         row = conn.execute("SELECT raw_structured, doc_type FROM documents WHERE id = 1").fetchone()
     assert row[1] == "invoice"
     assert json.loads(row[0])["raw"]["meta"]["document_type"] == "invoice"
+
+
+def test_document_persist_extraction_result_reports_bundle_shape(tmp_path):
+    db_path = _sqlite_documents_db(tmp_path)
+    runner = DocumentPersistExtractionResultRunner()
+    step = SimpleNamespace(
+        config={
+            "connection": str(db_path),
+            "document_id": 1,
+            "extraction_result": {
+                "raw": {
+                    "meta": {
+                        "document_type": "bank_statement",
+                        "template_used": "bank_statement",
+                        "quality_score": 0.91,
+                    },
+                    "extracted": {},
+                    "normalized": {
+                        "auszugsnummer": "11,12",
+                        "zeitraum": {"von": "2024-08-19", "bis": "2024-09-03"},
+                        "kontoauszuege": [
+                            {
+                                "auszugsnummer": "11",
+                                "zeitraum": {"von": "2024-08-19", "bis": "2024-08-30"},
+                                "buchungen": [{}, {}],
+                            },
+                            {
+                                "auszugsnummer": "12",
+                                "zeitraum": {"von": "2024-09-02", "bis": "2024-09-03"},
+                                "buchungen": [{}],
+                            },
+                        ],
+                    },
+                },
+                "normalized": {
+                    "auszugsnummer": "11,12",
+                    "zeitraum": {"von": "2024-08-19", "bis": "2024-09-03"},
+                    "kontoauszuege": [
+                        {"auszugsnummer": "11", "buchungen": [{}, {}]},
+                        {"auszugsnummer": "12", "buchungen": [{}]},
+                    ],
+                },
+            },
+        },
+        timeout=None,
+    )
+
+    result = asyncio.run(runner.execute(step, context=None))
+
+    assert result["success"] is True
+    assert result["data"]["document_shape"] == {
+        "is_bundle": True,
+        "document_type": "bank_statement",
+        "statement_count": 2,
+        "statement_numbers": ["11", "12"],
+        "period_from": "2024-08-19",
+        "period_to": "2024-09-03",
+        "booking_count": 3,
+    }
 
 
 def test_document_mark_specialist_processed_is_idempotent(tmp_path):
