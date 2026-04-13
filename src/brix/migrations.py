@@ -543,6 +543,7 @@ def _brick_to_record(brick) -> dict:
             "default": param.default,
             "required": param.required,
             "enum": param.enum,
+            "one_of": param.one_of,
         }
 
     return {
@@ -1215,11 +1216,12 @@ def _runner_json_schema_to_brick_config(schema: dict) -> dict[str, dict]:
     config_schema: dict[str, dict] = {}
     for name, spec in properties.items():
         config_schema[name] = {
-            "type": spec.get("type", "any"),
+            "type": spec.get("type", "string"),
             "description": spec.get("description", ""),
             "default": spec.get("default"),
             "required": name in required,
             "enum": spec.get("enum"),
+            "one_of": spec.get("oneOf"),
         }
     return config_schema
 

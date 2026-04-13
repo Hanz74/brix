@@ -15,6 +15,7 @@ class BrickParam(BaseModel):
     default: Any = None
     required: bool = False
     enum: list[Any] | None = None
+    one_of: list[dict[str, Any]] | None = None
 
 
 class BrickSchema(BaseModel):
@@ -54,9 +55,12 @@ class BrickSchema(BaseModel):
 
         for param_name, param in self.config_schema.items():
             prop: dict[str, Any] = {
-                "type": param.type,
                 "description": param.description,
             }
+            if param.one_of:
+                prop["oneOf"] = param.one_of
+            else:
+                prop["type"] = param.type
             if param.default is not None:
                 prop["default"] = param.default
             if param.enum:

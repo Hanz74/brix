@@ -83,7 +83,7 @@ def test_foreach_on_list_output_step_has_no_warning():
     assert warnings == []
 
 
-def test_db_exec_with_dict_params_warns():
+def test_db_exec_with_dict_params_has_no_warning():
     steps = [
         _step("source", type="flow.set"),
         _step(
@@ -100,9 +100,7 @@ def test_db_exec_with_dict_params_warns():
         result = PipelineValidator().validate(_pipeline(steps), level="standard")
 
     warnings = [warning for warning in result.warnings if "T-BRIX-VAL-11" in warning]
-    assert len(warnings) == 1
-    assert "db.exec params" in warnings[0]
-    assert "dict" in warnings[0]
+    assert warnings == []
 
 
 def test_db_query_with_list_params_warns():

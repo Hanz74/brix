@@ -39,11 +39,12 @@ def _row_to_brick(row: dict) -> BrickSchema:
         if not isinstance(param_def, dict):
             param_def = {}
         config_schema[param_name] = BrickParam(
-            type=param_def.get("type", "string"),
+            type=param_def.get("type", "object" if param_def.get("one_of") or param_def.get("oneOf") else "string"),
             description=param_def.get("description", ""),
             default=param_def.get("default"),
             required=bool(param_def.get("required", False)),
             enum=param_def.get("enum"),
+            one_of=param_def.get("one_of") or param_def.get("oneOf"),
         )
 
     aliases = _parse_jsonish(row.get("aliases", "[]"), [])

@@ -5,6 +5,7 @@ import sqlite3
 from types import SimpleNamespace
 
 from brix.runners.db_exec import DbExecRunner
+from brix.bricks.builtins import SYSTEM_DB_EXEC
 
 
 def _make_step(**kwargs):
@@ -104,3 +105,23 @@ async def test_bad_query_returns_error(tmp_path):
 
     assert result["success"] is False
     assert "missing_table" in result["error"] or "no such table" in result["error"].lower()
+
+
+def test_validate_config_accepts_named_params_dict():
+    runner = DbExecRunner()
+
+    errors = runner.validate_config(
+        {
+            "connection": "main",
+            "query": "UPDATE users SET active = :active WHERE id = :id",
+            "params": {"active": True, "id": 1},
+        }
+    )
+
+    assert errors == []
+
+
+def test_db_exec_json_schema_accepts_array_or_object_params():
+    schema = SYSTEM_DB_EXEC.to_json_schema()
+
+    assert schema["properties"]["params"]["oneOf"] == [{"type": "array"}, {"type": "object"}]

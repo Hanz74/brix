@@ -1848,26 +1848,27 @@ class PipelineValidator:
                 )
 
             if effective_type == "db.exec":
-                check_template_ref(
-                    step,
-                    "db.exec params",
-                    "list",
-                    analysis.param_get("params"),
-                    lambda ref_id, output_type: (
-                        f"Step '{ref_id}' output is {output_type} but db.exec params expects list. "
-                        f"Wrap the values in a positional list or map them with flow.transform first."
-                    ),
-                )
-                check_template_ref(
-                    step,
-                    "db.exec params",
-                    "list",
-                    analysis.config_get("params"),
-                    lambda ref_id, output_type: (
-                        f"Step '{ref_id}' output is {output_type} but db.exec params expects list. "
-                        f"Wrap the values in a positional list or map them with flow.transform first."
-                    ),
-                )
+                def _check_db_exec_params(raw_value: Any) -> None:
+                    for ref_id in self._extract_step_output_refs(raw_value):
+                        output_type = step_output_types.get(ref_id, "")
+                        if not output_type:
+                            continue
+                        if self._is_expected_list_type(output_type) or self._is_expected_dict_type(output_type):
+                            continue
+                        add_issue(
+                            step.id,
+                            ref_id,
+                            "db.exec params",
+                            "list|dict",
+                            output_type,
+                            (
+                                f"Step '{ref_id}' output is {output_type} but db.exec params expects list or dict. "
+                                f"Map the output to named params or a positional list first."
+                            ),
+                        )
+
+                _check_db_exec_params(analysis.param_get("params"))
+                _check_db_exec_params(analysis.config_get("params"))
 
             if effective_type == "db.query":
                 check_template_ref(

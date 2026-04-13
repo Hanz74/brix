@@ -105,8 +105,11 @@ class DbExecRunner(BaseRunner):
                     "description": "SQL DML query to execute",
                 },
                 "params": {
-                    "type": "array",
-                    "description": "Positional query parameters for parametrised execution",
+                    "oneOf": [
+                        {"type": "array"},
+                        {"type": "object"},
+                    ],
+                    "description": "Optional positional or named query parameters for parametrised execution",
                 },
             },
             "required": ["connection", "query"],
@@ -121,8 +124,8 @@ class DbExecRunner(BaseRunner):
         if query is not None and not isinstance(query, str):
             errors.append("'query' must be a string")
         params = config.get("params")
-        if params is not None and not isinstance(params, list):
-            errors.append("'params' must be a list")
+        if params is not None and not isinstance(params, (list, dict)):
+            errors.append("'params' must be a list or dict")
         return errors
 
     def input_type(self) -> str:

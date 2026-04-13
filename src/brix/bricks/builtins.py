@@ -1132,7 +1132,11 @@ SYSTEM_DB_EXEC = BrickSchema(
     config_schema={
         "connection": BrickParam(type="string", description="Named connection or DSN", required=True),
         "query": BrickParam(type="string", description="SQL DML statement to execute", required=True),
-        "params": BrickParam(type="array", description="Optional positional query parameters"),
+        "params": BrickParam(
+            type="object",
+            one_of=[{"type": "array"}, {"type": "object"}],
+            description="Optional positional or named query parameters",
+        ),
     },
     input_type="none",
     output_type="dict",
