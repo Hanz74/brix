@@ -631,6 +631,7 @@ _DDL = [
         config      TEXT NOT NULL DEFAULT '{}',
         enabled     INTEGER NOT NULL DEFAULT 1,
         created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
         project     TEXT DEFAULT '',
         tags        TEXT DEFAULT '[]',
         group_name  TEXT DEFAULT '',
@@ -5341,8 +5342,12 @@ class BrixDB:
         now = created_at or _now_iso()
         cfg_json = json.dumps(config or {})
         with self._connect() as conn:
+            has_updated_at = self._column_exists(conn, "alert_rule", "updated_at")
             cols = ["id", "name", "condition", "channel", "config", "enabled", "created_at"]
             vals: list = [rid, name, condition, channel, cfg_json, 1, now]
+            if has_updated_at:
+                cols.append("updated_at")
+                vals.append(now)
             if project is not None and self._column_exists(conn, "alert_rule", "project"):
                 cols.append("project")
                 vals.append(project)
@@ -5412,11 +5417,13 @@ class BrixDB:
             updates["tags"] = json.dumps(tags)
         if group_name is not None:
             updates["group_name"] = group_name
-        if not updates:
-            return existing
-        set_clause = ", ".join(f"{k}=?" for k in updates)
-        values = list(updates.values()) + [rule_id]
         with self._connect() as conn:
+            if self._column_exists(conn, "alert_rule", "updated_at"):
+                updates["updated_at"] = _now_iso()
+            if not updates:
+                return existing
+            set_clause = ", ".join(f"{k}=?" for k in updates)
+            values = list(updates.values()) + [rule_id]
             conn.execute(f"UPDATE alert_rule SET {set_clause} WHERE id=?", values)
         return self.alert_rule_get(rule_id)
 
@@ -5482,6 +5489,7 @@ class BrixDB:
             row["tags"] = []
         row.setdefault("project", "")
         row.setdefault("group_name", "")
+        row["updated_at"] = row.get("updated_at") or row.get("created_at")
         return row
 
     # ------------------------------------------------------------------

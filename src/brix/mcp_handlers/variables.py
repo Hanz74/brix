@@ -77,6 +77,8 @@ async def _handle_get_variable(arguments: dict) -> dict:
         "project": raw.get("project", "") or "",
         "tags": raw.get("tags", []),
         "group": raw.get("group_name", "") or "",
+        "created_at": raw.get("created_at"),
+        "updated_at": raw.get("updated_at"),
     }
 
     if raw.get("secret"):

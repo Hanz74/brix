@@ -109,3 +109,59 @@ async def test_brick_handlers_include_timestamps() -> None:
     schema = await _handle_get_brick_schema({"brick_name": "db.exec"})
     assert schema["created_at"]
     assert schema["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_alert_handlers_include_timestamps(patch_db) -> None:
+    from brix.mcp_handlers.alerts import (
+        _handle_alert_add,
+        _handle_alert_list,
+        _handle_get_alert_rule,
+        _handle_search_alert_rules,
+        _handle_alert_update,
+    )
+
+    created = await _handle_alert_add(
+        {
+            "name": "timestamp-alert",
+            "condition": "run_failed",
+            "channel": "slack",
+        }
+    )
+    assert created["rule"]["created_at"]
+    assert created["rule"]["updated_at"]
+
+    listed = await _handle_alert_list({})
+    listed_rule = next(item for item in listed["rules"] if item["name"] == "timestamp-alert")
+    assert listed_rule["created_at"]
+    assert listed_rule["updated_at"]
+
+    fetched = await _handle_get_alert_rule({"name": "timestamp-alert"})
+    assert fetched["rule"]["created_at"]
+    assert fetched["rule"]["updated_at"]
+
+    searched = await _handle_search_alert_rules({"query": "timestamp-alert"})
+    searched_rule = next(item for item in searched["rules"] if item["name"] == "timestamp-alert")
+    assert searched_rule["created_at"]
+    assert searched_rule["updated_at"]
+
+    updated = await _handle_alert_update(
+        {
+            "id": created["rule"]["id"],
+            "condition": "run_slow",
+        }
+    )
+    assert updated["rule"]["created_at"]
+    assert updated["rule"]["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_get_variable_includes_timestamps(patch_db) -> None:
+    from brix.mcp_handlers.variables import _handle_get_variable, _handle_set_variable
+
+    await _handle_set_variable({"name": "timestamp_var", "value": "x"})
+
+    result = await _handle_get_variable({"name": "timestamp_var"})
+    assert result["found"] is True
+    assert result["created_at"]
+    assert result["updated_at"]

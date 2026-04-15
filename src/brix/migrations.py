@@ -531,6 +531,13 @@ MIGRATIONS: list[dict] = [
         "up_fn": "_register_metadata_repair_tool_schemas_v95",
         "down": "",
     },
+    {
+        "version": 96,
+        "name": "add_updated_at_to_alert_rule",
+        "up": "",
+        "up_fn": "_add_updated_at_to_alert_rule_v96",
+        "down": "",
+    },
 ]
 
 
@@ -562,6 +569,17 @@ def _brick_to_record(brick) -> dict:
         "related_connector": brick.related_connector or "",
         "system": bool(getattr(brick, "system", False)),
     }
+
+
+def _add_updated_at_to_alert_rule_v96(db: "BrixDB") -> None:
+    """Add alert_rule.updated_at and backfill it from created_at."""
+    with db._connect() as conn:
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(alert_rule)").fetchall()]
+        if "updated_at" not in cols:
+            conn.execute("ALTER TABLE alert_rule ADD COLUMN updated_at TEXT")
+        conn.execute(
+            "UPDATE alert_rule SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = ''"
+        )
 
 
 def _register_document_persistence_bricks_v88(db: "BrixDB") -> None:

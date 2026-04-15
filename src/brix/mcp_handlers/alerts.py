@@ -4,7 +4,6 @@ from __future__ import annotations
 
 async def _handle_alert_add(arguments: dict) -> dict:
     """Add a new alert rule."""
-    from brix.alerting import AlertManager
     from brix.db import BrixDB
     name = arguments.get("name", "")
     condition = arguments.get("condition", "")
@@ -59,6 +58,7 @@ async def _handle_alert_add(arguments: dict) -> dict:
             "config": row["config"],
             "enabled": row["enabled"],
             "created_at": row["created_at"],
+            "updated_at": row.get("updated_at"),
             "project": row.get("project", ""),
             "tags": row.get("tags", []),
             "group": row.get("group_name", ""),
@@ -85,6 +85,7 @@ async def _handle_alert_list(arguments: dict) -> dict:
                 "config": r["config"],
                 "enabled": r["enabled"],
                 "created_at": r["created_at"],
+                "updated_at": r.get("updated_at"),
                 "project": r.get("project", ""),
                 "tags": r.get("tags", []),
                 "group": r.get("group_name", ""),
@@ -136,6 +137,7 @@ async def _handle_alert_update(arguments: dict) -> dict:
             "config": updated["config"],
             "enabled": updated["enabled"],
             "created_at": updated["created_at"],
+            "updated_at": updated.get("updated_at"),
             "project": updated.get("project", ""),
             "tags": updated.get("tags", []),
             "group": updated.get("group_name", ""),
@@ -195,6 +197,7 @@ async def _handle_get_alert_rule(arguments: dict) -> dict:
             "config": row["config"],
             "enabled": row["enabled"],
             "created_at": row["created_at"],
+            "updated_at": row.get("updated_at"),
             "project": row.get("project", ""),
             "tags": row.get("tags", []),
             "group": row.get("group_name", ""),
@@ -219,6 +222,8 @@ async def _handle_search_alert_rules(arguments: dict) -> dict:
             "condition": r["condition"],
             "channel": r["channel"],
             "enabled": r["enabled"],
+            "created_at": r["created_at"],
+            "updated_at": r.get("updated_at"),
             "project": r.get("project", ""),
             "tags": r.get("tags", []),
             "group": r.get("group_name", ""),
