@@ -173,24 +173,16 @@ async def _handle_list_bricks(arguments: dict) -> dict:
     _org_map: dict = {}
     try:
         from brix.db import BrixDB as _BrixDB
-        import json as _list_json
         _ldb = _BrixDB()
-        _lconn = _ldb._connect()
-        for row in _lconn.execute(
-            "SELECT name, namespace, org_tags, project, group_name FROM brick_definition"
-        ).fetchall():
-            raw_tags = row[2]
-            try:
-                _tags = _list_json.loads(raw_tags) if raw_tags else []
-            except (ValueError, TypeError):
-                _tags = []
-            _org_map[row[0]] = {
-                "namespace": row[1] or "",
-                "tags": _tags,
-                "project": row[3] or "",
-                "group": row[4] or "",
+        for row in _ldb.brick_definitions_list():
+            _org_map[row["name"]] = {
+                "namespace": row.get("namespace", "") or "",
+                "tags": row.get("org_tags", []) or [],
+                "project": row.get("project", "") or "",
+                "group": row.get("group_name", "") or "",
+                "created_at": row.get("created_at", "") or "",
+                "updated_at": row.get("updated_at", "") or "",
             }
-        _lconn.close()
     except Exception:
         pass
 
@@ -203,7 +195,17 @@ async def _handle_list_bricks(arguments: dict) -> dict:
                 "description": b.description,
                 "when_to_use": b.when_to_use,
                 "category": b.category,
-                **_org_map.get(b.name, {"namespace": "", "tags": [], "project": "", "group": ""}),
+                **_org_map.get(
+                    b.name,
+                    {
+                        "namespace": "",
+                        "tags": [],
+                        "project": "",
+                        "group": "",
+                        "created_at": "",
+                        "updated_at": "",
+                    },
+                ),
             }
             for b in bricks
         ],
@@ -223,24 +225,16 @@ async def _handle_search_bricks(arguments: dict) -> dict:
     _org_map: dict = {}
     try:
         from brix.db import BrixDB as _BrixDB
-        import json as _search_json
         _sdb = _BrixDB()
-        _sconn = _sdb._connect()
-        for row in _sconn.execute(
-            "SELECT name, namespace, org_tags, project, group_name FROM brick_definition"
-        ).fetchall():
-            raw_tags = row[2]
-            try:
-                _tags = _search_json.loads(raw_tags) if raw_tags else []
-            except (ValueError, TypeError):
-                _tags = []
-            _org_map[row[0]] = {
-                "namespace": row[1] or "",
-                "tags": _tags,
-                "project": row[3] or "",
-                "group": row[4] or "",
+        for row in _sdb.brick_definitions_list():
+            _org_map[row["name"]] = {
+                "namespace": row.get("namespace", "") or "",
+                "tags": row.get("org_tags", []) or [],
+                "project": row.get("project", "") or "",
+                "group": row.get("group_name", "") or "",
+                "created_at": row.get("created_at", "") or "",
+                "updated_at": row.get("updated_at", "") or "",
             }
-        _sconn.close()
     except Exception:
         pass
 
@@ -254,7 +248,17 @@ async def _handle_search_bricks(arguments: dict) -> dict:
                 "description": b.description,
                 "when_to_use": b.when_to_use,
                 "category": b.category,
-                **_org_map.get(b.name, {"namespace": "", "tags": [], "project": "", "group": ""}),
+                **_org_map.get(
+                    b.name,
+                    {
+                        "namespace": "",
+                        "tags": [],
+                        "project": "",
+                        "group": "",
+                        "created_at": "",
+                        "updated_at": "",
+                    },
+                ),
             }
             for b in results
         ],
@@ -295,6 +299,16 @@ async def _handle_get_brick_schema(arguments: dict) -> dict:
         and (runner_schema := _get_runner_config_schema(brick.runner))
     ):
         config_schema = runner_schema
+    brick_meta: dict = {}
+    try:
+        from brix.db import BrixDB as _BrickDB
+        if (row := _BrickDB().brick_definitions_get(name)) is not None:
+            brick_meta = {
+                "created_at": row.get("created_at", "") or "",
+                "updated_at": row.get("updated_at", "") or "",
+            }
+    except Exception:
+        brick_meta = {}
 
     return {
         "name": brick.name,
@@ -308,6 +322,7 @@ async def _handle_get_brick_schema(arguments: dict) -> dict:
         "output_description": brick.output_description,
         "config_schema": config_schema,
         "compatible_with": compatible_with,
+        **brick_meta,
     }
 
 
@@ -796,7 +811,6 @@ async def _handle_diagnose_step(arguments: dict) -> dict:
 
     store = PipelineStore(pipelines_dir=_pipeline_dir())
     try:
-        pipeline = store.load(pipeline_id)
         raw_pipeline = store.load_raw(pipeline_id)
     except FileNotFoundError:
         return {"success": False, "error": f"Pipeline '{pipeline_id}' not found."}

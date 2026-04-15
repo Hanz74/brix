@@ -462,6 +462,9 @@ class TestDiscoveryHandlers:
         assert result["count"] >= 10
         names = [b["name"] for b in result["bricks"]]
         assert "http_get" in names
+        http_get = next(b for b in result["bricks"] if b["name"] == "http_get")
+        assert "created_at" in http_get
+        assert "updated_at" in http_get
 
     @pytest.mark.asyncio
     async def test_list_bricks_category_filter(self):
@@ -478,6 +481,8 @@ class TestDiscoveryHandlers:
         assert result["count"] > 0
         names = [b["name"] for b in result["bricks"]]
         assert any("http" in n for n in names)
+        assert all("created_at" in b for b in result["bricks"])
+        assert all("updated_at" in b for b in result["bricks"])
 
     @pytest.mark.asyncio
     async def test_search_bricks_no_match(self):
@@ -493,6 +498,8 @@ class TestDiscoveryHandlers:
         assert "config_schema" in result
         assert "properties" in result["config_schema"]
         assert "url" in result["config_schema"]["properties"]
+        assert "created_at" in result
+        assert "updated_at" in result
 
     @pytest.mark.asyncio
     async def test_get_brick_schema_not_found(self):
@@ -1359,6 +1366,9 @@ class TestExecutionHandlers:
         names = [p["name"] for p in result["pipelines"]]
         assert "listed-pipeline-a" in names
         assert "listed-pipeline-b" in names
+        listed = next(p for p in result["pipelines"] if p["name"] == "listed-pipeline-a")
+        assert "created_at" in listed
+        assert "updated_at" in listed
 
     @pytest.mark.asyncio
     async def test_list_pipelines_custom_dir(self, tmp_path):
@@ -1366,13 +1376,38 @@ class TestExecutionHandlers:
         import yaml as _yaml
         # Write a pipeline file manually
         (tmp_path / "custom-pipe.yaml").write_text(
-            _yaml.dump({"name": "custom-pipe", "version": "1.0.0", "steps": []})
+            _yaml.dump(
+                {
+                    "name": "custom-pipe",
+                    "version": "1.0.0",
+                    "steps": [],
+                    "created_at": "2026-04-15T10:00:00+00:00",
+                    "updated_at": "2026-04-15T11:00:00+00:00",
+                }
+            )
         )
         result = await _handle_list_pipelines({"directory": str(tmp_path)})
         assert result["success"] is True
         assert result["count"] >= 1
-        names = [p["name"] for p in result["pipelines"]]
-        assert "custom-pipe" in names
+        custom = next(p for p in result["pipelines"] if p["name"] == "custom-pipe")
+        assert custom["created_at"] == "2026-04-15T10:00:00+00:00"
+        assert custom["updated_at"] == "2026-04-15T11:00:00+00:00"
+
+    @pytest.mark.asyncio
+    async def test_search_pipelines_includes_timestamps(self, tmp_path, monkeypatch):
+        """search_pipelines includes created_at and updated_at for matches."""
+        monkeypatch.setattr("brix.mcp_server.PIPELINE_DIR", tmp_path)
+        await _handle_create_pipeline({
+            "name": "search-timestamp-pipe",
+            "description": "invoice import pipeline",
+            "steps": [],
+        })
+
+        result = await _handle_search_pipelines({"query": "invoice"})
+        assert result["success"] is True
+        match = next(p for p in result["pipelines"] if p["name"] == "search-timestamp-pipe")
+        assert match["created_at"]
+        assert match["updated_at"]
 
     @pytest.mark.asyncio
     async def test_run_pipeline_unknown_params_warning(self, tmp_path, monkeypatch):

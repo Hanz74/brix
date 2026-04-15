@@ -311,6 +311,8 @@ async def _handle_list_helpers(arguments: dict) -> dict:
                     "project": h.get("project", ""),
                     "tags": h.get("tags", []),
                     "group": h.get("group_name", ""),
+                    "created_at": h.get("created_at", ""),
+                    "updated_at": h.get("updated_at", ""),
                     "reason_not_a_brick": h.get("reason_not_a_brick", ""),
                     "brick_candidate_ref": h.get("brick_candidate_ref", ""),
                     "governance_status": h.get("governance_status", "draft"),

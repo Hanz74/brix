@@ -962,6 +962,8 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
                         "description": data.get("description", ""),
                         "step_count": len(steps),
                         "file": str(yaml_file),
+                        "created_at": data.get("created_at", ""),
+                        "updated_at": data.get("updated_at", ""),
                     })
                 except Exception as exc:
                     pipelines.append({
@@ -995,6 +997,8 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
                     "project": p.get("project", ""),
                     "tags": p.get("tags", []),
                     "group": p.get("group_name", ""),
+                    "created_at": p.get("created_at", ""),
+                    "updated_at": p.get("updated_at", ""),
                 }
                 for p in db_rows
             ]
@@ -1033,6 +1037,15 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
             _lconn.close()
         except Exception:
             pass
+        try:
+            from brix.db import BrixDB as _TsDB
+            _tsdb = _TsDB()
+            for row in _tsdb.list_pipelines():
+                _org_map.setdefault(row["name"], {})
+                _org_map[row["name"]]["created_at"] = row.get("created_at", "")
+                _org_map[row["name"]]["updated_at"] = row.get("updated_at", "")
+        except Exception:
+            pass
 
         pipelines = [
             {
@@ -1041,7 +1054,12 @@ async def _handle_list_pipelines(arguments: dict) -> dict:
                 "description": p.get("description", ""),
                 "step_count": p.get("steps", 0),
                 "file": p.get("path", ""),
-                **_org_map.get(p["name"], {"project": "", "tags": [], "group": ""}),
+                "created_at": p.get("created_at", "") or _org_map.get(p["name"], {}).get("created_at", ""),
+                "updated_at": p.get("updated_at", "") or _org_map.get(p["name"], {}).get("updated_at", ""),
+                **_org_map.get(
+                    p["name"],
+                    {"project": "", "tags": [], "group": "", "created_at": "", "updated_at": ""},
+                ),
             }
             for p in all_pipelines
         ]
@@ -1074,11 +1092,38 @@ async def _handle_search_pipelines(arguments: dict) -> dict:
         p for p in all_pipelines
         if q in p.get("name", "").lower() or q in p.get("description", "").lower()
     ]
+    _meta_map: dict[str, dict] = {}
+    try:
+        from brix.db import BrixDB as _SearchDB
+        for row in _SearchDB().list_pipelines():
+            _meta_map[row["name"]] = {
+                "project": row.get("project", ""),
+                "tags": row.get("tags", []),
+                "group": row.get("group_name", "") or row.get("group", ""),
+                "created_at": row.get("created_at", ""),
+                "updated_at": row.get("updated_at", ""),
+            }
+    except Exception:
+        pass
+    pipelines = []
+    for p in matches:
+        name = p.get("name", "")
+        meta = _meta_map.get(name, {})
+        pipelines.append(
+            {
+                **p,
+                "created_at": p.get("created_at", "") or meta.get("created_at", ""),
+                "updated_at": p.get("updated_at", "") or meta.get("updated_at", ""),
+                "project": meta.get("project", ""),
+                "tags": meta.get("tags", []),
+                "group": meta.get("group", ""),
+            }
+        )
     return {
         "success": True,
         "query": query,
-        "pipelines": matches,
-        "count": len(matches),
+        "pipelines": pipelines,
+        "count": len(pipelines),
     }
 
 

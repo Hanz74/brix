@@ -205,6 +205,8 @@ def test_list_helpers_with_filters_preserves_governance_fields(monkeypatch, tmp_
 
     assert result["count"] == 1
     helper = result["helpers"][0]
+    assert helper["created_at"]
+    assert helper["updated_at"]
     assert helper["governance_status"] == "governed"
     assert helper["reason_not_a_brick"]
     assert helper["brick_candidate_ref"] == ""

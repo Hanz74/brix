@@ -283,6 +283,8 @@ class PipelineStore:
                     "description": raw.get("description") or "",
                     "steps": len(raw.get("steps") or []),
                     "path": p.get("path", ""),
+                    "created_at": raw.get("created_at") or p.get("created_at", ""),
+                    "updated_at": raw.get("updated_at") or p.get("updated_at", ""),
                 })
             except Exception as e:
                 results.append({
@@ -291,6 +293,8 @@ class PipelineStore:
                     "description": f"Error: {e}",
                     "steps": 0,
                     "path": p.get("path", ""),
+                    "created_at": p.get("created_at", ""),
+                    "updated_at": p.get("updated_at", ""),
                 })
 
         return results
