@@ -1103,6 +1103,10 @@ async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
     async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
         await session_manager.handle_request(scope, receive, send)
 
+    class _StreamableHTTPASGI:
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            await handle_streamable_http(scope, receive, send)
+
     # --- SSE (legacy, for older MCP clients) ---
     sse_transport = SseServerTransport("/messages")
 
@@ -1133,7 +1137,8 @@ async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
         lifespan=lifespan,
         routes=[
             # Streamable HTTP — primary transport
-            Mount("/mcp", app=handle_streamable_http),
+            Route("/mcp", endpoint=_StreamableHTTPASGI(), methods=["GET", "POST", "DELETE"]),
+            Route("/mcp/", endpoint=_StreamableHTTPASGI(), methods=["GET", "POST", "DELETE"]),
             # Legacy SSE transport
             Route("/sse", endpoint=handle_sse),
             Mount("/messages", app=handle_messages),

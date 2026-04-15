@@ -46,7 +46,7 @@ async def test_http_server_lifespan():
     via the same pattern used in run_mcp_http_server and running the lifespan.
     """
     from starlette.applications import Starlette
-    from starlette.routing import Mount
+    from starlette.routing import Route
     from starlette.testclient import TestClient
 
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -66,23 +66,41 @@ async def test_http_server_lifespan():
         async with session_manager.run():
             yield
 
+    class _StreamableHTTPASGI:
+        async def __call__(self, scope, receive, send):
+            await session_manager.handle_request(scope, receive, send)
+
     app = Starlette(
         lifespan=lifespan,
         routes=[
-            Mount("/mcp", app=session_manager.handle_request),
+            Route("/mcp", endpoint=_StreamableHTTPASGI(), methods=["GET", "POST", "DELETE"]),
+            Route("/mcp/", endpoint=_StreamableHTTPASGI(), methods=["GET", "POST", "DELETE"]),
         ],
     )
     app.router.redirect_slashes = False
 
+    initialize_payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "brix-test", "version": "0.1"},
+        },
+    }
+
     # TestClient exercises the lifespan on __enter__ / __exit__
     with TestClient(app, raise_server_exceptions=True) as client:
-        resp = client.get(
+        resp = client.post(
             "/mcp",
-            headers={"Accept": "application/json, text/event-stream"},
+            json=initialize_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
             follow_redirects=False,
         )
-        # The root MCP path must not redirect or crash. In stateless mode the
-        # transport may either open a stream or reject unsupported setup with 4xx.
         assert resp.status_code != 307
         assert resp.status_code < 500, (
             f"Unexpected status {resp.status_code}: {resp.text}"
@@ -103,7 +121,7 @@ async def test_http_tool_call():
     a full tool-call round-trip without managing session IDs.
     """
     from starlette.applications import Starlette
-    from starlette.routing import Mount
+    from starlette.routing import Route
     from starlette.testclient import TestClient
 
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -123,9 +141,16 @@ async def test_http_tool_call():
         async with session_manager.run():
             yield
 
+    class _StreamableHTTPASGI:
+        async def __call__(self, scope, receive, send):
+            await session_manager.handle_request(scope, receive, send)
+
     app = Starlette(
         lifespan=lifespan,
-        routes=[Mount("/mcp", app=session_manager.handle_request)],
+        routes=[
+            Route("/mcp", endpoint=_StreamableHTTPASGI(), methods=["GET", "POST", "DELETE"]),
+            Route("/mcp/", endpoint=_StreamableHTTPASGI(), methods=["GET", "POST", "DELETE"]),
+        ],
     )
     app.router.redirect_slashes = False
 
