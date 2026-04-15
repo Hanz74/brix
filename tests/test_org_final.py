@@ -6,7 +6,6 @@ connections, profiles, alert_rules, and all 6 registry types.
 """
 from __future__ import annotations
 
-import json
 import pytest
 
 from brix.db import BrixDB
@@ -79,6 +78,40 @@ async def test_pipeline_get_returns_org(tmp_path, monkeypatch, patch_db):
     assert result.get("project") == "buddy"
     assert result.get("tags") == ["import"]
     assert result.get("group") == "intake"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_update_group_persists(tmp_path, monkeypatch, patch_db):
+    """update_pipeline persists group and get_pipeline returns it immediately."""
+    from brix.mcp_handlers.pipelines import (
+        _handle_create_pipeline,
+        _handle_get_pipeline,
+        _handle_update_pipeline,
+    )
+
+    monkeypatch.setattr(
+        "brix.mcp_handlers._shared._pipeline_dir",
+        lambda: tmp_path / "pipelines",
+    )
+    (tmp_path / "pipelines").mkdir(exist_ok=True)
+
+    await _handle_create_pipeline({
+        "name": "org-update-group-pipe",
+        "steps": [],
+        "description": "test",
+        "project": "buddy",
+        "tags": ["sync"],
+    })
+
+    update_result = await _handle_update_pipeline({
+        "name": "org-update-group-pipe",
+        "group": "buddy-twin-sync",
+    })
+    assert update_result["success"] is True
+    assert "group" in update_result["changed_fields"]
+
+    result = await _handle_get_pipeline({"pipeline_id": "org-update-group-pipe"})
+    assert result.get("group") == "buddy-twin-sync"
 
 
 @pytest.mark.asyncio
@@ -408,7 +441,6 @@ async def test_brick_create_with_tags(patch_db, monkeypatch):
 @pytest.mark.asyncio
 async def test_brick_list_returns_org(patch_db, monkeypatch):
     """list_bricks returns org fields from DB."""
-    from brix.mcp_handlers.bricks import _handle_create_brick
     from brix.mcp_handlers.steps import _handle_list_bricks
     monkeypatch.setattr(
         "brix.mcp_handlers.bricks._get_valid_runners",
@@ -416,7 +448,6 @@ async def test_brick_list_returns_org(patch_db, monkeypatch):
     )
     import brix.mcp_handlers._shared as _shared_mod
     from brix.bricks.schema import BrickSchema
-    from unittest.mock import MagicMock
 
     # Create brick in DB
     db = BrixDB()

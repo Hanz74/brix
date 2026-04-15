@@ -156,6 +156,13 @@ class TestPipelinesCRUD:
     def test_get_pipeline_not_found(self, db):
         assert db.get_pipeline("ghost") is None
 
+    def test_get_pipeline_includes_group_alias(self, db):
+        db.upsert_pipeline("grouped", "/g.yaml", group_name="buddy-twin-sync")
+        result = db.get_pipeline("grouped")
+        assert result is not None
+        assert result["group_name"] == "buddy-twin-sync"
+        assert result["group"] == "buddy-twin-sync"
+
     def test_list_pipelines(self, db):
         db.upsert_pipeline("alpha", "/a.yaml")
         db.upsert_pipeline("beta", "/b.yaml")
@@ -170,6 +177,13 @@ class TestPipelinesCRUD:
         results = db.list_pipelines()
         names = [r["name"] for r in results]
         assert names == sorted(names)
+
+    def test_list_pipelines_includes_group_alias(self, db):
+        db.upsert_pipeline("grouped-list", "/g.yaml", group_name="buddy-twin-sync")
+        results = db.list_pipelines()
+        grouped = next(r for r in results if r["name"] == "grouped-list")
+        assert grouped["group_name"] == "buddy-twin-sync"
+        assert grouped["group"] == "buddy-twin-sync"
 
     def test_delete_pipeline(self, db):
         db.upsert_pipeline("todel", "/del.yaml")

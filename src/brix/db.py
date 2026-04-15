@@ -2976,6 +2976,13 @@ class BrixDB:
                 return None
             result = dict(row)
             result["requirements"] = json.loads(result.get("requirements_json") or "[]")
+            raw_tags = result.get("tags") or "[]"
+            try:
+                result["tags"] = json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+            except (json.JSONDecodeError, TypeError):
+                result["tags"] = []
+            if result.get("group_name"):
+                result["group"] = result["group_name"]
             return result
 
     def list_pipelines(
@@ -3008,6 +3015,8 @@ class BrixDB:
                     d["tags"] = []
             if has_group:
                 d.setdefault("group_name", "")
+                if d.get("group_name"):
+                    d["group"] = d["group_name"]
 
             # Apply filters
             if project is not None and d.get("project", "") != project:
