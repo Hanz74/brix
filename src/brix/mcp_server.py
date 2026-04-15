@@ -1082,7 +1082,6 @@ async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
     import uvicorn
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import Response
     from starlette.routing import Mount, Route
     from starlette.types import Receive, Scope, Send
 
@@ -1096,7 +1095,9 @@ async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
         app=mcp_server,
         event_store=None,   # no resumability — stateful sessions only
         json_response=False,
-        stateless=False,
+        # Stateless mode avoids broken first-request session validation and
+        # matches the actual deployment pattern: no event store, no resumability.
+        stateless=True,
     )
 
     async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
@@ -1138,6 +1139,9 @@ async def run_mcp_http_server(host: str = "0.0.0.0", port: int = 8091) -> None:
             Mount("/messages", app=handle_messages),
         ],
     )
+    # Disable automatic /mcp -> /mcp/ redirects. Some MCP clients do not
+    # follow 307 redirects safely for streamable HTTP requests.
+    app.router.redirect_slashes = False
 
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server_instance = uvicorn.Server(config)

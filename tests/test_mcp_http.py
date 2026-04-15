@@ -9,9 +9,7 @@ We test at three levels:
 """
 from __future__ import annotations
 
-import asyncio
 import contextlib
-import json
 
 import pytest
 
@@ -47,12 +45,10 @@ async def test_http_server_lifespan():
     We do this without binding a real port by constructing the app directly
     via the same pattern used in run_mcp_http_server and running the lifespan.
     """
-    import contextlib
     from starlette.applications import Starlette
-    from starlette.routing import Mount, Route
+    from starlette.routing import Mount
     from starlette.testclient import TestClient
 
-    from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
     from brix.mcp_server import create_server
@@ -62,7 +58,7 @@ async def test_http_server_lifespan():
         app=mcp_server,
         event_store=None,
         json_response=False,
-        stateless=False,
+        stateless=True,
     )
 
     @contextlib.asynccontextmanager
@@ -76,13 +72,19 @@ async def test_http_server_lifespan():
             Mount("/mcp", app=session_manager.handle_request),
         ],
     )
+    app.router.redirect_slashes = False
 
     # TestClient exercises the lifespan on __enter__ / __exit__
     with TestClient(app, raise_server_exceptions=True) as client:
-        resp = client.get("/mcp")
-        # A GET to /mcp without a valid MCP session header should return 4xx
-        # (the session manager rejects it) — not a 500 or connection error.
-        assert resp.status_code in (400, 405, 406, 415), (
+        resp = client.get(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream"},
+            follow_redirects=False,
+        )
+        # The root MCP path must not redirect or crash. In stateless mode the
+        # transport may either open a stream or reject unsupported setup with 4xx.
+        assert resp.status_code != 307
+        assert resp.status_code < 500, (
             f"Unexpected status {resp.status_code}: {resp.text}"
         )
 
@@ -100,7 +102,6 @@ async def test_http_tool_call():
     Stateless mode creates a fresh transport per request, which lets us test
     a full tool-call round-trip without managing session IDs.
     """
-    import contextlib
     from starlette.applications import Starlette
     from starlette.routing import Mount
     from starlette.testclient import TestClient
@@ -126,6 +127,7 @@ async def test_http_tool_call():
         lifespan=lifespan,
         routes=[Mount("/mcp", app=session_manager.handle_request)],
     )
+    app.router.redirect_slashes = False
 
     # JSON-RPC initialize request (required before tool calls in MCP)
     initialize_payload = {
@@ -147,9 +149,14 @@ async def test_http_tool_call():
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
             },
+            follow_redirects=False,
         )
-        # Stateless mode: initialize should succeed (2xx) or return a valid
-        # JSON-RPC error — either way the server must not crash (5xx).
+        # The primary MCP path must not redirect. Stateless mode should either
+        # initialize successfully or return a valid JSON-RPC error, but never
+        # a redirect or server crash.
+        assert resp.status_code != 307, (
+            f"Unexpected redirect on /mcp: {resp.status_code} {resp.text}"
+        )
         assert resp.status_code < 500, (
             f"Server error during initialize: {resp.status_code} {resp.text}"
         )
