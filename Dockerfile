@@ -14,7 +14,7 @@ COPY src/ ./src/
 COPY seed-data.json ./seed-data.json
 
 # Install project with dev dependencies via uv
-RUN uv pip install --system -e ".[dev]"
+RUN uv pip install --system -e ".[dev,postgres]"
 
 # Runtime cache for DB-backed helper code materialized on demand
 RUN mkdir -p /tmp/brix-helpers
