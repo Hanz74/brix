@@ -1,6 +1,7 @@
 """LLM Batch runner — native Mistral Batch API integration."""
 import asyncio
 import json
+import logging
 import os
 import re
 import time
@@ -8,6 +9,8 @@ from typing import Any
 
 from brix.config import config
 from brix.runners.base import BaseRunner
+
+logger = logging.getLogger(__name__)
 
 try:
     from mistralai import Mistral
@@ -137,12 +140,39 @@ class LlmBatchRunner(BaseRunner):
             }
 
         # --- API key ---
-        api_key = os.environ.get("BUDDY_LLM_API_KEY") or os.environ.get("MISTRAL_API_KEY")
+        # Primary: Brix Credential Store (Fernet-encrypted in DB)
+        api_key: str | None = None
+        try:
+            from brix.credential_store import CredentialStore, CredentialNotFoundError
+            store = CredentialStore()
+            for cred_name in ("mistral_api_key", "MISTRAL_API_KEY", "BUDDY_LLM_API_KEY"):
+                try:
+                    api_key = store.resolve(cred_name)
+                    break
+                except CredentialNotFoundError:
+                    continue
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Credential store unavailable: %s", exc)
+
+        # Fallback: environment variables (deprecated path)
+        if not api_key:
+            api_key = os.environ.get("BUDDY_LLM_API_KEY") or os.environ.get("MISTRAL_API_KEY")
+            if api_key:
+                logger.warning(
+                    "Mistral API key loaded from environment variable. "
+                    "This is deprecated — store it in the Brix Credential Store instead: "
+                    "brix__credential(action='add', name='mistral_api_key', type='api-key', value='...')"
+                )
+
         if not api_key:
             self.report_progress(0.0, "error: no API key")
             return {
                 "success": False,
-                "error": "No Mistral API key found. Set BUDDY_LLM_API_KEY or MISTRAL_API_KEY.",
+                "error": (
+                    "No Mistral API key found. Add it to the Credential Store: "
+                    "brix__credential(action='add', name='mistral_api_key', type='api-key', value='...'). "
+                    "Fallback: set BUDDY_LLM_API_KEY or MISTRAL_API_KEY env var."
+                ),
                 "duration": time.monotonic() - start,
             }
 
