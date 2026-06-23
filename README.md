@@ -1,6 +1,6 @@
-# Brix · v19.3.5
+# Brix · v19.3.6
 
-![Version](https://img.shields.io/badge/version-19.3.5-blue) ![Pipelines](https://img.shields.io/badge/pipelines-81-green) ![Bricks](https://img.shields.io/badge/bricks-92-green) ![Helpers](https://img.shields.io/badge/helpers-59-green)
+![Version](https://img.shields.io/badge/version-19.3.6-blue) ![Pipelines](https://img.shields.io/badge/pipelines-81-green) ![Bricks](https://img.shields.io/badge/bricks-92-green) ![Helpers](https://img.shields.io/badge/helpers-59-green)
 
 **DB-First Pipeline Orchestrator — konfigurieren statt coden.**
 
