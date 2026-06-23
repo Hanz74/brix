@@ -2,7 +2,7 @@
 
 **DB-First Pipeline Orchestrator — konfigurieren statt coden.**
 
-The pipeline runtime built for AI agents. ~3800 tests. 81 pipelines. 59 bricks. Built for Claude Code.
+The pipeline runtime built for AI agents. 81 pipelines. 59 helpers. 92 bricks. Built for Claude Code.
 
 ---
 
@@ -86,7 +86,7 @@ Everything lives in `brix.db`. Pipelines, helpers, bricks, connectors, tools, he
 
 ### Bricks
 
-59 Bricks organized in 10 namespaces. Instead of writing a Python helper script for each step, you pick a Brick and configure it:
+92 Bricks organized in 10 namespaces. Instead of writing a Python helper script for each step, you pick a Brick and configure it:
 
 | Namespace | What it covers |
 |-----------|---------------|
@@ -560,11 +560,11 @@ Claude Code / MCP Client
 │              Brix MCP Server                 │
 │                                              │
 │  MCP Tools · SSE + stdio transport           │
-│  30 Helpers · 59 Bricks · 81 Pipelines      │
+│  59 Helpers · 92 Bricks · 81 Pipelines      │
 │                                              │
 │  Pipeline Engine (asyncio)                   │
 │  ├─ DB-First: all objects in brix.db        │
-│  ├─ Brick Registry (59 bricks, 10 NS)      │
+│  ├─ Brick Registry (92 bricks, 10 NS)      │
 │  ├─ Universal Registry (discover())         │
 │  ├─ DAG resolver + parallel executor        │
 │  ├─ foreach checkpoints + item resume       │
@@ -678,6 +678,6 @@ Brix strictly separates result from logs:
 
 - `src/brix/` — Engine, Brick Registry, runners, MCP server (stdio + SSE)
 - `pipelines/` — 81 pipelines: buddy (34), cody (36), utility (7), system (4) — volume-mounted
-- `helpers/` — 30 Python helper scripts (volume-mounted)
+- `helpers/` — 59 Python helper scripts (volume-mounted)
 - `docs/` — Architecture decisions, integration learnings, expert reviews
 - `tests/` — ~3800+ tests
