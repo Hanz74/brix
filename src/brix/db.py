@@ -4056,6 +4056,7 @@ class BrixDB:
                 import sqlite3 as _sqlite3
                 with _sqlite3.connect(self.db_path, isolation_level=None) as vacuum_conn:
                     vacuum_conn.execute("VACUUM")
+                    vacuum_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
                 # Re-check size
                 db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
@@ -4140,6 +4141,10 @@ class BrixDB:
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
         db_size_mb = db_size_bytes / (1024 * 1024)
 
+        import os as _os
+        wal_path = str(self.db_path) + "-wal"
+        wal_mb = _os.path.getsize(wal_path) / (1024 * 1024) if _os.path.exists(wal_path) else 0.0
+
         return {
             "runs_deleted_age": runs_deleted_age,
             "runs_deleted_size": runs_deleted_size,
@@ -4151,6 +4156,7 @@ class BrixDB:
             "test_runs_deleted": test_runs_deleted,
             "run_input_orphans_deleted": run_input_orphans_deleted,
             "db_size_mb": round(db_size_mb, 3),
+            "wal_size_mb_after": round(wal_mb, 2),
         }
 
     # ------------------------------------------------------------------
