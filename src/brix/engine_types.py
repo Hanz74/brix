@@ -229,6 +229,10 @@ def _extract_step_cost(data: Any) -> float:
         "claude-3-haiku": (0.25, 1.25),
         "claude-sonnet-4": (3.0, 15.0),
         "claude-opus-4": (15.0, 75.0),
+        "claude-haiku-4-5": (0.8, 4.0),
+        "claude-haiku-4-5-20251001": (0.8, 4.0),
+        "claude-sonnet-4-6": (3.0, 15.0),
+        "claude-opus-4-8": (15.0, 75.0),
         "gemini-1.5-pro": (3.5, 10.5),
         "gemini-1.5-flash": (0.35, 1.05),
     }

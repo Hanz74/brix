@@ -607,7 +607,7 @@ LLM_EXTRACT = BrickSchema(
             type="string",
             description="LLM model to use",
             default="claude-3-5-haiku-latest",
-            enum=["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-opus-4-5", "gpt-4o-mini", "gpt-4o"],
+            enum=["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-opus-4-5", "claude-sonnet-4-6", "claude-opus-4-8", "gpt-4o-mini", "gpt-4o"],
         ),
         "temperature": BrickParam(
             type="string",
@@ -674,7 +674,7 @@ LLM_CLASSIFY = BrickSchema(
             type="string",
             description="LLM model to use",
             default="claude-3-5-haiku-latest",
-            enum=["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-opus-4-5", "gpt-4o-mini", "gpt-4o"],
+            enum=["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-opus-4-5", "claude-sonnet-4-6", "claude-opus-4-8", "gpt-4o-mini", "gpt-4o"],
         ),
     },
     input_description="Text to classify (passed as input.text)",
