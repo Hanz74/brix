@@ -54,11 +54,9 @@ class TriggerService:
     async def start(self):
         self.load_triggers()
         enabled = [t for t in self._triggers if t.enabled]
-        if not enabled:
-            return
         self._running = True
+        # T-BRIX-SCHED-02: retention loop runs always, independent of active triggers
         tasks = [self._poll_loop(t) for t in enabled]
-        # T-BRIX-SCHED-02: Also run retention loop (migrated from scheduler.py)
         tasks.append(self._retention_loop())
         await asyncio.gather(*tasks)
 

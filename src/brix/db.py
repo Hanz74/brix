@@ -47,6 +47,7 @@ CONTAINER_PIPELINES_DIR = Path(_brix_config.CONTAINER_PIPELINES_DIR)
 # Retention defaults (overridable via env vars)
 _DEFAULT_RETENTION_DAYS = 30
 _DEFAULT_RETENTION_MAX_MB = 500
+_DEFAULT_MAX_LOG_ROWS = 50000
 
 
 def _now_iso() -> str:
@@ -1796,8 +1797,8 @@ class BrixDB:
                         started_at, ended_at, duration_ms, 1 if persist_data else 0, now,
                     ),
                 )
-        except Exception:
-            pass  # Never crash pipeline over persistence
+        except Exception as e:
+            logger.warning("Persistence error (non-fatal): record_step_execution: %s", e)
 
     def record_foreach_item(
         self,
@@ -1834,8 +1835,8 @@ class BrixDB:
                     (row_id, run_id, step_id, item_index, input_str, output_str,
                      status, error_str, duration_ms, now),
                 )
-        except Exception:
-            pass  # Never crash pipeline over persistence
+        except Exception as e:
+            logger.warning("Persistence error (non-fatal): record_foreach_item: %s", e)
 
     def record_run_input(
         self,
@@ -1861,8 +1862,8 @@ class BrixDB:
                        VALUES (?,?,?,?)""",
                     (run_id, params_str, trigger_str, now),
                 )
-        except Exception:
-            pass  # Never crash pipeline over persistence
+        except Exception as e:
+            logger.warning("Persistence error (non-fatal): record_run_input: %s", e)
 
     def get_step_executions(self, run_id: str, step_id: Optional[str] = None) -> list[dict]:
         """Return step execution records for a run, optionally filtered by step_id."""
@@ -1932,8 +1933,8 @@ class BrixDB:
                          )""",
                     (progress_payload, run_id, step_id, run_id, step_id),
                 )
-        except Exception:
-            pass  # Never crash pipeline over persistence
+        except Exception as e:
+            logger.warning("Persistence error (non-fatal): update_step_progress: %s", e)
 
     def get_step_progress(self, run_id: str) -> list[dict]:
         """Return last_progress entries for all steps of a run (T-BRIX-DB-14).
@@ -3935,6 +3936,7 @@ class BrixDB:
         self,
         max_days: Optional[int] = None,
         max_mb: Optional[float] = None,
+        max_log_rows: Optional[int] = None,
     ) -> dict:
         """Delete old runs + app_log entries to enforce retention limits.
 
@@ -3949,7 +3951,8 @@ class BrixDB:
 
         Returns a summary dict:
         ``{"runs_deleted_age": int, "runs_deleted_size": int,
-           "app_log_deleted": int, "db_size_mb": float}``
+           "app_log_deleted": int, "app_log_rows_deleted": int,
+           "workdir_files_deleted": int, "db_size_mb": float}``
         """
         if max_days is None:
             try:
@@ -3963,8 +3966,15 @@ class BrixDB:
             except (ValueError, TypeError):
                 max_mb = float(_DEFAULT_RETENTION_MAX_MB)
 
+        if max_log_rows is None:
+            try:
+                max_log_rows = int(os.environ.get("BRIX_MAX_LOG_ROWS", _DEFAULT_MAX_LOG_ROWS))
+            except (ValueError, TypeError):
+                max_log_rows = _DEFAULT_MAX_LOG_ROWS
+
         runs_deleted_age = 0
         app_log_deleted = 0
+        app_log_rows_deleted = 0
         runs_deleted_size = 0
 
         # Pass 1: age-based deletion
@@ -3999,6 +4009,19 @@ class BrixDB:
             conn.execute(
                 "DELETE FROM deprecated_usage WHERE pipeline_name NOT IN (SELECT name FROM pipeline)"
             )
+
+        # H3: app_log row-count cap — trim oldest rows above max_log_rows
+        with self._connect() as conn:
+            (log_count,) = conn.execute("SELECT COUNT(*) FROM app_log").fetchone()
+            excess = log_count - max_log_rows
+            if excess > 0:
+                cursor_cap = conn.execute(
+                    """DELETE FROM app_log WHERE id IN (
+                           SELECT id FROM app_log ORDER BY timestamp ASC LIMIT ?
+                       )""",
+                    (excess,),
+                )
+                app_log_rows_deleted = cursor_cap.rowcount
 
         # Pass 2: size-based FIFO deletion
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
@@ -4087,6 +4110,20 @@ class BrixDB:
                 )
                 test_pipelines_deleted = cursor_tp.rowcount
 
+        # C2: Workdir JSONL spill cleanup — delete step_outputs files older than max_days
+        workdir_files_deleted = 0
+        workdir_base = Path.home() / ".brix" / "runs"
+        if workdir_base.exists():
+            import time as _time
+            cutoff_ts = _time.time() - (max_days * 86400)
+            for jsonl_file in workdir_base.rglob("step_outputs/*.jsonl"):
+                try:
+                    if jsonl_file.stat().st_mtime < cutoff_ts:
+                        jsonl_file.unlink()
+                        workdir_files_deleted += 1
+                except OSError:
+                    pass  # File may have been removed concurrently — non-fatal
+
         # Final size after cleanup
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
         db_size_mb = db_size_bytes / (1024 * 1024)
@@ -4095,6 +4132,8 @@ class BrixDB:
             "runs_deleted_age": runs_deleted_age,
             "runs_deleted_size": runs_deleted_size,
             "app_log_deleted": app_log_deleted,
+            "app_log_rows_deleted": app_log_rows_deleted,
+            "workdir_files_deleted": workdir_files_deleted,
             "zombie_cleaned": zombie_cleaned,
             "test_pipelines_deleted": test_pipelines_deleted,
             "test_runs_deleted": test_runs_deleted,

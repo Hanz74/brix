@@ -279,6 +279,11 @@ class BrixConfig:
             os.environ.get("BRIX_HISTORY_LIST_LIMIT", "1000")
         )
 
+        #: Maximum number of rows to keep in app_log (oldest trimmed when exceeded)
+        self.BRIX_MAX_LOG_ROWS: int = int(
+            os.environ.get("BRIX_MAX_LOG_ROWS", "50000")
+        )
+
         # -----------------------------------------------------------------------
         # Triggers
         # -----------------------------------------------------------------------
