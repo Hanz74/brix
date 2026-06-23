@@ -4051,7 +4051,11 @@ class BrixDB:
                         run_ids,
                     )
                     runs_deleted_size += cursor.rowcount
-                    conn.execute("VACUUM")
+
+                # Separate connection for VACUUM (cannot run inside transaction)
+                import sqlite3 as _sqlite3
+                with _sqlite3.connect(self.db_path, isolation_level=None) as vacuum_conn:
+                    vacuum_conn.execute("VACUUM")
 
                 # Re-check size
                 db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
@@ -4110,6 +4114,14 @@ class BrixDB:
                 )
                 test_pipelines_deleted = cursor_tp.rowcount
 
+        # Orphan cleanup: run_input rows whose run_id no longer exists in run
+        run_input_orphans_deleted = 0
+        with self._connect() as conn:
+            cursor_ri = conn.execute(
+                "DELETE FROM run_input WHERE run_id NOT IN (SELECT run_id FROM run)"
+            )
+            run_input_orphans_deleted = cursor_ri.rowcount
+
         # C2: Workdir JSONL spill cleanup — delete step_outputs files older than max_days
         workdir_files_deleted = 0
         workdir_base = Path.home() / ".brix" / "runs"
@@ -4137,6 +4149,7 @@ class BrixDB:
             "zombie_cleaned": zombie_cleaned,
             "test_pipelines_deleted": test_pipelines_deleted,
             "test_runs_deleted": test_runs_deleted,
+            "run_input_orphans_deleted": run_input_orphans_deleted,
             "db_size_mb": round(db_size_mb, 3),
         }
 
