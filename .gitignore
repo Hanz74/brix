@@ -29,3 +29,6 @@ aktuell.md
 # Local data directories (may contain IPs, credentials, DB tables)
 backup/
 data/
+
+# Sensitive test fixtures with real financial data
+tests/fixtures/daigestr/*-hmk-*.json

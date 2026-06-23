@@ -86,7 +86,7 @@
       "error": null,
       "chunks": [
         {
-          "text": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n41063 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
+          "text": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n12345 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
           "index": 0,
           "source": "base64",
           "heading": "",
@@ -94,7 +94,7 @@
         }
       ],
       "success": true,
-      "markdown": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n41063 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
+      "markdown": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n12345 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
       "extracted": {
         "_meta": {
           "absender": {
@@ -107,7 +107,7 @@
             "ust_id": "DE175523539",
             "adresse": {
               "ort": "Musterstadt",
-              "plz": "41063",
+              "plz": "12345",
               "land": null,
               "strasse": "Krefelder Straße 131"
             },
@@ -151,7 +151,7 @@
           "ust_id": "DE 175523539",
           "adresse": {
             "ort": "Musterstadt",
-            "plz": "41063",
+            "plz": "12345",
             "land": null,
             "strasse": "Krefelder Straße 131"
           },
@@ -203,7 +203,7 @@
       "initial_quality_score": 0.7007,
       "document_type_confidence": 0.99
     },
-    "markdown": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n41063 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
+    "markdown": "**MAXMO Apotheke Krefelder Straße**\nKrefelder Straße 131\n12345 Musterstadt\n\n09.10.2024 17:44:01       3454       01/58\n\n| PR1 BICALUTIN 50MG       |          |     |       |\n|--------------------------|----------|-----|-------|\n| 00724732                 | FTA      | 30ST|       |\n| 1X                       |          |     | 62.26 |\n\n----------------------------------------\nGesamt EUR                              62.26\n========================================\nScheckkarte                             62.26\n\n| MwSt.  | Netto   | Brutto  |\n|--------|---------|---------|\n| 19.0%  | 52.32   | 9.94    | 62.26 |\n\neAS-Serien-Nr.: 1023256120-DBK1\nTSE-Start:      09.10.2024 17:41:51\nTSE-Ende:       09.10.2024 17:44:15\nTSE-Trans.-Nr.: 427801\nTSE-Sig.-Zähler: 929215\nTSE-Signaturwert:\nGvqYCRAUfTJJRppjJYogikeEHdUKO6igrjC2NppwkxP9r03XUDcZ8kQXCUmiErZ2JY61NKxmNFxJ17sWuRLZFPNn\n+uE49AmCuCtrg6JnfQ8Bu+e2y3FhuS5/WgiC4J2\nTSE-Seriennummer: A6CDF7F78ED01CA084E7DDDC6C7B747C55286436572FD600B2F611DFB11F0151\n\nInfo:\nZur Abholung ab Donnerstag 16:00 Uhr\nEs betreute Sie Herr Khodeda\n\n**ABHOLSCHEIN 90 2729**\n\n* Vorgang enthält securPharm-Artikel *\n\nTel.: 02161/2474090\nUst.-ID Nr.: DE 175523539",
     "warnings": [],
     "normalized": {
       "_meta": {
@@ -217,7 +217,7 @@
           "ust_id": "DE175523539",
           "adresse": {
             "ort": "Musterstadt",
-            "plz": "41063",
+            "plz": "12345",
             "land": null,
             "strasse": "Krefelder Straße 131"
           },
@@ -261,7 +261,7 @@
         "ust_id": "DE 175523539",
         "adresse": {
           "ort": "Musterstadt",
-          "plz": "41063",
+          "plz": "12345",
           "land": null,
           "strasse": "Krefelder Straße 131"
         },
