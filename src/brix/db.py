@@ -1399,20 +1399,14 @@ class BrixDB:
                                 continue  # Skip — migration v63 will rename the old table
                 conn.execute(ddl)
             # Idempotent migration: add notes column if not present (v5.1+)
-            try:
+            if not self._column_exists(conn, "run", "notes"):
                 conn.execute("ALTER TABLE run ADD COLUMN notes TEXT")
-            except Exception:
-                pass  # Column already exists — ignore
             # Idempotent migration: add cost_usd column if not present (v6.21+)
-            try:
+            if not self._column_exists(conn, "run", "cost_usd"):
                 conn.execute("ALTER TABLE run ADD COLUMN cost_usd REAL")
-            except Exception:
-                pass  # Column already exists — ignore
             # Idempotent migration: add idempotency_key column (T-BRIX-V6-22)
-            try:
+            if not self._column_exists(conn, "run", "idempotency_key"):
                 conn.execute("ALTER TABLE run ADD COLUMN idempotency_key TEXT")
-            except Exception:
-                pass  # Column already exists — ignore
             try:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_runs_idempotency_key "
@@ -1421,18 +1415,12 @@ class BrixDB:
             except Exception:
                 pass
             # Idempotent migration: add cancel columns (T-BRIX-V6-BUG-03)
-            try:
+            if not self._column_exists(conn, "run", "cancel_reason"):
                 conn.execute("ALTER TABLE run ADD COLUMN cancel_reason TEXT")
-            except Exception:
-                pass  # Column already exists — ignore
-            try:
+            if not self._column_exists(conn, "helper", "content_hash"):
                 conn.execute("ALTER TABLE helper ADD COLUMN content_hash TEXT DEFAULT ''")
-            except Exception:
-                pass  # Column already exists — ignore
-            try:
+            if not self._column_exists(conn, "run", "cancelled_by"):
                 conn.execute("ALTER TABLE run ADD COLUMN cancelled_by TEXT")
-            except Exception:
-                pass  # Column already exists — ignore
             # Idempotent migration: step_outputs index (T-BRIX-V7-04)
             try:
                 conn.execute(
@@ -1442,15 +1430,11 @@ class BrixDB:
             except Exception:
                 pass
             # Idempotent migration: environment_json column (T-BRIX-V7-05)
-            try:
+            if not self._column_exists(conn, "run", "environment_json"):
                 conn.execute("ALTER TABLE run ADD COLUMN environment_json TEXT")
-            except Exception:
-                pass  # Column already exists — ignore
             # Idempotent migration: container_id column (T-BRIX-V7-07)
-            try:
+            if not self._column_exists(conn, "run", "container_id"):
                 conn.execute("ALTER TABLE run ADD COLUMN container_id TEXT")
-            except Exception:
-                pass  # Column already exists — ignore
             # Idempotent migration: T-BRIX-DB-07 indexes
             try:
                 conn.execute(
@@ -1467,19 +1451,15 @@ class BrixDB:
             except Exception:
                 pass
             # Idempotent migration: last_progress column for step_executions (T-BRIX-DB-14)
-            try:
+            if not self._column_exists(conn, "step_execution", "last_progress"):
                 conn.execute(
                     "ALTER TABLE step_execution ADD COLUMN last_progress TEXT DEFAULT ''"
                 )
-            except Exception:
-                pass  # Column already exists — ignore
             # Idempotent migration: secret column for variables (T-BRIX-DB-26)
-            try:
+            if not self._column_exists(conn, "variable", "secret"):
                 conn.execute(
                     "ALTER TABLE variable ADD COLUMN secret INTEGER DEFAULT 0"
                 )
-            except Exception:
-                pass  # Column already exists — ignore
 
         # T-BRIX-DB-27: Run structured migrations after DDL baseline
         from brix.migrations import run_pending_migrations
