@@ -397,6 +397,18 @@ class LlmBatchRunner(BaseRunner):
 
         duration = time.monotonic() - start
         self.report_progress(100.0, f"Done — {len(all_results)} results", done=total_items, total=total_items)
+
+        error_count = sum(1 for r in all_results if r.get("error"))
+        total = len(all_results)
+        if total > 0 and error_count / total > 0.1:
+            return {
+                "success": False,
+                "error": f"{error_count}/{total} Batch-Ergebnisse fehlgeschlagen (>{10}% Fehlerrate)",
+                "partial_results": all_results,
+                "error_rate": round(error_count / total, 3),
+                "items": [r for r in all_results if not r.get("error")],
+            }
+
         return {
             "success": True,
             "data": all_results,

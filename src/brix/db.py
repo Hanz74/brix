@@ -4130,6 +4130,17 @@ class BrixDB:
         wal_path = str(self.db_path) + "-wal"
         wal_mb = _os.path.getsize(wal_path) / (1024 * 1024) if _os.path.exists(wal_path) else 0.0
 
+        # Post-Cleanup Verifikation
+        final_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
+        final_size_mb = final_size_bytes / (1024 * 1024)
+        if max_mb and final_size_mb > max_mb:
+            logger.warning(
+                "Retention-Cleanup unvollständig: DB ist noch %.1f MB (Limit: %.1f MB)",
+                final_size_mb, max_mb
+            )
+        else:
+            logger.info("Retention-Cleanup: DB-Größe nach Cleanup: %.1f MB", final_size_mb)
+
         return {
             "runs_deleted_age": runs_deleted_age,
             "runs_deleted_size": runs_deleted_size,
@@ -4142,6 +4153,7 @@ class BrixDB:
             "run_input_orphans_deleted": run_input_orphans_deleted,
             "db_size_mb": round(db_size_mb, 3),
             "wal_size_mb_after": round(wal_mb, 2),
+            "final_db_size_mb": round(final_size_mb, 3),
         }
 
     # ------------------------------------------------------------------

@@ -346,8 +346,9 @@ class PipelineContext:
                 if over_count or over_size:
                     # Write items to JSONL, keep only a lightweight reference in RAM
                     jsonl_path = self.workdir / "step_outputs" / f"{step_id}.jsonl"
-                    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+                    jsonl_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                     with open(jsonl_path, "w") as f:
+                        os.chmod(jsonl_path, 0o600)
                         for item in items:
                             f.write(json_dumps(item) + "\n")
 
