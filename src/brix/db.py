@@ -1327,7 +1327,10 @@ class BrixDB:
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
@@ -4054,7 +4057,9 @@ class BrixDB:
 
                 # Separate connection for VACUUM (cannot run inside transaction)
                 import sqlite3 as _sqlite3
-                with _sqlite3.connect(self.db_path, isolation_level=None) as vacuum_conn:
+                with _sqlite3.connect(self.db_path, isolation_level=None, timeout=30.0) as vacuum_conn:
+                    vacuum_conn.execute("PRAGMA journal_mode = WAL")
+                    vacuum_conn.execute("PRAGMA wal_checkpoint(RESTART)")
                     vacuum_conn.execute("VACUUM")
                     vacuum_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
